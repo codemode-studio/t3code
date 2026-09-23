@@ -89,11 +89,11 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
 import { Switch } from "../ui/switch";
-import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { toastManager } from "../ui/toast";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { AutomationPromptField } from "./AutomationPromptField";
 import {
   AUTOMATION_TEMPLATE_CATEGORIES,
   AUTOMATION_TEMPLATES,
@@ -706,24 +706,33 @@ function AutomationEditor({
       </EditorSection>
 
       <EditorSection title="Instructions">
-        <Textarea
-          value={draft.prompt}
-          onChange={(event) => patch({ prompt: event.target.value })}
-          placeholder="Tell the agent what to do when this automation runs…"
-          aria-label="Instructions"
-          rows={8}
-        />
-        <div className="flex flex-wrap items-center gap-1">
-          {environmentId ? (
-            <AutomationModelPicker
-              environmentId={environmentId}
-              value={draft.modelSelection}
-              onChange={(modelSelection) => patch({ modelSelection })}
-            />
-          ) : null}
-        </div>
+        {environmentId ? (
+          <AutomationInstructions
+            environmentId={environmentId}
+            cwd={
+              projects.find(
+                (project) =>
+                  project.environmentId === environmentId && project.id === draft.projectId,
+              )?.workspaceRoot ?? null
+            }
+            prompt={draft.prompt}
+            onPromptChange={(prompt) => patch({ prompt })}
+            modelSelection={draft.modelSelection}
+            onModelSelectionChange={(modelSelection) => patch({ modelSelection })}
+          />
+        ) : (
+          <AutomationPromptField
+            value={draft.prompt}
+            onChange={(prompt) => patch({ prompt })}
+            environmentId={null}
+            cwd={null}
+            provider={null}
+            providerKind={null}
+          />
+        )}
         <p className="text-xs text-muted-foreground">
-          Sent as the first message of each run. GitHub triggers append the pull request or issue.
+          Type $ for skills and @ for files. GitHub triggers add the pull request or issue at the
+          end.
         </p>
       </EditorSection>
 
@@ -1232,21 +1241,29 @@ function ProjectPicker({
   );
 }
 
-function AutomationModelPicker({
+/** Instructions and the model that runs them, which also decides the skills "$" offers. */
+function AutomationInstructions({
   environmentId,
-  value,
-  onChange,
+  cwd,
+  prompt,
+  onPromptChange,
+  modelSelection,
+  onModelSelectionChange,
 }: {
   environmentId: EnvironmentId;
-  value: ModelSelection | null;
-  onChange: (selection: ModelSelection) => void;
+  cwd: string | null;
+  prompt: string;
+  onPromptChange: (prompt: string) => void;
+  modelSelection: ModelSelection | null;
+  onModelSelectionChange: (selection: ModelSelection) => void;
 }) {
   const environment = useEnvironment(environmentId);
   const settings = useEnvironmentSettings(environmentId);
   const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+  // Until the user picks one, `modelSelection` stays null and runs follow the default model.
   const selection = resolveDefaultProviderModelSelection(
     providers,
-    value ?? settings.defaultModelSelection,
+    modelSelection ?? settings.defaultModelSelection,
   );
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
@@ -1259,35 +1276,49 @@ function AutomationModelPicker({
   );
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
 
-  // Until the user picks one, `value` stays null and runs follow the project's default model.
-  if (!selection || !activeEntry) {
-    return <span className="px-1 text-xs text-muted-foreground">No providers available</span>;
-  }
   return (
     <>
-      <ProviderModelPicker
-        activeInstanceId={selection.instanceId}
-        model={selection.model}
-        lockedProvider={null}
-        instanceEntries={entries}
-        modelOptionsByInstance={modelOptions}
-        onInstanceModelChange={(instanceId, model) =>
-          onChange(createModelSelection(instanceId, model))
-        }
+      <AutomationPromptField
+        value={prompt}
+        onChange={onPromptChange}
+        environmentId={environmentId}
+        cwd={cwd}
+        provider={activeEntry?.snapshot ?? null}
+        providerKind={activeEntry?.driverKind ?? null}
       />
-      <TraitsPicker
-        provider={activeEntry.driverKind}
-        models={activeEntry.models}
-        model={selection.model}
-        prompt=""
-        onPromptChange={() => {}}
-        modelOptions={selection.options ?? []}
-        allowPromptInjectedEffort={false}
-        planModeEnabled={settings.planModeEnabled}
-        onModelOptionsChange={(options) =>
-          onChange(createModelSelection(selection.instanceId, selection.model, options))
-        }
-      />
+      <div className="flex flex-wrap items-center gap-1">
+        {selection && activeEntry ? (
+          <>
+            <ProviderModelPicker
+              activeInstanceId={selection.instanceId}
+              model={selection.model}
+              lockedProvider={null}
+              instanceEntries={entries}
+              modelOptionsByInstance={modelOptions}
+              onInstanceModelChange={(instanceId, model) =>
+                onModelSelectionChange(createModelSelection(instanceId, model))
+              }
+            />
+            <TraitsPicker
+              provider={activeEntry.driverKind}
+              models={activeEntry.models}
+              model={selection.model}
+              prompt=""
+              onPromptChange={() => {}}
+              modelOptions={selection.options ?? []}
+              allowPromptInjectedEffort={false}
+              planModeEnabled={settings.planModeEnabled}
+              onModelOptionsChange={(options) =>
+                onModelSelectionChange(
+                  createModelSelection(selection.instanceId, selection.model, options),
+                )
+              }
+            />
+          </>
+        ) : (
+          <span className="px-1 text-xs text-muted-foreground">No providers available</span>
+        )}
+      </div>
     </>
   );
 }

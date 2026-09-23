@@ -5,9 +5,11 @@ opens a thread in the automation's project, so you can follow and continue it li
 
 ## Create an automation
 
-Open **Automations** from the top of the sidebar or the command palette. Pick an example or start from
-scratch, choose a project, add triggers, and write the instructions the agent receives as its
-first message. Press **Create**, then **Run now** to try it once without waiting for a trigger.
+Open **Automations** from the top of the sidebar or the command palette. Pick an example or start
+from scratch, choose a project, add triggers, and write the instructions the agent receives as its
+first message. In the instructions, type `$` to pick a skill for the selected model's provider and
+`@` to reference a project file. Press **Create**, then **Run now** to try it once without waiting
+for a trigger.
 
 The environment picker next to the project chooses which connected server runs the automation;
 the project list shows that server's projects. The server must be awake and running T3 Code at the
