@@ -56,6 +56,7 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  ZapIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -2016,6 +2017,17 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:automations",
+    searchTerms: ["automations", "automation", "schedule", "cron", "trigger", "recurring"],
+    title: "Open automations",
+    icon: <ZapIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/automations" });
+    },
+  });
 
   actionItems.push({
     kind: "action",

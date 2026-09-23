@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon, ZapIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -128,6 +128,29 @@ function SidebarUtilityItem({
     </SidebarMenuItem>
   );
 }
+
+/** Top-level link to Automations, above the thread search in both sidebars. */
+export const SidebarAutomationsLink = memo(function SidebarAutomationsLink() {
+  const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
+  const active = useLocation({ select: (location) => location.pathname === "/automations" });
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={active}
+          onClick={() => {
+            if (isMobile) setOpenMobile(false);
+            void navigate({ to: "/automations" });
+          }}
+        >
+          <ZapIcon />
+          <span>Automations</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+});
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
