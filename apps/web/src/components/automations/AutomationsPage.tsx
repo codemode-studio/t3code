@@ -101,7 +101,7 @@ import {
 } from "./automationTemplates";
 
 /** An automation's identity across environments, as carried in the route. */
-export function automationKey(automation: Pick<EnvironmentAutomation, "environmentId" | "id">) {
+function automationKey(automation: Pick<EnvironmentAutomation, "environmentId" | "id">) {
   return `${automation.environmentId}:${automation.id}`;
 }
 

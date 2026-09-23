@@ -86,7 +86,7 @@ function formatClock(hour: number, minute: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-export function describeScheduleTrigger(trigger: AutomationScheduleTrigger): string {
+function describeScheduleTrigger(trigger: AutomationScheduleTrigger): string {
   switch (trigger.cadence) {
     case "hourly":
       return `Hourly at :${String(trigger.minute).padStart(2, "0")}`;

@@ -85,9 +85,9 @@ export const AutomationRun = Schema.Struct({
 });
 export type AutomationRun = typeof AutomationRun.Type;
 
-export const AUTOMATION_NAME_MAX_LENGTH = 200;
-export const AUTOMATION_PROMPT_MAX_LENGTH = 50_000;
-export const AUTOMATION_MAX_TRIGGERS = 20;
+const AUTOMATION_NAME_MAX_LENGTH = 200;
+const AUTOMATION_PROMPT_MAX_LENGTH = 50_000;
+const AUTOMATION_MAX_TRIGGERS = 20;
 export const AUTOMATION_MAX_RUNS = 20;
 export const DEFAULT_AUTOMATION_CATCH_UP_MINUTES = 60;
 
