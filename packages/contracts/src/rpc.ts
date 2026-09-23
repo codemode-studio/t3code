@@ -14,6 +14,15 @@ import {
   ProviderSetupInput,
 } from "./providerSetup.ts";
 
+import {
+  Automation,
+  AutomationCreateInput,
+  AutomationError,
+  AutomationIdInput,
+  AutomationRun,
+  AutomationUpdateInput,
+  AutomationsSnapshot,
+} from "./automation.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   AuthAccessStreamError,
@@ -383,6 +392,10 @@ export const WS_METHODS = {
   serverReportClientActivity: "server.reportClientActivity",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
+  automationsCreate: "automations.create",
+  automationsUpdate: "automations.update",
+  automationsDelete: "automations.delete",
+  automationsRunNow: "automations.runNow",
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
@@ -442,6 +455,7 @@ export const WS_METHODS = {
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
+  subscribeAutomations: "subscribeAutomations",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
 } as const;
 
@@ -1384,6 +1398,38 @@ const WsSubscribeBackgroundPolicyRpc = Rpc.make(WS_METHODS.subscribeBackgroundPo
   stream: true,
 });
 
+const AutomationRpcError = Schema.Union([AutomationError, EnvironmentAuthorizationError]);
+
+const WsAutomationsCreateRpc = Rpc.make(WS_METHODS.automationsCreate, {
+  payload: AutomationCreateInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+const WsAutomationsUpdateRpc = Rpc.make(WS_METHODS.automationsUpdate, {
+  payload: AutomationUpdateInput,
+  success: Automation,
+  error: AutomationRpcError,
+});
+
+const WsAutomationsDeleteRpc = Rpc.make(WS_METHODS.automationsDelete, {
+  payload: AutomationIdInput,
+  error: AutomationRpcError,
+});
+
+const WsAutomationsRunNowRpc = Rpc.make(WS_METHODS.automationsRunNow, {
+  payload: AutomationIdInput,
+  success: AutomationRun,
+  error: AutomationRpcError,
+});
+
+const WsSubscribeAutomationsRpc = Rpc.make(WS_METHODS.subscribeAutomations, {
+  payload: Schema.Struct({}),
+  success: AutomationsSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTelemetry, {
   payload: Schema.Struct({}),
   success: ResourceTelemetrySnapshot,
@@ -1392,6 +1438,11 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  WsAutomationsCreateRpc,
+  WsAutomationsUpdateRpc,
+  WsAutomationsDeleteRpc,
+  WsAutomationsRunNowRpc,
+  WsSubscribeAutomationsRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

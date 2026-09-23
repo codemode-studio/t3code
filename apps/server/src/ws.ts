@@ -147,6 +147,7 @@ import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import { importRecentAgentThreads } from "./project/AgentSessionImporter.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForRpcMethod, requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
@@ -630,6 +631,7 @@ const makeWsRpcLayer = (
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+      const automations = yield* AutomationService.AutomationService;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
       yield* Effect.addFinalizer(() =>
         Ref.get(rpcClientIds).pipe(
@@ -3762,6 +3764,28 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "auth" },
           ),
+        [WS_METHODS.subscribeAutomations]: (_input) =>
+          observeRpcStream(WS_METHODS.subscribeAutomations, automations.changes, {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsCreate, automations.create(input.config), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsUpdate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsUpdate,
+            automations.update(input.id, input.config),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsDelete]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsDelete, automations.remove(input.id), {
+            "rpc.aggregate": "automations",
+          }),
+        [WS_METHODS.automationsRunNow]: (input) =>
+          observeRpcEffect(WS_METHODS.automationsRunNow, automations.runNow(input.id), {
+            "rpc.aggregate": "automations",
+          }),
         [WS_METHODS.subscribeBackgroundPolicy]: (_input) =>
           observeRpcStream(
             WS_METHODS.subscribeBackgroundPolicy,

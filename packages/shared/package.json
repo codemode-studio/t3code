@@ -342,6 +342,10 @@
     "./gitPatchPath": {
       "types": "./src/gitPatchPath.ts",
       "import": "./src/gitPatchPath.ts"
+    },
+    "./automationSchedule": {
+      "types": "./src/automationSchedule.ts",
+      "import": "./src/automationSchedule.ts"
     }
   },
   "scripts": {
