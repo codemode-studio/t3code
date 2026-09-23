@@ -17,6 +17,13 @@ Install [GitHub CLI](https://cli.github.com/) 2.81.0 or newer, then sign in:
 gh auth login
 ```
 
+When `gh` holds more than one login, choose which one T3 Code uses under **GitHub CLI account**
+in the GitHub entry of **Settings → Source Control**. Select a project to give it a different
+account, for example a work login for company repositories. T3 Code passes that login's token to
+its own GitHub commands and never switches the login active in `gh`, so terminals and other apps
+are unaffected. If the chosen login is signed out, GitHub actions fail until you sign it back in
+or pick another account; they never fall back to a different login.
+
 ### Forgejo and Gitea
 
 Install [Forgejo CLI (`fj`)](https://codeberg.org/forgejo-contrib/forgejo-cli) or

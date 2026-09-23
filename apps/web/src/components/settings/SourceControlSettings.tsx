@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
   BackgroundActivitySettings,
+  GitHubCliAccount,
   SourceControlProviderKind,
   SourceControlDiscoveryResult,
   SourceControlProviderAuth,
@@ -18,7 +19,11 @@ import {
   resolveServerBackgroundActivitySettings,
 } from "@t3tools/shared/backgroundActivitySettings";
 
-import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import {
+  useScopedSettings,
+  useScopedSettingsMixed,
+  useUpdateScopedSettings,
+} from "./useScopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { cn } from "../../lib/utils";
@@ -35,6 +40,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../ui/empty";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
 import {
   NumberField,
@@ -62,6 +68,7 @@ import {
   PolicyTooltip,
   SettingResetButton,
   SettingsPageContainer,
+  SettingsRow,
   SettingsSearchTarget,
   SettingsSection,
   useSettingsSearchTargetId,
@@ -277,7 +284,10 @@ function DiscoveryItemRow({
   const searchTargetId = useSettingsSearchTargetId();
 
   useEffect(() => {
-    if (item.kind === "git" && searchTargetId === searchableSetting("git-fetch-interval").id) {
+    if (
+      (item.kind === "git" && searchTargetId === searchableSetting("git-fetch-interval").id) ||
+      (item.kind === "github" && searchTargetId === searchableSetting("github-cli-account").id)
+    ) {
       setIsExpanded(true);
     }
   }, [item.kind, searchTargetId]);
@@ -425,6 +435,106 @@ function GitFetchIntervalSettings() {
   );
 }
 
+const ACTIVE_GITHUB_CLI_ACCOUNT = "active";
+
+function githubCliAccountLabel(account: GitHubCliAccount): string {
+  return `${account.login} @ ${account.host}`;
+}
+
+/**
+ * Which signed-in `gh` login GitHub actions use. The server passes that
+ * login's token to each command, so the CLI's active login stays as it is.
+ */
+function GitHubCliAccountSettings({
+  accounts,
+}: {
+  readonly accounts: ReadonlyArray<GitHubCliAccount>;
+}) {
+  const { scope } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["githubCliAccount"]);
+  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
+  const selected = settings.githubCliAccount;
+  const signedOut =
+    selected !== null &&
+    !accounts.some(
+      (account) => account.host === selected.host.toLowerCase() && account.login === selected.login,
+    );
+  const options = signedOut ? [...accounts, selected] : accounts;
+
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["githubCliAccount"]}
+      mixed={mixed}
+      {...searchableSetting("github-cli-account")}
+      description={
+        isProjectScope
+          ? "GitHub actions in this project run as this login. The login active in gh, used by terminals and other apps, does not change."
+          : "GitHub actions run as this login. Projects can override it. The login active in gh, used by terminals and other apps, does not change."
+      }
+      status={
+        signedOut ? (
+          <span className="text-warning">
+            {selected.login} is not signed in to gh on this server, so GitHub actions fail until you
+            sign it back in with <code>gh auth login</code> or choose another account.
+          </span>
+        ) : null
+      }
+      resetAction={
+        selected !== null ? (
+          <SettingResetButton
+            label="GitHub CLI account"
+            tooltip="Reset to the active gh login"
+            onClick={() => updateSettings({ githubCliAccount: null })}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={
+            mixed
+              ? null
+              : selected === null
+                ? ACTIVE_GITHUB_CLI_ACCOUNT
+                : githubCliAccountLabel(selected)
+          }
+          onValueChange={(value) => {
+            if (value === ACTIVE_GITHUB_CLI_ACCOUNT) {
+              updateSettings({ githubCliAccount: null });
+              return;
+            }
+            const account = options.find((option) => githubCliAccountLabel(option) === value);
+            if (account) {
+              updateSettings({ githubCliAccount: { host: account.host, login: account.login } });
+            }
+          }}
+        >
+          <SelectTrigger size="sm" aria-label="GitHub CLI account">
+            <SelectValue>
+              {(value: string | null) =>
+                value === ACTIVE_GITHUB_CLI_ACCOUNT ? "Active gh login" : (value ?? "Mixed")
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            <SelectItem value={ACTIVE_GITHUB_CLI_ACCOUNT}>Active gh login</SelectItem>
+            {options.map((account) => (
+              <SelectItem
+                key={githubCliAccountLabel(account)}
+                value={githubCliAccountLabel(account)}
+              >
+                {githubCliAccountLabel(account)}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
 function SourceControlSectionSkeleton({
   title,
   headerAction,
@@ -503,6 +613,7 @@ function EmptySourceControlDiscovery({
 
 export function SourceControlSettingsPanel() {
   const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { githubCliAccount } = useScopedSettings();
   // Discovery scans one machine's tools, so it shows the representative
   // environment (named in the section title when several are selected);
   // the settings rows above it fan out like everywhere else.
@@ -588,7 +699,14 @@ export function SourceControlSettingsPanel() {
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item} />
+                <DiscoveryItemRow key={`provider:${item.kind}`} item={item}>
+                  {/* One login leaves nothing to choose, unless a previous choice needs undoing. */}
+                  {item.kind === "github" &&
+                  item.auth.accounts !== undefined &&
+                  (item.auth.accounts.length > 1 || githubCliAccount !== null) ? (
+                    <GitHubCliAccountSettings accounts={item.auth.accounts} />
+                  ) : undefined}
+                </DiscoveryItemRow>
               ))}
             </SettingsSection>
           ) : null}

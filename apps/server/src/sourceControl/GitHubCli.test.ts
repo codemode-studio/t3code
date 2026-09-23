@@ -243,6 +243,92 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("runs commands as the checkout's selected account without switching gh", () =>
+    Effect.gen(function* () {
+      const commands: Array<{ args: ReadonlyArray<string>; env: NodeJS.ProcessEnv | undefined }> =
+        [];
+      const gh = yield* GitHubCli.make.pipe(
+        Effect.provideService(GitHubCli.GitHubCliAccountSelection, {
+          forCwd: (cwd) =>
+            Effect.succeed(
+              cwd === "/work"
+                ? { host: "github.com", login: "work-login" }
+                : cwd === "/enterprise"
+                  ? { host: "github.example.test", login: "enterprise-login" }
+                  : null,
+            ),
+        }),
+        Effect.provideService(VcsProcess.VcsProcess, {
+          run: (input) =>
+            Effect.sync(() => {
+              commands.push({ args: input.args, env: input.env });
+              return input.args[0] === "auth"
+                ? processOutput(`token-for-${input.args[5]}\n`)
+                : processOutput("");
+            }),
+        }),
+      );
+      yield* gh.execute({ cwd: "/work", args: ["pr", "merge", "1"] });
+      yield* gh.execute({ cwd: "/work", args: ["pr", "close", "2"] });
+      yield* gh.execute({ cwd: "/enterprise", args: ["pr", "merge", "3"] });
+      yield* gh.execute({ cwd: "/personal", args: ["pr", "merge", "4"] });
+
+      expect(commands.map((command) => command.args.join(" "))).toEqual([
+        "auth token --hostname github.com --user work-login",
+        "pr merge 1",
+        "pr close 2",
+        "auth token --hostname github.example.test --user enterprise-login",
+        "pr merge 3",
+        "pr merge 4",
+      ]);
+      // The lookup ignores an ambient env token, which gh would print instead.
+      expect(commands[0]?.env).toMatchObject({ GH_TOKEN: "", GITHUB_TOKEN: "" });
+      expect(commands[1]?.env).toEqual({
+        GH_TOKEN: "token-for-work-login",
+        GITHUB_TOKEN: "token-for-work-login",
+      });
+      expect(commands[4]?.env).toEqual({
+        GH_ENTERPRISE_TOKEN: "token-for-enterprise-login",
+        GITHUB_ENTERPRISE_TOKEN: "token-for-enterprise-login",
+      });
+      expect(commands[5]?.env).toBeUndefined();
+    }).pipe(Effect.provide(Layer.merge(GitHubGraphQlBudget.layer, SourceControlRateLimit.layer))),
+  );
+
+  it.effect("fails instead of falling back when the selected account is signed out", () =>
+    Effect.gen(function* () {
+      const commands: string[] = [];
+      const gh = yield* GitHubCli.make.pipe(
+        Effect.provideService(GitHubCli.GitHubCliAccountSelection, {
+          forCwd: () => Effect.succeed({ host: "github.com", login: "gone" }),
+        }),
+        Effect.provideService(VcsProcess.VcsProcess, {
+          run: (input) => {
+            commands.push(input.args.join(" "));
+            return input.args[0] === "auth"
+              ? Effect.fail(
+                  new VcsProcessExitError({
+                    operation: "GitHubCli.accountToken",
+                    command: "gh",
+                    cwd: "/work",
+                    exitCode: 1,
+                    failureKind: "authentication",
+                    detail: "no oauth token found for github.com account gone",
+                  }),
+                )
+              : Effect.succeed(processOutput(""));
+          },
+        }),
+      );
+      const failure = yield* gh
+        .execute({ cwd: "/work", args: ["pr", "merge", "1"] })
+        .pipe(Effect.flip);
+      expect(failure._tag).toBe("GitHubCliAccountUnavailableError");
+      expect(failure.detail).toContain("gone on github.com");
+      expect(commands).toEqual(["auth token --hostname github.com --user gone"]);
+    }).pipe(Effect.provide(Layer.merge(GitHubGraphQlBudget.layer, SourceControlRateLimit.layer))),
+  );
+
   it("does not classify a missing cwd as an unavailable gh executable", () => {
     const context = { command: "gh", cwd: "/repo" } as const;
     const missingCwd = new VcsProcessSpawnError({

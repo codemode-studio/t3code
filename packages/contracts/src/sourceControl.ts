@@ -118,11 +118,20 @@ export const SourceControlProviderAuthStatus = Schema.Literals([
 ]);
 export type SourceControlProviderAuthStatus = typeof SourceControlProviderAuthStatus.Type;
 
+/** A GitHub CLI login, named by the host it is signed in to. */
+export const GitHubCliAccount = Schema.Struct({
+  host: TrimmedNonEmptyString,
+  login: TrimmedNonEmptyString,
+});
+export type GitHubCliAccount = typeof GitHubCliAccount.Type;
+
 export const SourceControlProviderAuth = Schema.Struct({
   status: SourceControlProviderAuthStatus,
   account: Schema.Option(TrimmedNonEmptyString),
   host: Schema.Option(TrimmedNonEmptyString),
   detail: Schema.Option(TrimmedNonEmptyString),
+  /** Every signed-in login the CLI holds, for choosing one. Only GitHub reports these. */
+  accounts: Schema.optionalKey(Schema.Array(GitHubCliAccount)),
 });
 export type SourceControlProviderAuth = typeof SourceControlProviderAuth.Type;
 

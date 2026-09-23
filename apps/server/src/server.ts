@@ -61,6 +61,7 @@ import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
+import * as GitHubCliAccountSelection from "./sourceControl/GitHubCliAccountSelection.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
@@ -274,6 +275,11 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+// Every server-side GitHub command resolves its checkout's selected `gh` login through this one instance.
+const GitHubCliLayerLive = GitHubCli.layer.pipe(
+  Layer.provide(GitHubCliAccountSelection.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
+);
+
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
@@ -283,7 +289,7 @@ const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.lay
     Layer.mergeAll(
       AzureDevOpsCli.layer,
       BitbucketApi.layer,
-      GitHubCli.layer,
+      GitHubCliLayerLive,
       GitLabCli.layer,
       ForgejoCli.layer,
     ),
@@ -329,7 +335,7 @@ const RepositoryIdentityResolverLayerLive = Layer.effect(
 ).pipe(Layer.provide(SourceControlProviderRegistryLayerLive), Layer.provide(ProcessRunner.layer));
 
 const PullRequestServiceLive = PullRequestService.layer.pipe(
-  Layer.provide(PullRequestProviderRegistry.layer),
+  Layer.provide(PullRequestProviderRegistry.layer.pipe(Layer.provide(GitHubCliLayerLive))),
   // Where the viewed-file marks live for a host that keeps none of its own.
   Layer.provide(PullRequestFilesViewed.layer),
   Layer.provide(PullRequestReadCache.layer),
@@ -493,7 +499,11 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // `GitHubCli` is the registry's own instance, exposed because the asset route fetches
   // GitHub-hosted pull request media with the repository's credential.
   Layer.provideMerge(
-    Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive, GitHubCli.layer),
+    Layer.mergeAll(
+      SourceControlProviderRegistryLayerLive,
+      PullRequestServiceLive,
+      GitHubCliLayerLive,
+    ),
   ),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
