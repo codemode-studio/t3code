@@ -135,6 +135,9 @@ export class DesktopWindow extends Context.Service<
     // the main window.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
+    // Re-applies the saved window translucency to the main window. Linux can
+    // only change it when the window opens, so there it waits for a restart.
+    readonly syncTranslucency: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
 
@@ -155,6 +158,29 @@ function getIconOption(
 
 function getInitialWindowBackgroundColor(shouldUseDarkColors: boolean): string {
   return shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+}
+
+const TRANSPARENT_WINDOW_BACKGROUND_COLOR = "#00000000";
+
+function getMainWindowBackgroundColor(shouldUseDarkColors: boolean, translucent: boolean): string {
+  return translucent
+    ? TRANSPARENT_WINDOW_BACKGROUND_COLOR
+    : getInitialWindowBackgroundColor(shouldUseDarkColors);
+}
+
+function applyWindowTranslucency(
+  window: Electron.BrowserWindow,
+  translucent: boolean,
+  shouldUseDarkColors: boolean,
+  platform: NodeJS.Platform,
+): void {
+  if (window.isDestroyed()) return;
+  window.setBackgroundColor(getMainWindowBackgroundColor(shouldUseDarkColors, translucent));
+  if (platform === "darwin") {
+    window.setVibrancy(translucent ? "under-window" : null);
+  } else if (platform === "win32") {
+    window.setBackgroundMaterial(translucent ? "acrylic" : "auto");
+  }
 }
 
 type DisplayBounds = Pick<Electron.Rectangle, "x" | "y" | "width" | "height">;
@@ -278,13 +304,14 @@ function syncWindowAppearance(
   window: Electron.BrowserWindow,
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
+  translucent: boolean,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (window.isDestroyed()) {
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
+    window.setBackgroundColor(getMainWindowBackgroundColor(shouldUseDarkColors, translucent));
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
     if (typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
@@ -361,6 +388,26 @@ export const make = Effect.gen(function* () {
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
 
+  const readWindowTranslucency = clientSettings.get.pipe(
+    Effect.map(
+      Option.match({
+        onNone: () => DEFAULT_CLIENT_SETTINGS.windowTranslucency,
+        onSome: (settings) => settings.windowTranslucency,
+      }),
+    ),
+    Effect.catch((error) =>
+      logWindowWarning("failed to read window translucency; keeping the window opaque", {
+        message: error.message,
+      }).pipe(Effect.as(false)),
+    ),
+  );
+  // A Linux window only gets an alpha channel when it is created, so its
+  // translucency stays whatever the main window opened with.
+  let linuxMainWindowTranslucent = false;
+  const resolveMainWindowTranslucency = Effect.map(readWindowTranslucency, (translucent) =>
+    environment.platform === "linux" ? linuxMainWindowTranslucent : translucent,
+  );
+
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
     DesktopWindowError
@@ -370,6 +417,7 @@ export const make = Effect.gen(function* () {
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+    const translucent = yield* readWindowTranslucency;
     const persistedSettings = yield* desktopSettings.get;
     const persistedBounds = persistedSettings.mainWindowBounds;
     const displayBoundsResult = yield* Effect.sync(() => {
@@ -399,8 +447,11 @@ export const make = Effect.gen(function* () {
       minHeight: 620,
       show: false,
       autoHideMenuBar: true,
-      ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
-      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      ...(environment.platform === "darwin"
+        ? { disableAutoHideCursor: true, visualEffectState: "active" as const }
+        : {}),
+      ...(environment.platform === "linux" && translucent ? { transparent: true } : {}),
+      backgroundColor: getMainWindowBackgroundColor(shouldUseDarkColors, translucent),
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
@@ -421,6 +472,11 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
+    }
+    if (environment.platform === "linux") {
+      linuxMainWindowTranslucent = translucent;
+    } else if (translucent) {
+      applyWindowTranslucency(window, true, shouldUseDarkColors, environment.platform);
     }
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
@@ -1019,10 +1075,30 @@ export const make = Effect.gen(function* () {
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+      const mainWindow = yield* currentMainWindow;
+      const mainWindowTranslucent = yield* resolveMainWindowTranslucency;
       yield* electronWindow.syncAllAppearance((window) =>
-        syncWindowAppearance(window, shouldUseDarkColors, environment.platform),
+        syncWindowAppearance(
+          window,
+          shouldUseDarkColors,
+          environment.platform,
+          Option.contains(mainWindow, window) && mainWindowTranslucent,
+        ),
       );
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
+    syncTranslucency: Effect.gen(function* () {
+      if (environment.platform === "linux") return;
+      const mainWindow = yield* currentMainWindow;
+      if (Option.isNone(mainWindow)) return;
+      const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+      const translucent = yield* readWindowTranslucency;
+      applyWindowTranslucency(
+        mainWindow.value,
+        translucent,
+        shouldUseDarkColors,
+        environment.platform,
+      );
+    }).pipe(Effect.withSpan("desktop.window.syncTranslucency")),
   });
 });
 

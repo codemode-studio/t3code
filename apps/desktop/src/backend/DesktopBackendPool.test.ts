@@ -100,6 +100,7 @@ function makePoolLayer(
           dispatchSnapShotEvent: () => Effect.void,
           zoomMain: () => Effect.die("unexpected zoom"),
           syncAppearance: Effect.void,
+          syncTranslucency: Effect.void,
         } satisfies DesktopWindow.DesktopWindow["Service"]),
       ),
     ),

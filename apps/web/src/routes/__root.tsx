@@ -45,6 +45,7 @@ import {
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { applyAppearanceContrast } from "~/appearanceContrast";
+import { isElectron } from "~/env";
 import { useClientSettings } from "../hooks/useSettings";
 import { PlanAgentSelectionHeal } from "../planAgentSelectionHeal";
 import {
@@ -172,6 +173,7 @@ function RootRouteView() {
           <ContrastAppearanceSync />
           <EnvironmentThemeSync />
           <GlassAppearanceSync />
+          <WindowTranslucencySync />
           <FontAppearanceSync />
           <CustomSnoozeDialogHost />
           <CommandPalette>
@@ -212,6 +214,7 @@ function RootRouteView() {
         <ContrastAppearanceSync />
         <EnvironmentThemeSync />
         <GlassAppearanceSync />
+        <WindowTranslucencySync />
         <FontAppearanceSync />
         <FirstRunGate
           enabled={primaryEnvironmentAuthenticated}
@@ -280,6 +283,22 @@ function GlassAppearanceSync() {
       style.removeProperty("--glass-blur");
     }
   }, [glassOpacity]);
+
+  return null;
+}
+
+function WindowTranslucencySync() {
+  const translucent = useClientSettings((settings) => settings.windowTranslucency);
+  const opacity = useClientSettings((settings) => settings.windowTranslucencyOpacity);
+  const mainPane = useClientSettings((settings) => settings.windowTranslucencyMainPane);
+
+  useEffect(() => {
+    if (!isElectron) return;
+    const root = document.documentElement;
+    root.classList.toggle("window-translucent", translucent);
+    root.toggleAttribute("data-window-translucency-main-pane", translucent && mainPane);
+    root.style.setProperty("--window-translucency-opacity", `${opacity}%`);
+  }, [mainPane, opacity, translucent]);
 
   return null;
 }

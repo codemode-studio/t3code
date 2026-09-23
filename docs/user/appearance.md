@@ -28,6 +28,14 @@ The main sidebar, right panel, and terminal drawer open and close immediately by
 in your operating system. Moving between threads always snaps to the selected thread's panel state
 without replaying its transitions.
 
+## Window translucency
+
+In the desktop app, turn on **Window translucency** in **Settings → Appearance** to let the desktop
+show through the sidebar. **Sidebar opacity** controls how much shows through, and **Main pane
+glass** extends the effect behind threads and settings. macOS and Windows 11 blur the desktop behind
+the window. On Linux, your compositor controls the blur, and turning translucency on or off takes
+effect after you restart T3 Code.
+
 ## Custom themes
 
 On web and desktop, choose **Create theme** to adjust a palette, or import a T3 Code or VS Code
