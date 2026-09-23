@@ -41,6 +41,7 @@ import {
   type ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import { GitHubCliAccount } from "./sourceControl.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1013,6 +1014,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "sourceControlWriterModelSelection",
   "sourceControlWritingStyle",
   "pullRequestMergeMethod",
+  "githubCliAccount",
   "sidebarAutoSettleOnMerge",
   "sidebarAutoSettleAfterDays",
   "continueThreadsAfterServerUpdate",
@@ -1040,6 +1042,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
+  githubCliAccount: Schema.optionalKey(Schema.NullOr(GitHubCliAccount)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
@@ -1064,6 +1067,7 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
   "defaultModelSelection",
   "sourceControlWriterModelSelection",
   "pullRequestMergeMethod",
+  "githubCliAccount",
   "sidebarAutoSettleAfterDays",
 ]);
 
@@ -1248,6 +1252,14 @@ export const ServerSettings = Schema.Struct({
    * like any other project setting.
    */
   pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  /**
+   * The `gh` login GitHub commands run as, by passing that login's token to
+   * each command. `null` uses whichever login is active in the CLI. The CLI's
+   * active login is never switched, so terminals and other tools keep theirs.
+   */
+  githubCliAccount: Schema.NullOr(GitHubCliAccount).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
 
@@ -1524,6 +1536,7 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
+  githubCliAccount: Schema.optionalKey(Schema.NullOr(GitHubCliAccount)),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),

@@ -680,6 +680,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "github-cli-account",
+    title: "GitHub CLI account",
+    to: "/settings/source-control",
+    searchTerms: ["gh login switch personal work company token multiple accounts"],
+    scope: "project-defaults",
+  },
+  {
     id: "source-control-writing-style",
     title: "Source control writing style",
     to: "/settings/source-control",

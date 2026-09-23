@@ -41,8 +41,8 @@ and other phone-only settings ignore the filter.
 ## Defaults and inheritance
 
 General contains the model and workspace for new threads. Integrations controls agent browser
-access. Source Control contains automatic pull, the default pull request merge method and text
-generation. The same rows edit environment defaults or project overrides depending on the
+access. Source Control contains automatic pull, the default pull request merge method, the GitHub CLI
+account and text generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
 The Project category, shown while a project is selected, holds the project's name, icon, actions,

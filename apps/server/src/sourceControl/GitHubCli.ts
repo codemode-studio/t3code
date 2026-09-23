@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 
 import {
   TrimmedNonEmptyString,
+  type GitHubCliAccount,
   type SourceControlRepositoryVisibility,
   type VcsError,
 } from "@t3tools/contracts";
@@ -34,6 +35,24 @@ export const PinnedGitHubCredential = Context.Reference<{
   readonly token: Redacted.Redacted<string>;
   readonly credentialFingerprint: string;
 } | null>("t3/sourceControl/PinnedGitHubCredential", { defaultValue: () => null });
+
+/**
+ * The `gh` login a command's checkout is set to use, or null for the CLI's
+ * active login. Read once when the service is built; the server provides it
+ * from settings (see `GitHubCliAccountSelection.ts`).
+ */
+export class GitHubCliAccountSelection extends Context.Reference<{
+  readonly forCwd: (cwd: string) => Effect.Effect<GitHubCliAccount | null>;
+}>("t3/sourceControl/GitHubCliAccountSelection", {
+  defaultValue: () => ({ forCwd: () => Effect.succeed(null) }),
+}) {}
+
+/** gh reads github.com and GHE.com tenancies from GH_TOKEN, every other host from GH_ENTERPRISE_TOKEN. */
+function tokenEnv(host: string, token: string): NodeJS.ProcessEnv {
+  return host === "github.com" || host.endsWith(".ghe.com")
+    ? { GH_TOKEN: token, GITHUB_TOKEN: token }
+    : { GH_ENTERPRISE_TOKEN: token, GITHUB_ENTERPRISE_TOKEN: token };
+}
 
 export const AllowGitHubReserve = Context.Reference<boolean>(
   "t3/sourceControl/AllowGitHubReserve",
@@ -110,6 +129,19 @@ export class GitHubCliRateLimitError extends Schema.TaggedError<GitHubCliRateLim
 ) {
   get detail(): string {
     return "GitHub API rate limit exceeded. Run `gh api rate_limit` to inspect the quota and reset time.";
+  }
+
+  override get message(): string {
+    return `GitHub CLI failed in execute: ${this.detail}`;
+  }
+}
+
+export class GitHubCliAccountUnavailableError extends Schema.TaggedError<GitHubCliAccountUnavailableError>()(
+  "GitHubCliAccountUnavailableError",
+  { ...gitHubCliFailureFields, host: Schema.String, login: Schema.String },
+) {
+  get detail(): string {
+    return `GitHub CLI account ${this.login} on ${this.host} is not signed in. Run \`gh auth login\` for it or choose another account in Source Control settings.`;
   }
 
   override get message(): string {
@@ -204,6 +236,7 @@ export class GitHubRepositoryDecodeError extends Schema.TaggedError<GitHubReposi
 export const GitHubCliError = Schema.Union([
   GitHubCliUnavailableError,
   GitHubCliAuthenticationError,
+  GitHubCliAccountUnavailableError,
   GitHubCliRateLimitError,
   GitHubPullRequestNotFoundError,
   GitHubCliCommandError,
@@ -399,6 +432,34 @@ export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
   const budget = yield* GitHubGraphQlBudget.GitHubGraphQlBudget;
   const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+  const accountSelection = yield* GitHubCliAccountSelection;
+
+  // `gh auth token --user` reads one login's token from the CLI's store without
+  // switching the active login. Blank env tokens so an ambient GH_TOKEN cannot answer for it.
+  const accountTokens = yield* Cache.makeWith(
+    (key: string) => {
+      const [host = "", login = ""] = key.split("\0");
+      return process
+        .run({
+          operation: "GitHubCli.accountToken",
+          command: "gh",
+          args: ["auth", "token", "--hostname", host, "--user", login],
+          cwd: globalThis.process.cwd(),
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          env: { ...tokenEnv(host, ""), GH_DEBUG: "" },
+        })
+        .pipe(
+          Effect.map((result) => result.stdout.trim()),
+          Effect.flatMap((token) =>
+            token ? Effect.succeed(Redacted.make(token)) : Effect.fail(null),
+          ),
+        );
+    },
+    {
+      capacity: 16,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.minutes(1) : Duration.zero),
+    },
+  );
 
   const executeRaw: GitHubCli["Service"]["execute"] = Effect.fn("GitHubCli.executeRaw")(
     function* (input) {
@@ -411,9 +472,33 @@ export const make = Effect.gen(function* () {
         });
       }
       const token = credential === null ? undefined : Redacted.value(credential.token);
+      // A pinned credential already names its account; otherwise use the checkout's selection.
+      // A selected login that cannot be read fails the command rather than running as another.
+      const account = credential === null ? yield* accountSelection.forCwd(input.cwd) : null;
+      const accountToken =
+        account === null
+          ? null
+          : yield* Cache.get(accountTokens, `${account.host.toLowerCase()}\0${account.login}`).pipe(
+              // Only the token is kept. Never attach credential lookup output to an error.
+              Effect.mapError(
+                () =>
+                  new GitHubCliAccountUnavailableError({
+                    command: "gh",
+                    cwd: input.cwd,
+                    host: account.host,
+                    login: account.login,
+                    cause: new Error("`gh auth token --user` did not return a token."),
+                  }),
+              ),
+            );
       const env =
         credential === null
-          ? input.env
+          ? account === null || accountToken === null
+            ? input.env
+            : {
+                ...tokenEnv(account.host.toLowerCase(), Redacted.value(accountToken)),
+                ...input.env,
+              }
           : {
               ...input.env,
               GH_HOST: credential.host,
