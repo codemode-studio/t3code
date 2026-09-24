@@ -115,6 +115,10 @@
       "types": "./src/state/attachments.ts",
       "default": "./src/state/attachments.ts"
     },
+    "./state/notes": {
+      "types": "./src/state/notes.ts",
+      "default": "./src/state/notes.ts"
+    },
     "./text-paste": {
       "types": "./src/textPaste.ts",
       "default": "./src/textPaste.ts"

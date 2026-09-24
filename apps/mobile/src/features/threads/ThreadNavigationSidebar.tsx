@@ -11,6 +11,7 @@ import {
 import { LegendList } from "@legendapp/list/react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
+import { useNavigation } from "@react-navigation/native";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
@@ -106,6 +107,7 @@ interface ThreadNavigationSidebarProps {
  * column gets. Other platforms keep the custom header chrome.
  */
 export function ThreadNavigationSidebar(props: ThreadNavigationSidebarProps) {
+  const navigation = useNavigation();
   if (Platform.OS !== "ios") {
     return <ThreadNavigationSidebarPane {...props} nativeChrome={false} />;
   }
@@ -878,9 +880,10 @@ function ThreadNavigationSidebarPane(
       createSidebarHeaderItems({
         filterIcon,
         filterMenu,
+        onOpenNotes: () => navigation.navigate("Notes"),
         onOpenSettings: props.onOpenSettings,
       }),
-    [filterIcon, filterMenu, props.onOpenSettings],
+    [filterIcon, filterMenu, navigation, props.onOpenSettings],
   );
   // Snoozed threads need no special case: the shelf header is a list row
   // even while collapsed.
@@ -1054,6 +1057,7 @@ function ThreadNavigationSidebarPane(
           filterCustomized={filterCustomized}
           onFilterAction={handleListMenuAction}
           onOpenSettings={props.onOpenSettings}
+          onOpenNotes={() => navigation.navigate("Notes")}
           onOpenEnvironments={props.onOpenEnvironmentSettings}
           onRequestVisibility={props.onRequestVisibility}
         />
@@ -1083,7 +1087,10 @@ function ThreadNavigationSidebarPane(
               <ControlPillMenu actions={listMenuActions} onPressAction={handleListMenuAction}>
                 <SidebarFilterButton accessibilityLabel="Filter threads" icon={filterIcon} />
               </ControlPillMenu>
-              <SidebarHeaderActions onOpenSettings={props.onOpenSettings} />
+              <SidebarHeaderActions
+                onOpenSettings={props.onOpenSettings}
+                onOpenNotes={() => navigation.navigate("Notes")}
+              />
             </View>
           </View>
 

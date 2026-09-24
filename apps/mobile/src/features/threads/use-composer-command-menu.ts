@@ -4,7 +4,7 @@ import type {
   ProviderInteractionMode,
   ServerProvider,
 } from "@t3tools/contracts";
-import { COMPOSER_CONTEXT_MAX_RECORDS } from "@t3tools/contracts";
+import { COMPOSER_CONTEXT_MAX_RECORDS, ComposerContextId } from "@t3tools/contracts";
 import { Alert } from "react-native";
 import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import { pullRequestComposerContext } from "../../lib/composerContext";
@@ -40,6 +40,7 @@ import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useComposerPathSearch, useComposerPullRequestSearch } from "../../state/queries";
+import { useNotes } from "../../state/notes";
 import type { ComposerCommandItem } from "./ComposerCommandPopover";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 
@@ -307,9 +308,28 @@ export function useComposerCommandMenu({
     repository: pullRequestRepository,
     query: trigger?.kind === "pull-request" ? trigger.query : null,
   });
+  const { notes, isPending: notesPending } = useNotes();
 
   const items = useMemo<ComposerCommandItem[]>(() => {
     if (!trigger) return [];
+
+    if (trigger.kind === "note") {
+      const query = trigger.query.trim().toLowerCase();
+      return notes
+        .filter(
+          (note) =>
+            note.environmentId === environmentId &&
+            (!query || `${note.title} ${note.tags.join(" ")}`.toLowerCase().includes(query)),
+        )
+        .slice(0, 20)
+        .map((note) => ({
+          id: `note:${note.id}`,
+          type: "note" as const,
+          note,
+          label: note.title,
+          description: note.tags.join(", ") || "Saved note",
+        }));
+    }
 
     if (trigger.kind === "pull-request") {
       return pullRequestSearch.entries.map((entry) => ({
@@ -471,12 +491,41 @@ export function useComposerCommandMenu({
     selectedProviderStatus,
     skills,
     trigger,
+    notes,
+    environmentId,
     offersUsageLimits,
   ]);
 
   const onSelect = useCallback(
     (item: ComposerCommandItem) => {
       if (!trigger) return;
+      if (item.type === "note") {
+        if (!ownerKey || trigger.kind !== "note") return;
+        const contextId = ComposerContextId.make(`note_${item.note.id}`);
+        const record = {
+          version: 1 as const,
+          kind: "note" as const,
+          contextId,
+          noteId: item.note.id,
+          label: item.note.title,
+          title: item.note.title,
+          content: "",
+        };
+        const result = replaceTextRange(
+          draftMessage,
+          trigger.rangeStart,
+          trigger.rangeEnd,
+          `${formatComposerContextReference(record)} `,
+        );
+        onChangeDraftMessage(result.text);
+        const draft = getComposerDraftSnapshot(ownerKey);
+        setComposerDraftContext(ownerKey, {
+          version: 1,
+          records: [...(draft.context?.records ?? []), record],
+        });
+        setSelection({ start: result.cursor, end: result.cursor });
+        return;
+      }
       if (item.type === "pull-request") {
         if (
           !ownerKey ||
@@ -556,7 +605,11 @@ export function useComposerCommandMenu({
     items,
     skills,
     isLoading:
-      trigger?.kind === "pull-request" ? pullRequestSearch.isPending : pathSearch.isPending,
+      trigger?.kind === "pull-request"
+        ? pullRequestSearch.isPending
+        : trigger?.kind === "note"
+          ? notesPending
+          : pathSearch.isPending,
     error:
       trigger?.kind === "pull-request"
         ? pullRequestProjectId === null || pullRequestRepository === null

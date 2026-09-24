@@ -45,6 +45,9 @@ import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3too
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
+import { notesEnvironment } from "../../state/notes";
+import { useThreadShells } from "../../state/entities";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
@@ -71,6 +74,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Platform,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -79,6 +83,7 @@ import {
   ScrollView,
   StyleSheet,
   Text as NativeText,
+  TextInput,
   type ColorValue,
   useWindowDimensions,
   View,
@@ -1361,6 +1366,7 @@ function renderFeedEntry(
     | "onEditPendingMessage"
   > & {
     readonly copiedRowId: string | null;
+    readonly onSaveAsNote: (messageId: MessageId, text: string) => void;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly expandedReasoningMessageIds: ReadonlySet<string>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
@@ -1655,6 +1661,17 @@ function renderFeedEntry(
                 <SymbolView name="pencil" size={14} tintColor={iconSubtleColor} />
               </Pressable>
             ) : null}
+            {!entry.pendingMessage && !message.streaming && message.text.trim().length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Save as note"
+                hitSlop={8}
+                className="size-7 items-center justify-center"
+                onPress={() => props.onSaveAsNote(message.id, message.text)}
+              >
+                <SymbolView name="doc.text" size={14} tintColor={iconSubtleColor} />
+              </Pressable>
+            ) : null}
             {message.text.trim().length > 0 ? (
               <CopyTextButton
                 accessibilityLabel="Copy message"
@@ -1732,6 +1749,15 @@ function renderFeedEntry(
         })}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save as note"
+              hitSlop={8}
+              className="size-7 items-center justify-center"
+              onPress={() => props.onSaveAsNote(message.id, renderedText)}
+            >
+              <SymbolView name="doc.text" size={14} tintColor={iconSubtleColor} />
+            </Pressable>
             <CopyTextButton
               accessibilityLabel="Copy message"
               text={renderedText}
@@ -1949,6 +1975,50 @@ function ThreadFeedPlaceholder(props: {
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
+  const createNote = useAtomCommand(notesEnvironment.create);
+  const threadShells = useThreadShells();
+  const projectId =
+    threadShells.find(
+      (thread) => thread.environmentId === props.environmentId && thread.id === props.threadId,
+    )?.projectId ?? null;
+  const [noteSelection, setNoteSelection] = useState<{
+    messageId: MessageId;
+    text: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  const saveNoteText = useCallback(
+    (messageId: MessageId, body: string) => {
+      const title = body.trim().split("\n")[0]?.slice(0, 120).trim() || "Transcript note";
+      void createNote({
+        environmentId: props.environmentId,
+        input: {
+          title,
+          body,
+          tags: [],
+          projectId,
+          sourceThreadId: props.threadId,
+          sourceMessageId: messageId,
+        },
+      }).then((result) => {
+        if (result._tag === "Success") Alert.alert("Saved as note", title);
+      });
+    },
+    [createNote, projectId, props.environmentId, props.threadId],
+  );
+  const onSaveAsNote = useCallback(
+    (messageId: MessageId, text: string) => {
+      Alert.alert("Save as note", "Choose what to keep from this message.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Whole message", onPress: () => saveNoteText(messageId, text) },
+        {
+          text: "Select text",
+          onPress: () => setNoteSelection({ messageId, text, start: 0, end: 0 }),
+        },
+      ]);
+    },
+    [saveNoteText],
+  );
   const { themeAppearance } = useAppearancePreferences();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disclosureSettleFrameRef = useRef<number | null>(null);
@@ -2754,6 +2824,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
+            onSaveAsNote,
             copiedRowId,
             expandedWorkRows,
             expandedReasoningMessageIds,
@@ -3010,6 +3081,56 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         ) : null}
         <VideoPreviewModal source={expandedVideo} onRequestClose={() => setExpandedVideo(null)} />
         <FilePreviewModal source={expandedFile} onRequestClose={() => setExpandedFile(null)} />
+        <Modal
+          transparent
+          animationType="slide"
+          visible={noteSelection !== null}
+          onRequestClose={() => setNoteSelection(null)}
+        >
+          <View className="flex-1 justify-end bg-black/40">
+            <View className="gap-3 rounded-t-2xl bg-background p-4 pb-10">
+              <Text className="text-lg font-t3-bold text-foreground">Select text to save</Text>
+              <TextInput
+                multiline
+                accessibilityLabel="Select transcript text"
+                value={noteSelection?.text ?? ""}
+                onSelectionChange={(event) =>
+                  setNoteSelection((current) =>
+                    current
+                      ? {
+                          ...current,
+                          start: event.nativeEvent.selection.start,
+                          end: event.nativeEvent.selection.end,
+                        }
+                      : null,
+                  )
+                }
+                className="max-h-64 rounded-xl bg-subtle p-3 text-foreground"
+              />
+              <View className="flex-row justify-end gap-4">
+                <Pressable accessibilityRole="button" onPress={() => setNoteSelection(null)}>
+                  <Text className="text-foreground">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    disabled: !noteSelection || noteSelection.start === noteSelection.end,
+                  }}
+                  onPress={() => {
+                    if (!noteSelection || noteSelection.start === noteSelection.end) return;
+                    saveNoteText(
+                      noteSelection.messageId,
+                      noteSelection.text.slice(noteSelection.start, noteSelection.end),
+                    );
+                    setNoteSelection(null);
+                  }}
+                >
+                  <Text className="text-foreground">Save selection</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </PresentationSource>
   );

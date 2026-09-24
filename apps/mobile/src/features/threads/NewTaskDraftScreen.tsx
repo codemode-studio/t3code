@@ -30,15 +30,21 @@ import { useFontFamily } from "../../lib/useFontFamily";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ComposerContextId,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
+import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 
 import {
   ComposerEditor,
   type ComposerEditorHandle,
   type ComposerTextPaste,
 } from "../../components/ComposerEditor";
-import { composerContextImportsAtom } from "../../state/use-composer-drafts";
+import {
+  composerContextImportsAtom,
+  insertComposerDraftContext,
+} from "../../state/use-composer-drafts";
+import { clearPendingNoteForChat, pendingNoteForChat } from "../notes/pendingNoteForChat";
 import {
   composerContextSendBlockReason,
   type ComposerDocumentAttachment,
@@ -182,6 +188,30 @@ export function NewTaskDraftScreen(props: {
 }) {
   const projects = useProjects();
   const flow = useNewTaskFlow();
+  useEffect(() => {
+    if (!flow.draftKey || !flow.selectedProject) return;
+    const note = pendingNoteForChat(flow.selectedProject.environmentId);
+    if (!note) return;
+    const contextId = ComposerContextId.make(`note_${note.id}`);
+    const inserted = insertComposerDraftContext(flow.draftKey, {
+      text: `${formatComposerContextReference({ kind: "note", contextId, label: note.title })} `,
+      context: {
+        version: 1,
+        records: [
+          {
+            version: 1,
+            kind: "note",
+            contextId,
+            noteId: note.id,
+            label: note.title,
+            title: note.title,
+            content: "",
+          },
+        ],
+      },
+    });
+    if (inserted) clearPendingNoteForChat(flow.selectedProject.environmentId, note.id);
+  }, [flow.draftKey, flow.selectedProject]);
   const navigation = useNavigation();
   const {
     consumeShare,
@@ -1550,7 +1580,9 @@ export function NewTaskDraftScreen(props: {
     >
       {!voiceInput.isBusy &&
       composerMenu.trigger &&
-      (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
+      (composerMenu.items.length > 0 ||
+        composerMenu.trigger.kind === "pull-request" ||
+        composerMenu.trigger.kind === "note") ? (
         <View className="mb-2">
           <ComposerCommandPopover
             items={composerMenu.items}

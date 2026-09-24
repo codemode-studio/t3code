@@ -235,6 +235,7 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import {
   SidebarAutomationsLink,
+  SidebarNotesLink,
   SidebarChromeFooter,
   SidebarChromeHeader,
 } from "./sidebar/SidebarChrome";
@@ -4386,6 +4387,7 @@ export default function Sidebar() {
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
             <SidebarAutomationsLink />
+            <SidebarNotesLink />
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}

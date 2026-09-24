@@ -185,6 +185,7 @@ export function HomeRouteScreen() {
               params: { screen: "Settings" },
             })
           }
+          onOpenNotes={() => navigation.navigate("Notes")}
           onSearchQueryChange={setSearchQuery}
           onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
         />

@@ -6,6 +6,7 @@ import {
   PositiveInt,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { NoteId } from "./notes.ts";
 
 /**
  * Inline context records: the typed payload behind every composer chip.
@@ -25,6 +26,7 @@ export const COMPOSER_CONTEXT_KINDS = [
   "review-comment",
   "mention",
   "skill",
+  "note",
 ] as const;
 export type KnownComposerContextKind = (typeof COMPOSER_CONTEXT_KINDS)[number];
 
@@ -215,6 +217,16 @@ export const SkillContextRecord = Schema.Struct({
 });
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
+export const NoteContextRecord = Schema.Struct({
+  ...recordBase,
+  kind: Schema.Literal("note"),
+  noteId: NoteId,
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  /** The server overwrites this with the current body before persisting the send. */
+  content: BoundedString(128_000),
+});
+export type NoteContextRecord = typeof NoteContextRecord.Type;
+
 /**
  * Catch-all for kinds this build does not know. Known discriminators are excluded so a
  * malformed known record fails its own schema instead of sliding through unchecked.
@@ -245,6 +257,7 @@ export const KnownComposerContextRecord = Schema.Union([
   ReviewCommentContextRecord,
   MentionContextRecord,
   SkillContextRecord,
+  NoteContextRecord,
 ]);
 export type KnownComposerContextRecord = typeof KnownComposerContextRecord.Type;
 

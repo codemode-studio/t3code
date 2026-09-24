@@ -1,4 +1,10 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon, ZapIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
+  FileTextIcon,
+  SettingsIcon,
+  ZapIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -146,6 +152,28 @@ export const SidebarAutomationsLink = memo(function SidebarAutomationsLink() {
         >
           <ZapIcon />
           <span>Automations</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+});
+
+export const SidebarNotesLink = memo(function SidebarNotesLink() {
+  const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
+  const active = useLocation({ select: (location) => location.pathname === "/notes" });
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={active}
+          onClick={() => {
+            if (isMobile) setOpenMobile(false);
+            void navigate({ to: "/notes" });
+          }}
+        >
+          <FileTextIcon />
+          <span>Notes</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

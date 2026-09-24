@@ -32,6 +32,7 @@ const contextChipVariants = cva(
         image: "[--context-chip-accent:oklch(0.62_0.16_16)]",
         video: "[--context-chip-accent:oklch(0.62_0.16_48)]",
         file: "[--context-chip-accent:oklch(0.62_0.136_237)]",
+        note: "[--context-chip-accent:oklch(0.62_0.136_237)]",
         mention: "[--context-chip-accent:oklch(0.62_0.11_215)]",
         terminal: "[--context-chip-accent:oklch(0.62_0.134_163)]",
         element: "[--context-chip-accent:oklch(0.62_0.134_70)]",
@@ -68,6 +69,7 @@ const contextChipVariants = cva(
           "pr-merged",
           "pr-closed",
           "skill",
+          "note",
           "citation",
         ],
         className:

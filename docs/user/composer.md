@@ -1,7 +1,7 @@
 # Messages and context
 
 Give the agent a task in the composer. Add files, quote a previous response, or
-include a skill when the task needs more context.
+include a skill or a saved note when the task needs more context.
 
 Messages can contain up to 120,000 characters. Longer drafts stay in the composer
 so you can shorten them or split them into several messages.
@@ -89,6 +89,22 @@ The quoted text and comment count toward the message limit.
 
 Mobile displays saved quotes and comments, but does not create citations or
 navigate to their sources.
+
+## Save and reuse notes
+
+Open **Notes** to write Markdown notes, preview them, search their contents, and
+organize them with tags and a project. A note belongs to the environment that
+stores its project. Its environment is shown when you have more than one server
+connected. You can include images in notes; they are stored on that server too.
+
+Choose **Save as note** on a completed message to keep its text and a link to
+the source thread. On web and desktop, selecting text in an assistant response
+offers both **Cite** and **Save as note**. On mobile, **Save as note** lets you
+keep the whole message or select a passage.
+
+Use **Add to chat** from a note, or type `@note` in a composer and choose one
+from the picker. The note's current content is copied into the sent message,
+so editing or deleting the note later does not change what the agent received.
 
 ## Recall a sent prompt
 

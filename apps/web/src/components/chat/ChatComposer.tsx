@@ -185,6 +185,8 @@ import {
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { useNotes } from "../../state/notes";
+import { clearPendingNoteForChat, pendingNoteForChat } from "../../lib/noteChatBus";
 import {
   getRestingComposerImagePreviewCounts,
   resolveRestingComposerControlsLayout,
@@ -1689,6 +1691,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }),
     [composerFiles, composerImages, environmentId, onExpandImage, openPrLink, routeThreadRef],
   );
+  const { notes } = useNotes();
   const composerContextRecords = useMemo(
     () =>
       composerContextRecordsFromDraft({
@@ -1698,6 +1701,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         images: composerImages,
         files: composerFiles,
         uploadsByImageId,
+        notes: notes.filter((note) => note.environmentId === environmentId),
       }),
     [
       composerFiles,
@@ -1706,6 +1710,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerReviewComments,
       composerTerminalContexts,
       uploadsByImageId,
+      notes,
+      environmentId,
     ],
   );
   const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
@@ -2338,6 +2344,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
+    if (composerTrigger.kind === "note") {
+      const query = composerTrigger.query.trim().toLowerCase();
+      return notes
+        .filter(
+          (note) =>
+            note.environmentId === environmentId &&
+            (!query || `${note.title} ${note.tags.join(" ")}`.toLowerCase().includes(query)),
+        )
+        .slice(0, 20)
+        .map((note) => ({
+          id: `note:${note.id}`,
+          type: "note" as const,
+          note,
+          label: note.title,
+          description: note.tags.join(", ") || "Saved note",
+        }));
+    }
     if (composerTrigger.kind === "path") {
       return workspaceEntries.entries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
@@ -2492,6 +2515,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderStatus,
     settings.showSkillsInSlashMenu,
     workspaceEntries.entries,
+    notes,
+    environmentId,
   ]);
 
   const composerMenuOpen = Boolean(composerTrigger);
@@ -3581,6 +3606,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
+      if (item.type === "note") {
+        const reference = formatInlineContextReference({
+          kind: "note",
+          contextId: toKindScopedComposerContextId("note", item.note.id),
+          label: item.note.title,
+        });
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          trigger.rangeEnd,
+          `${reference} `,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd) },
+        );
+        if (applied) setComposerHighlightedItemId(null);
+        return;
+      }
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -5700,6 +5740,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       importContextFragment,
     ],
   );
+  useEffect(() => {
+    const note = pendingNoteForChat(environmentId);
+    if (!note) return;
+    const inserted = insertComposerText(
+      `${formatInlineContextReference({
+        kind: "note",
+        contextId: toKindScopedComposerContextId("note", note.id),
+        label: note.title,
+      })} `,
+      "cursor",
+      { ensureLeadingBoundary: true },
+    );
+    if (inserted) clearPendingNoteForChat(environmentId, note.id);
+  }, [environmentId, insertComposerText]);
 
   const insertComposerTextAtEnd = useCallback<ChatComposerHandle["insertTextAtEnd"]>(
     (text, options) => {

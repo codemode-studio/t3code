@@ -9,7 +9,7 @@ import {
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
 
-export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
+export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill" | "note";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
@@ -255,6 +255,11 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   }
   if (!token.startsWith("@")) {
     return null;
+  }
+
+  const noteMatch = /^@note(?::([\p{L}\p{N}_-]*))?$/iu.exec(token);
+  if (noteMatch) {
+    return { kind: "note", query: noteMatch[1] ?? "", rangeStart: tokenStart, rangeEnd: cursor };
   }
 
   return {
