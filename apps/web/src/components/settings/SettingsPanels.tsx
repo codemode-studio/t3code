@@ -597,6 +597,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
         : []),
+      ...(settings.telemetryEnabled !== DEFAULT_UNIFIED_SETTINGS.telemetryEnabled
+        ? ["Usage analytics"]
+        : []),
       ...(settings.continueThreadsAfterServerUpdate !==
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
@@ -671,6 +674,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.panelAnimationDurationMs,
       settings.responseStreamingMode,
       settings.enableProviderUpdateChecks,
+      settings.telemetryEnabled,
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
@@ -775,6 +779,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+      telemetryEnabled: DEFAULT_UNIFIED_SETTINGS.telemetryEnabled,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
@@ -2727,6 +2732,31 @@ export function GeneralSettingsPanel() {
                 <SelectItem value="steer">Steer</SelectItem>
               </SelectPopup>
             </Select>
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["telemetryEnabled"]}
+          {...searchableSetting("usage-analytics")}
+          description="Send anonymous product usage events to T3 Code. This does not affect local diagnostic logs."
+          resetAction={
+            settings.telemetryEnabled !== DEFAULT_UNIFIED_SETTINGS.telemetryEnabled ? (
+              <SettingResetButton
+                label="usage analytics"
+                onClick={() =>
+                  updateSettings({ telemetryEnabled: DEFAULT_UNIFIED_SETTINGS.telemetryEnabled })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["telemetryEnabled"]}
+              checked={settings.telemetryEnabled}
+              onCheckedChange={(checked) => updateSettings({ telemetryEnabled: Boolean(checked) })}
+              aria-label="Send usage analytics"
+            />
           }
         />
 

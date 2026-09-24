@@ -454,6 +454,20 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       />
                     </View>
                   </SettingsSection>
+                  <SettingsSection title="Privacy">
+                    <FanoutSwitchRow
+                      icon="chart.bar.xaxis"
+                      label="Usage analytics"
+                      subtitle={
+                        projectSelected
+                          ? "Environment-wide setting. Select All projects to change it."
+                          : "Send anonymous product usage events to T3 Code. Local diagnostic logs are unaffected."
+                      }
+                      value={uniform("telemetryEnabled")}
+                      disabled={disabledFor("telemetryEnabled")}
+                      onValueChange={(value) => write({ telemetryEnabled: value })}
+                    />
+                  </SettingsSection>
                 </>
               ) : null}
             </>
