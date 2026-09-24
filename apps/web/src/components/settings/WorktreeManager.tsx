@@ -3,7 +3,7 @@ import type { VcsListedWorktree } from "@t3tools/contracts";
 import { FolderGit2Icon, GitBranchIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
-import { useThreadShells } from "../../state/entities";
+import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
@@ -38,6 +38,11 @@ import {
 } from "../ui/select";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsSection } from "./settingsLayout";
+import {
+  worktreeThreads,
+  worktreeDeletionBlockReason,
+  type WorktreeDeletionTarget,
+} from "./worktreeManager.logic";
 
 function commandError(result: Parameters<typeof squashAtomCommandFailure>[0]): string {
   const error = squashAtomCommandFailure(result);
@@ -173,10 +178,11 @@ export function WorktreeManager() {
   const { scope, groups, selectScope, connectedEnvironments } = useSettingsScope();
   const [selectedMemberKey, setSelectedMemberKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState<VcsListedWorktree | null>(null);
+  const [deleting, setDeleting] = useState<WorktreeDeletionTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const threads = useThreadShells();
+  const projects = useProjects();
   const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
   const connectedMembers = members.filter((member) =>
     connectedEnvironments.some((environment) => environment.environmentId === member.environmentId),
@@ -197,22 +203,23 @@ export function WorktreeManager() {
   );
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const worktrees = query.data?.worktrees.filter((tree) => !tree.isMain) ?? [];
-  const threadsByWorktree = new Map<string, Array<(typeof threads)[number]>>();
-  for (const thread of threads) {
-    if (thread.environmentId !== member?.environmentId || !thread.worktreePath) continue;
-    const worktreeThreads = threadsByWorktree.get(thread.worktreePath);
-    if (worktreeThreads) worktreeThreads.push(thread);
-    else threadsByWorktree.set(thread.worktreePath, [thread]);
-  }
-  const associatedThreads = (tree: VcsListedWorktree) => threadsByWorktree.get(tree.path) ?? [];
-  const deletingThreads = deleting ? associatedThreads(deleting) : [];
+  const threadsByWorktree = member
+    ? worktreeThreads(threads, projects, member.environmentId)
+    : null;
+  const associatedThreads = (tree: VcsListedWorktree) => threadsByWorktree?.get(tree.path) ?? [];
+  const deletingThreads = deleting
+    ? (worktreeThreads(threads, projects, deleting.environmentId).get(deleting.worktree.path) ?? [])
+    : [];
+  const deletionBlocked = deleting
+    ? worktreeDeletionBlockReason(deleting, member, deletingThreads)
+    : null;
   const deleteWorktree = async () => {
-    if (!deleting || !member || busy) return;
+    if (!deleting || deletionBlocked || busy) return;
     setBusy(true);
     setError(null);
     const result = await removeWorktree({
-      environmentId: member.environmentId,
-      input: { cwd: member.workspaceRoot, path: deleting.path, force: true },
+      environmentId: deleting.environmentId,
+      input: { cwd: deleting.cwd, path: deleting.worktree.path, force: true },
     });
     setBusy(false);
     if (result._tag === "Success") {
@@ -346,19 +353,12 @@ export function WorktreeManager() {
           <div className="divide-y rounded-lg border">
             {worktrees.map((tree) => {
               const usedBy = associatedThreads(tree);
-              const running = usedBy.some(
-                (thread) =>
-                  thread.session?.status === "running" || thread.backgroundLiveness != null,
-              );
-              const blocked = tree.locked
-                ? "Locked in Git"
-                : tree.path === member?.workspaceRoot
-                  ? "Selected project checkout"
-                  : !tree.branch
-                    ? "Detached worktree"
-                    : running
-                      ? "A thread is running here"
-                      : null;
+              const target = {
+                environmentId: member.environmentId,
+                cwd: member.workspaceRoot,
+                worktree: tree,
+              };
+              const blocked = worktreeDeletionBlockReason(target, member, usedBy);
               return (
                 <div key={tree.path} className="flex items-start gap-3 p-4">
                   <FolderGit2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -385,7 +385,7 @@ export function WorktreeManager() {
                     disabled={!!blocked}
                     onClick={() => {
                       setError(null);
-                      setDeleting(tree);
+                      setDeleting(target);
                     }}
                   >
                     <Trash2Icon />
@@ -416,23 +416,27 @@ export function WorktreeManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleting?.prunable
-                ? `This removes the stale Git worktree record for ${deleting.path}.`
-                : `This permanently removes the working copy at ${deleting?.path}. Uncommitted and untracked changes are discarded.`}{" "}
+              {deleting?.worktree.prunable
+                ? `This removes the stale Git worktree record for ${deleting.worktree.path}.`
+                : `This permanently removes the working copy at ${deleting?.worktree.path}. Uncommitted and untracked changes are discarded.`}{" "}
               Its branch, commits, and {deletingThreads.length} associated{" "}
               {deletingThreads.length === 1 ? "thread" : "threads"} are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {error && (
+          {(error || deletionBlocked) && (
             <p role="alert" className="px-6 text-sm text-destructive">
-              {error}
+              {deletionBlocked ?? error}
             </p>
           )}
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />} disabled={busy}>
               Cancel
             </AlertDialogClose>
-            <Button variant="destructive" disabled={busy} onClick={() => void deleteWorktree()}>
+            <Button
+              variant="destructive"
+              disabled={busy || !!deletionBlocked}
+              onClick={() => void deleteWorktree()}
+            >
               {busy ? "Deleting…" : "Delete worktree"}
             </Button>
           </AlertDialogFooter>

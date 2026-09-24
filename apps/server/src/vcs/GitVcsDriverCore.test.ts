@@ -2249,6 +2249,31 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("keeps every linked checkout of a bare repository", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const path = yield* Path.Path;
+        const root = yield* makeTmpDir("bare-worktrees-");
+        const bare = path.join(root, "repo.git");
+        const first = path.join(root, "a");
+        const second = path.join(root, "b");
+        yield* git(cwd, ["clone", "--bare", cwd, bare]);
+        yield* git(bare, ["worktree", "add", first, initialBranch]);
+        yield* git(bare, ["worktree", "add", "-b", "feature/bare", second]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const listed = yield* driver.listWorktrees({ cwd: second });
+        assert.deepEqual(
+          listed.worktrees.map((tree) => [tree.path, tree.isMain]),
+          [
+            [first, false],
+            [second, false],
+          ],
+        );
+      }),
+    );
+
     it.effect("uses parallel checkout without skipping filters or hooks", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

@@ -287,10 +287,13 @@ function parseListedWorktrees(stdout: string): VcsListedWorktree[] {
   let head = "";
   let locked = false;
   let prunable = false;
+  let isMain = true;
   const flush = () => {
     if (path && head) {
-      worktrees.push({ path, branch, head, isMain: worktrees.length === 0, locked, prunable });
+      worktrees.push({ path, branch, head, isMain, locked, prunable });
     }
+    // The main record may be bare (and have no HEAD), but still occupies the first slot.
+    if (path) isMain = false;
     path = "";
     branch = null;
     head = "";
