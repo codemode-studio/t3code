@@ -494,11 +494,17 @@ describe("ClientSettings window translucency", () => {
     expect(settings.windowTranslucency).toBe(false);
     expect(settings.windowTranslucencyOpacity).toBe(85);
     expect(settings.windowTranslucencyMainPane).toBe(false);
+    expect(settings.windowTranslucencyBlur).toBe(24);
   });
 
   it.each([14, 101, 50.5])("rejects an invalid translucency opacity: %s", (value) => {
     expect(() => decodeClientSettings({ windowTranslucencyOpacity: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ windowTranslucencyOpacity: value })).toThrow();
+  });
+
+  it.each([-1, 65, 12.5])("rejects an invalid translucency blur radius: %s", (value) => {
+    expect(() => decodeClientSettings({ windowTranslucencyBlur: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ windowTranslucencyBlur: value })).toThrow();
   });
 });
 

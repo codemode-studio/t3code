@@ -199,9 +199,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     // Prefixed because the slider control already owns the `glass-opacity` id.
     id: "setting-glass-opacity",
-    title: "Glass opacity",
+    title: "Menu & dialog opacity",
     to: "/settings/appearance",
-    searchTerms: ["transparent transparency solid menus dialogs composer"],
+    searchTerms: ["glass transparent transparency solid menus popovers dialogs composer"],
   },
   {
     id: "window-translucency",
@@ -217,6 +217,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
     searchTerms: ["window translucency transparent glass blur"],
     desktopOnly: true,
+  },
+  {
+    // Prefixed because the slider control already owns the `window-translucency-blur` id.
+    id: "setting-window-translucency-blur",
+    title: "Blur radius",
+    to: "/settings/appearance",
+    searchTerms: ["window translucency transparent glass"],
+    desktopOnly: true,
+    macOnly: true,
   },
   {
     id: "window-translucency-main-pane",
