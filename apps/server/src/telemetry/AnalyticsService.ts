@@ -95,6 +95,17 @@ export const make = Effect.gen(function* () {
   );
   const identifier = yield* getTelemetryIdentifier;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
+  // A failed send must not restore a batch extracted before an opt-out.
+  const optOutGenerationRef = yield* Ref.make(0);
+  if (serverSettings.observeChanges) {
+    yield* serverSettings.observeChanges((settings) =>
+      settings.telemetryEnabled
+        ? Effect.void
+        : Ref.update(optOutGenerationRef, (generation) => generation + 1).pipe(
+            Effect.flatMap(() => Ref.set(bufferRef, [])),
+          ),
+    );
+  }
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
   const hostArchitecture = yield* HostProcessArchitecture;
@@ -181,11 +192,18 @@ export const make = Effect.gen(function* () {
         return;
       }
 
+      const optOutGeneration = yield* Ref.get(optOutGenerationRef);
       yield* sendBatch(batch).pipe(
         Effect.catch((error) =>
-          Ref.update(bufferRef, (current) => [...batch, ...current]).pipe(
-            Effect.flatMap(() => Effect.fail(error)),
-          ),
+          Effect.gen(function* () {
+            if (
+              (yield* usageAnalyticsEnabled) &&
+              (yield* Ref.get(optOutGenerationRef)) === optOutGeneration
+            ) {
+              yield* Ref.update(bufferRef, (current) => [...batch, ...current]);
+            }
+            return yield* Effect.fail(error);
+          }),
         ),
       );
     }
