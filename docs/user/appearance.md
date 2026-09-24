@@ -34,7 +34,8 @@ In the desktop app, turn on **Window translucency** in **Settings → Appearance
 show through the sidebar. **Sidebar opacity** controls how much shows through, and **Main pane
 glass** extends the effect behind threads and settings. On macOS, **Blur radius** sets how much the
 desktop is blurred. On macOS and Linux, turning translucency on or off takes effect after you
-restart T3 Code, and on Linux your compositor controls the blur. Windows 11 applies it immediately.
+restart T3 Code, and on Linux your compositor controls the blur. Windows 11 22H2 or later applies it
+immediately.
 
 ## Custom themes
 

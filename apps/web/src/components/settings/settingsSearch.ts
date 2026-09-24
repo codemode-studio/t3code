@@ -213,6 +213,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     // Prefixed because the slider control already owns the `window-translucency-opacity` id.
     id: "setting-window-translucency-opacity",
+    // Rendered only while translucency is on; the section is always there.
+    targetId: "appearance-translucency",
     title: "Sidebar opacity",
     to: "/settings/appearance",
     searchTerms: ["window translucency transparent glass blur"],
@@ -221,6 +223,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     // Prefixed because the slider control already owns the `window-translucency-blur` id.
     id: "setting-window-translucency-blur",
+    // Rendered only while translucency is on; the section is always there.
+    targetId: "appearance-translucency",
     title: "Blur radius",
     to: "/settings/appearance",
     searchTerms: ["window translucency transparent glass"],
@@ -229,6 +233,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "window-translucency-main-pane",
+    // Rendered only while translucency is on; the section is always there.
+    targetId: "appearance-translucency",
     title: "Main pane glass",
     to: "/settings/appearance",
     searchTerms: ["window translucency transparent glass blur chat"],

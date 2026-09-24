@@ -18,7 +18,7 @@ function translucencyDescription(platform: string): string {
     return "Show a blurred view of the desktop behind T3 Code. Turning this on or off applies after restarting T3 Code.";
   }
   if (isWindowsPlatform(platform)) {
-    return "Show a blurred view of the desktop behind T3 Code. Requires Windows 11.";
+    return "Show a blurred view of the desktop behind T3 Code. Requires Windows 11 22H2 or later.";
   }
   return "Let the desktop show through T3 Code. Your compositor controls the blur. Turning this on or off applies after restarting T3 Code.";
 }
