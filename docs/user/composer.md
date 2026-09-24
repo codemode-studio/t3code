@@ -153,6 +153,10 @@ provider. On mobile, both are also available before starting a thread on
 The slash menu also includes skills unless you turn off **Settings → General →
 Show skills in slash menu**. Only skills enabled for the provider are listed.
 
+Use **Settings → Skills** to inspect file skills on the selected environments.
+Select a project at the top of Settings to include its project skills, or refresh
+the list after changing skill files. Personal skills appear across projects.
+
 Provider commands must start the message to run. T3 Code commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 

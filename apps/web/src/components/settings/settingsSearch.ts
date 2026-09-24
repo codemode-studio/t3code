@@ -18,6 +18,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  | "/settings/skills"
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/storage"
@@ -87,6 +88,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
+  "/settings/skills": "Skills",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
@@ -582,6 +584,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "skills",
+    title: "Skills",
+    to: "/settings/skills",
+    searchTerms: [
+      "file skills project personal agents codex claude cursor grok opencode antigravity",
+    ],
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",
@@ -875,6 +885,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/skills": null,
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
   "/settings/storage": "project-defaults",

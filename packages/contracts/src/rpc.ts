@@ -493,6 +493,8 @@ const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, 
      */
     instanceId: Schema.optional(ProviderInstanceId),
     cwd: Schema.optional(TrimmedNonEmptyString),
+    /** Rescan a workspace's skills even when a scoped snapshot already exists. */
+    refreshWorkspace: Schema.optional(Schema.Boolean),
     /** Explicit user request: bypass T3-owned caches and rediscover models.
      * Background status refreshes must not open agent sessions. */
     refreshModels: Schema.optional(Schema.Boolean),
