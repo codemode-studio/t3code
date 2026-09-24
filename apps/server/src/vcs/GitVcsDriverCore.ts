@@ -26,6 +26,7 @@ import {
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsRef,
+  type VcsListedWorktree,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -273,33 +274,40 @@ function paginateBranches(input: {
 
 function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
   const worktreePaths = new Map<string, string>();
-  let currentPath: string | null = null;
-  let currentBranch: string | null = null;
-  let currentPrunable = false;
+  for (const tree of parseListedWorktrees(stdout)) {
+    if (tree.branch && !tree.prunable) worktreePaths.set(tree.branch, tree.path);
+  }
+  return worktreePaths;
+}
 
+export function parseListedWorktrees(stdout: string): VcsListedWorktree[] {
+  const worktrees: VcsListedWorktree[] = [];
+  let path = "";
+  let branch: string | null = null;
+  let head = "";
+  let locked = false;
+  let prunable = false;
   const flush = () => {
-    if (currentPath !== null && currentBranch !== null && !currentPrunable) {
-      worktreePaths.set(currentBranch, currentPath);
+    if (path && head) {
+      worktrees.push({ path, branch, head, isMain: worktrees.length === 0, locked, prunable });
     }
-    currentPath = null;
-    currentBranch = null;
-    currentPrunable = false;
+    path = "";
+    branch = null;
+    head = "";
+    locked = false;
+    prunable = false;
   };
-
   for (const field of stdout.split("\0")) {
-    if (field === "") {
-      flush();
-    } else if (field.startsWith("worktree ")) {
-      currentPath = field.slice("worktree ".length);
-    } else if (field.startsWith("branch refs/heads/")) {
-      currentBranch = field.slice("branch refs/heads/".length);
-    } else if (field === "prunable" || field.startsWith("prunable ")) {
-      currentPrunable = true;
-    }
+    if (!field) flush();
+    else if (field.startsWith("worktree ")) path = field.slice("worktree ".length);
+    else if (field.startsWith("HEAD ")) head = field.slice("HEAD ".length);
+    else if (field.startsWith("branch refs/heads/"))
+      branch = field.slice("branch refs/heads/".length);
+    else if (field === "locked" || field.startsWith("locked ")) locked = true;
+    else if (field === "prunable" || field.startsWith("prunable ")) prunable = true;
   }
   flush();
-
-  return worktreePaths;
+  return worktrees;
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -3060,6 +3068,25 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     },
   );
 
+  const listWorktrees: GitVcsDriver.GitVcsDriver["Service"]["listWorktrees"] = Effect.fn(
+    "listWorktrees",
+  )(function* (input) {
+    const repositoryPaths = yield* resolveRepositoryPaths(input.cwd, true).pipe(
+      Effect.catchTags({
+        GitCommandError: (error) =>
+          isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
+      }),
+    );
+    if (repositoryPaths === null) return { isRepo: false, worktrees: [] };
+    const result = yield* executeGit(
+      "GitVcsDriver.listWorktrees",
+      input.cwd,
+      ["worktree", "list", "--porcelain", "-z"],
+      { maxOutputBytes: 16 * 1024 * 1024 },
+    );
+    return { isRepo: true, worktrees: parseListedWorktrees(result.stdout) };
+  });
+
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input, options) {
@@ -3680,6 +3707,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     getReviewDiffFileContents,
     readConfigValue,
     listRefs,
+    listWorktrees,
     createWorktree: (input, options) =>
       withListRefsInvalidation(input.cwd, createWorktree(input, options)),
     fetchPullRequestBranch: (input) =>

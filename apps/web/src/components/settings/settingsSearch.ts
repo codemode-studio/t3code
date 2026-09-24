@@ -128,6 +128,13 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
  */
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "storage-manage-worktrees",
+    title: "Manage worktrees",
+    to: "/settings/storage",
+    scope: "project-defaults",
+    searchTerms: ["create worktree remove worktree delete worktree working copy branch"],
+  },
+  {
     id: "storage-worktrees",
     title: "Worktree cleanup",
     to: "/settings/storage",

@@ -2212,6 +2212,43 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("worktree operations", () => {
+    it.effect("lists every worktree including detached and locked checkouts", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreeRoot = yield* makeTmpDir("git-worktrees-");
+        const branchPath = pathService.join(worktreeRoot, "feature");
+        const detachedPath = pathService.join(worktreeRoot, "detached");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["worktree", "add", "-b", "feature/listed", branchPath]);
+        yield* git(cwd, ["worktree", "add", "--detach", detachedPath]);
+        yield* git(cwd, ["worktree", "lock", branchPath]);
+
+        const listed = yield* driver.listWorktrees({ cwd });
+        assert.equal(listed.isRepo, true);
+        assert.equal(listed.worktrees.length, 3);
+        assert.deepInclude(listed.worktrees[0], { path: cwd, isMain: true });
+        assert.deepInclude(
+          listed.worktrees.find((tree) => tree.path === branchPath),
+          {
+            branch: "feature/listed",
+            locked: true,
+            isMain: false,
+          },
+        );
+        assert.deepInclude(
+          listed.worktrees.find((tree) => tree.path === detachedPath),
+          {
+            branch: null,
+            isMain: false,
+          },
+        );
+        const fromLinkedCheckout = yield* driver.listWorktrees({ cwd: branchPath });
+        assert.deepEqual(fromLinkedCheckout.worktrees, listed.worktrees);
+      }),
+    );
+
     it.effect("uses parallel checkout without skipping filters or hooks", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
@@ -2565,6 +2602,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* driver.removeWorktree({ cwd, path: worktreePath });
         const fileSystem = yield* FileSystem.FileSystem;
         assert.equal(yield* fileSystem.exists(worktreePath), false);
+        assert.equal(yield* git(cwd, ["branch", "--list", "feature/worktree"]), "feature/worktree");
       }),
     );
 

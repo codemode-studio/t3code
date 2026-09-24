@@ -64,6 +64,12 @@ applies when the project and environment are both on **Inherit**.
 
 ## Storage cleanup
 
+Use **Manage worktrees** in **Settings → Storage** to choose a project and checkout, then create a
+worktree from a new or existing branch. The list includes linked worktrees created outside T3 Code.
+Deleting one removes its files, including uncommitted changes, but keeps the branch, commits, and
+threads. Select another checkout before deleting the project folder you are managing. T3 Code can
+recreate a thread's worktree when you continue that thread.
+
 Open **Settings → Storage** to enable automatic cleanup on one machine or all connected
 environments. Policies are off by default and run on the server at startup, when changed, and
 hourly. Offline machines keep their existing policies.
