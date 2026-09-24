@@ -280,7 +280,7 @@ function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
   return worktreePaths;
 }
 
-export function parseListedWorktrees(stdout: string): VcsListedWorktree[] {
+function parseListedWorktrees(stdout: string): VcsListedWorktree[] {
   const worktrees: VcsListedWorktree[] = [];
   let path = "";
   let branch: string | null = null;
