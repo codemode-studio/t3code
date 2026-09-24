@@ -2,7 +2,9 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -10,6 +12,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
@@ -54,7 +57,10 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         prefix: "t3-telemetry-base-",
       });
 
-      const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
+      const telemetryLayer = AnalyticsService.layer.pipe(
+        Layer.provideMerge(serverConfigLayer),
+        Layer.provide(ServerSettings.layerTest()),
+      );
       const configLayer = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
           T3CODE_TELEMETRY_ENABLED: true,
@@ -155,7 +161,10 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
         prefix: "t3-telemetry-disabled-",
       });
-      const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
+      const telemetryLayer = AnalyticsService.layer.pipe(
+        Layer.provideMerge(serverConfigLayer),
+        Layer.provide(ServerSettings.layerTest()),
+      );
       const configLayer = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
           T3CODE_TELEMETRY_ENABLED: false,
@@ -189,6 +198,121 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       }).pipe(Effect.provide(runtimeLayer));
 
       assert.deepEqual(capturedPaths, []);
+    }),
+  );
+
+  it.effect("drops queued events when usage analytics is disabled in settings", () =>
+    Effect.gen(function* () {
+      const capturedEvents: string[] = [];
+      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3-telemetry-settings-",
+      });
+      const settingsLayer = ServerSettings.layerTest();
+      const telemetryLayer = AnalyticsService.layer.pipe(
+        Layer.provideMerge(serverConfigLayer),
+        Layer.provideMerge(settingsLayer),
+      );
+      const configLayer = ConfigProvider.layer(
+        ConfigProvider.fromUnknown({
+          T3CODE_TELEMETRY_ENABLED: true,
+          T3CODE_POSTHOG_KEY: "phc_test_key",
+          T3CODE_POSTHOG_HOST: "http://localhost",
+        }),
+      );
+      const batchServerLayer = HttpServer.serve(
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const body = (yield* request.json) as unknown as RecordedBatchBody;
+          capturedEvents.push(...body.batch.map((event) => event.event ?? ""));
+          return HttpServerResponse.jsonUnsafe({});
+        }),
+      );
+      const runtimeLayer = telemetryLayer.pipe(
+        Layer.provide(configLayer),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcessArchitecture, "arm64"),
+          ),
+        ),
+        Layer.provideMerge(NodeHttpServer.layerTest),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        yield* analytics.record("queued.before.disable");
+        yield* settings.updateSettings({ telemetryEnabled: false });
+        yield* analytics.record("ignored.while.disabled");
+        yield* settings.updateSettings({ telemetryEnabled: true });
+        yield* analytics.record("sent.after.enable");
+        yield* analytics.flush;
+      }).pipe(Effect.provide(runtimeLayer));
+
+      assert.deepEqual(capturedEvents, ["sent.after.enable"]);
+    }),
+  );
+
+  it.effect("does not restore a failed batch after usage analytics is disabled", () =>
+    Effect.gen(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const deliveredEvents: string[] = [];
+      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3-telemetry-failed-batch-",
+      });
+      const telemetryLayer = AnalyticsService.layer.pipe(
+        Layer.provideMerge(serverConfigLayer),
+        Layer.provideMerge(ServerSettings.layerTest()),
+      );
+      const configLayer = ConfigProvider.layer(
+        ConfigProvider.fromUnknown({
+          T3CODE_TELEMETRY_ENABLED: true,
+          T3CODE_POSTHOG_KEY: "phc_test_key",
+          T3CODE_POSTHOG_HOST: "http://localhost",
+        }),
+      );
+      const batchServerLayer = HttpServer.serve(
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const body = (yield* request.json) as unknown as RecordedBatchBody;
+          if (body.batch.some((event) => event.event === "before.disable")) {
+            yield* Deferred.succeed(requestStarted, undefined);
+            yield* Deferred.await(releaseRequest);
+            return HttpServerResponse.empty({ status: 500 });
+          }
+          deliveredEvents.push(...body.batch.map((event) => event.event ?? ""));
+          return HttpServerResponse.jsonUnsafe({});
+        }),
+      );
+      const runtimeLayer = telemetryLayer.pipe(
+        Layer.provide(configLayer),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcessArchitecture, "arm64"),
+          ),
+        ),
+        Layer.provideMerge(NodeHttpServer.layerTest),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        yield* analytics.record("before.disable");
+        const flushFiber = yield* analytics.flush.pipe(Effect.forkChild);
+        yield* Deferred.await(requestStarted);
+        yield* settings.updateSettings({ telemetryEnabled: false });
+        yield* settings.updateSettings({ telemetryEnabled: true });
+        yield* Deferred.succeed(releaseRequest, undefined);
+        yield* Fiber.join(flushFiber);
+        yield* analytics.record("after.enable");
+        yield* analytics.flush;
+      }).pipe(Effect.provide(runtimeLayer));
+
+      assert.deepEqual(deliveredEvents, ["after.enable"]);
     }),
   );
 });

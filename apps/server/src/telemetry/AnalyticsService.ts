@@ -21,6 +21,7 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -87,8 +88,24 @@ export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const usageAnalyticsEnabled = serverSettings.getSettings.pipe(
+    Effect.map((settings) => settings.telemetryEnabled),
+    Effect.orElseSucceed(() => false),
+  );
   const identifier = yield* getTelemetryIdentifier;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
+  // A failed send must not restore a batch extracted before an opt-out.
+  const optOutGenerationRef = yield* Ref.make(0);
+  if (serverSettings.observeChanges) {
+    yield* serverSettings.observeChanges((settings) =>
+      settings.telemetryEnabled
+        ? Effect.void
+        : Ref.update(optOutGenerationRef, (generation) => generation + 1).pipe(
+            Effect.flatMap(() => Ref.set(bufferRef, [])),
+          ),
+    );
+  }
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
   const hostArchitecture = yield* HostProcessArchitecture;
@@ -124,6 +141,7 @@ export const make = Effect.gen(function* () {
     events: ReadonlyArray<BufferedAnalyticsEvent>,
   ) {
     if (!telemetryConfig.enabled || !identifier) return;
+    if (!(yield* usageAnalyticsEnabled)) return;
 
     const payload = {
       api_key: telemetryConfig.posthogKey,
@@ -156,6 +174,10 @@ export const make = Effect.gen(function* () {
   });
 
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
+    if (!(yield* usageAnalyticsEnabled)) {
+      yield* Ref.set(bufferRef, []);
+      return;
+    }
     while (true) {
       const batch = yield* Ref.modify(bufferRef, (current) => {
         if (current.length === 0) {
@@ -170,11 +192,18 @@ export const make = Effect.gen(function* () {
         return;
       }
 
+      const optOutGeneration = yield* Ref.get(optOutGenerationRef);
       yield* sendBatch(batch).pipe(
         Effect.catch((error) =>
-          Ref.update(bufferRef, (current) => [...batch, ...current]).pipe(
-            Effect.flatMap(() => Effect.fail(error)),
-          ),
+          Effect.gen(function* () {
+            if (
+              (yield* usageAnalyticsEnabled) &&
+              (yield* Ref.get(optOutGenerationRef)) === optOutGeneration
+            ) {
+              yield* Ref.update(bufferRef, (current) => [...batch, ...current]);
+            }
+            return yield* Effect.fail(error);
+          }),
         ),
       );
     }
@@ -183,6 +212,7 @@ export const make = Effect.gen(function* () {
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties) {
       if (!telemetryConfig.enabled || !identifier) return;
+      if (!(yield* usageAnalyticsEnabled)) return;
 
       const enqueueResult = yield* enqueueBufferedEvent(event, properties);
       if (enqueueResult.dropped) {

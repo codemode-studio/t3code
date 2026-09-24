@@ -370,6 +370,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["queue steer running turn send default behavior composer"],
   },
   {
+    id: "usage-analytics",
+    title: "Usage analytics",
+    to: "/settings/general",
+    searchTerms: ["telemetry analytics privacy posthog tracking anonymous opt out"],
+    scope: "environment-defaults",
+  },
+  {
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",

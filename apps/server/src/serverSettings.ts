@@ -215,6 +215,11 @@ export class ServerSettingsService extends Context.Service<
      * snapshot and a lazily started stream must not be lost.
      */
     readonly subscribeChanges: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
+
+    /** Run a listener before a settings change finishes publishing. */
+    readonly observeChanges?: (
+      listener: (settings: ServerSettings) => Effect.Effect<void>,
+    ) => Effect.Effect<void, never, Scope.Scope>;
   }
 >()("t3/serverSettings/ServerSettingsService") {
   /** @deprecated Import and use `layerTest` from this module. */
@@ -236,6 +241,9 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
         : {}),
     });
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
+    const observersRef = yield* Ref.make<
+      ReadonlyArray<(settings: ServerSettings) => Effect.Effect<void>>
+    >([]);
 
     return {
       start: Effect.void,
@@ -246,10 +254,27 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
           Effect.map((currentSettings) => applyServerSettingsPatch(currentSettings, patch)),
           Effect.flatMap(normalizeServerSettings),
           Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
+          Effect.tap((nextSettings) =>
+            Ref.get(observersRef).pipe(
+              Effect.flatMap((observers) =>
+                Effect.forEach(observers, (observer) => observer(nextSettings), { discard: true }),
+              ),
+            ),
+          ),
           Effect.map(resolveTextGenerationProvider),
         ),
       streamChanges: Stream.empty,
       subscribeChanges: Effect.succeed(Stream.empty),
+      observeChanges: (listener) =>
+        Ref.update(observersRef, (observers) => [...observers, listener]).pipe(
+          Effect.flatMap(() =>
+            Effect.addFinalizer(() =>
+              Ref.update(observersRef, (observers) =>
+                observers.filter((observer) => observer !== listener),
+              ),
+            ),
+          ),
+        ),
     } satisfies ServerSettingsService["Service"];
   });
 
@@ -502,13 +527,22 @@ const make = Effect.gen(function* () {
   const writeSemaphore = yield* Semaphore.make(1);
   const cacheKey = "settings" as const;
   const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
+  const observersRef = yield* Ref.make<
+    ReadonlyArray<(settings: ServerSettings) => Effect.Effect<void>>
+  >([]);
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, ServerSettingsError>();
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
 
   const emitChange = (settings: ServerSettings) =>
-    PubSub.publish(changesPubSub, settings).pipe(Effect.asVoid);
+    Ref.get(observersRef).pipe(
+      Effect.flatMap((observers) =>
+        Effect.forEach(observers, (observer) => observer(settings), { discard: true }),
+      ),
+      Effect.flatMap(() => PubSub.publish(changesPubSub, settings)),
+      Effect.asVoid,
+    );
 
   const readConfigExists = fs.exists(settingsPath).pipe(
     Effect.mapError(
@@ -1060,6 +1094,16 @@ const make = Effect.gen(function* () {
         Effect.map((subscription) => materializeChanges(Stream.fromSubscription(subscription))),
       );
     },
+    observeChanges: (listener) =>
+      Ref.update(observersRef, (observers) => [...observers, listener]).pipe(
+        Effect.flatMap(() =>
+          Effect.addFinalizer(() =>
+            Ref.update(observersRef, (observers) =>
+              observers.filter((observer) => observer !== listener),
+            ),
+          ),
+        ),
+      ),
   } satisfies ServerSettingsService["Service"];
 });
 
