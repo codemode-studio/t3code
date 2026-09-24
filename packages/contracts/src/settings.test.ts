@@ -488,6 +488,26 @@ describe("ClientSettings recording input overlays", () => {
   });
 });
 
+describe("ClientSettings window translucency", () => {
+  it("defaults to an opaque window", () => {
+    const settings = decodeClientSettings({});
+    expect(settings.windowTranslucency).toBe(false);
+    expect(settings.windowTranslucencyOpacity).toBe(85);
+    expect(settings.windowTranslucencyMainPane).toBe(false);
+    expect(settings.windowTranslucencyBlur).toBe(24);
+  });
+
+  it.each([14, 101, 50.5])("rejects an invalid translucency opacity: %s", (value) => {
+    expect(() => decodeClientSettings({ windowTranslucencyOpacity: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ windowTranslucencyOpacity: value })).toThrow();
+  });
+
+  it.each([-1, 65, 12.5])("rejects an invalid translucency blur radius: %s", (value) => {
+    expect(() => decodeClientSettings({ windowTranslucencyBlur: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ windowTranslucencyBlur: value })).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

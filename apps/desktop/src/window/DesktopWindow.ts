@@ -18,6 +18,7 @@ import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { setMacWindowBlurRadius } from "../electron/MacWindowBlur.ts";
 import {
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
@@ -136,6 +137,10 @@ export class DesktopWindow extends Context.Service<
     // the main window.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
+    // Re-applies the saved window translucency to the main window. macOS and
+    // Linux can only turn it on or off when the window opens, so there only the
+    // macOS blur radius changes live.
+    readonly syncTranslucency: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
 
@@ -156,6 +161,32 @@ function getIconOption(
 
 function getInitialWindowBackgroundColor(shouldUseDarkColors: boolean): string {
   return shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+}
+
+// Not fully clear: macOS draws a gap at the corners of a fully clear window
+// with a shadow.
+const TRANSPARENT_WINDOW_BACKGROUND_COLOR = "#03000000";
+
+function getMainWindowBackgroundColor(shouldUseDarkColors: boolean, translucent: boolean): string {
+  return translucent
+    ? TRANSPARENT_WINDOW_BACKGROUND_COLOR
+    : getInitialWindowBackgroundColor(shouldUseDarkColors);
+}
+
+// Only Windows can switch translucency on an open window. macOS and Linux
+// windows get an alpha channel only when they are created.
+function appliesTranslucencyLive(platform: NodeJS.Platform): boolean {
+  return platform === "win32";
+}
+
+function applyWindowsTranslucency(
+  window: Electron.BrowserWindow,
+  translucent: boolean,
+  shouldUseDarkColors: boolean,
+): void {
+  if (window.isDestroyed()) return;
+  window.setBackgroundColor(getMainWindowBackgroundColor(shouldUseDarkColors, translucent));
+  window.setBackgroundMaterial(translucent ? "acrylic" : "auto");
 }
 
 type DisplayBounds = Pick<Electron.Rectangle, "x" | "y" | "width" | "height">;
@@ -279,13 +310,14 @@ function syncWindowAppearance(
   window: Electron.BrowserWindow,
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
+  translucent: boolean,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (window.isDestroyed()) {
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
+    window.setBackgroundColor(getMainWindowBackgroundColor(shouldUseDarkColors, translucent));
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
     if (typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
@@ -362,6 +394,38 @@ export const make = Effect.gen(function* () {
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
 
+  const readWindowTranslucency = clientSettings.get.pipe(
+    Effect.map((settings) => {
+      const { windowTranslucency, windowTranslucencyBlur } = Option.getOrElse(
+        settings,
+        () => DEFAULT_CLIENT_SETTINGS,
+      );
+      return { translucent: windowTranslucency, blurRadius: windowTranslucencyBlur };
+    }),
+    Effect.catch((error) =>
+      logWindowWarning("failed to read window translucency; keeping the window opaque", {
+        message: error.message,
+      }).pipe(
+        Effect.as({
+          translucent: false,
+          blurRadius: DEFAULT_CLIENT_SETTINGS.windowTranslucencyBlur,
+        }),
+      ),
+    ),
+  );
+  // Whether the open main window was created translucent. Only Windows can
+  // change that later.
+  let mainWindowCreatedTranslucent = false;
+  const resolveMainWindowTranslucency = Effect.map(readWindowTranslucency, ({ translucent }) =>
+    appliesTranslucencyLive(environment.platform) ? translucent : mainWindowCreatedTranslucent,
+  );
+  const applyMacBlurRadius = (window: Electron.BrowserWindow, radius: number) =>
+    Effect.tryPromise(() => setMacWindowBlurRadius(window, radius)).pipe(
+      Effect.catch((error) =>
+        logWindowWarning("failed to set the window blur radius", { message: error.message }),
+      ),
+    );
+
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
     DesktopWindowError
@@ -371,6 +435,7 @@ export const make = Effect.gen(function* () {
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+    const { translucent, blurRadius } = yield* readWindowTranslucency;
     const persistedSettings = yield* desktopSettings.get;
     const persistedBounds = persistedSettings.mainWindowBounds;
     const displayBoundsResult = yield* Effect.sync(() => {
@@ -401,7 +466,10 @@ export const make = Effect.gen(function* () {
       show: false,
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
-      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      ...(translucent && !appliesTranslucencyLive(environment.platform)
+        ? { transparent: true }
+        : {}),
+      backgroundColor: getMainWindowBackgroundColor(shouldUseDarkColors, translucent),
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
@@ -422,6 +490,21 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
+    }
+    mainWindowCreatedTranslucent = translucent;
+    if (translucent && environment.platform === "win32") {
+      applyWindowsTranslucency(window, true, shouldUseDarkColors);
+    } else if (translucent && environment.platform === "darwin") {
+      // WindowServer can drop the blur while the window is hidden, and the
+      // window number it targets is only certain once the window is on screen.
+      window.on("show", () => {
+        void runPromise(
+          Effect.flatMap(readWindowTranslucency, (settings) =>
+            applyMacBlurRadius(window, settings.blurRadius),
+          ),
+        );
+      });
+      yield* applyMacBlurRadius(window, blurRadius);
     }
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
@@ -1023,10 +1106,28 @@ export const make = Effect.gen(function* () {
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+      const mainWindow = yield* currentMainWindow;
+      const mainWindowTranslucent = yield* resolveMainWindowTranslucency;
       yield* electronWindow.syncAllAppearance((window) =>
-        syncWindowAppearance(window, shouldUseDarkColors, environment.platform),
+        syncWindowAppearance(
+          window,
+          shouldUseDarkColors,
+          environment.platform,
+          Option.contains(mainWindow, window) && mainWindowTranslucent,
+        ),
       );
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
+    syncTranslucency: Effect.gen(function* () {
+      const mainWindow = yield* currentMainWindow;
+      if (Option.isNone(mainWindow)) return;
+      const { translucent, blurRadius } = yield* readWindowTranslucency;
+      if (environment.platform === "win32") {
+        const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+        applyWindowsTranslucency(mainWindow.value, translucent, shouldUseDarkColors);
+      } else if (environment.platform === "darwin" && mainWindowCreatedTranslucent) {
+        yield* applyMacBlurRadius(mainWindow.value, blurRadius);
+      }
+    }).pipe(Effect.withSpan("desktop.window.syncTranslucency")),
   });
 });
 

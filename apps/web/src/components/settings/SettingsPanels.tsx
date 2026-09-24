@@ -169,6 +169,7 @@ import {
   useSettingsSearchTargetId,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { WindowTranslucencySection } from "./WindowTranslucencySettings";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 
@@ -528,7 +529,15 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast
         ? ["Contrast"]
         : []),
-      ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? ["Glass opacity"] : []),
+      ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity
+        ? ["Menu & dialog opacity"]
+        : []),
+      ...(settings.windowTranslucency !== DEFAULT_UNIFIED_SETTINGS.windowTranslucency ||
+      settings.windowTranslucencyOpacity !== DEFAULT_UNIFIED_SETTINGS.windowTranslucencyOpacity ||
+      settings.windowTranslucencyMainPane !== DEFAULT_UNIFIED_SETTINGS.windowTranslucencyMainPane ||
+      settings.windowTranslucencyBlur !== DEFAULT_UNIFIED_SETTINGS.windowTranslucencyBlur
+        ? ["Window translucency"]
+        : []),
       ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme
         ? ["Diff colors"]
         : []),
@@ -671,6 +680,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.glassOpacity,
+      settings.windowTranslucency,
+      settings.windowTranslucencyOpacity,
+      settings.windowTranslucencyMainPane,
+      settings.windowTranslucencyBlur,
       settings.panelAnimationDurationMs,
       settings.responseStreamingMode,
       settings.enableProviderUpdateChecks,
@@ -772,6 +785,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+      windowTranslucency: DEFAULT_UNIFIED_SETTINGS.windowTranslucency,
+      windowTranslucencyOpacity: DEFAULT_UNIFIED_SETTINGS.windowTranslucencyOpacity,
+      windowTranslucencyMainPane: DEFAULT_UNIFIED_SETTINGS.windowTranslucencyMainPane,
+      windowTranslucencyBlur: DEFAULT_UNIFIED_SETTINGS.windowTranslucencyBlur,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
@@ -1257,7 +1274,7 @@ export function AppearanceSettingsPanel() {
           resetAction={
             settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? (
               <SettingResetButton
-                label="glass opacity"
+                label="menu and dialog opacity"
                 onClick={() =>
                   updateSettings({ glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity })
                 }
@@ -1273,7 +1290,7 @@ export function AppearanceSettingsPanel() {
                 {settings.glassOpacity}%
               </output>
               <input
-                aria-label="Glass opacity"
+                aria-label="Menu and dialog opacity"
                 className="settings-slider min-w-0 flex-1"
                 id="glass-opacity"
                 max={MAX_GLASS_OPACITY}
@@ -1389,6 +1406,8 @@ export function AppearanceSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      {isElectron ? <WindowTranslucencySection /> : null}
 
       <SettingsSection id="motion" title="Motion">
         <SettingsRow

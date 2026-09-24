@@ -1587,6 +1587,42 @@ body {
   background-size: var(--surface-grain-size);
 }
 
+/* Desktop window translucency. The page goes clear so the blurred desktop
+   shows through, and only the sidebar (plus the main pane when opted in)
+   repaints its own color at the chosen opacity. `!important` outranks the
+   inline color syncBrowserChromeTheme writes. */
+html.window-translucent,
+html.window-translucent body {
+  background-color: transparent !important;
+  background-image: none;
+}
+
+html.window-translucent [data-slot="sidebar-inner"] {
+  background-color: color-mix(
+    in srgb,
+    var(--sidebar) var(--window-translucency-opacity),
+    transparent
+  );
+}
+
+/* Routes and panes inside the main pane stack full-size bg-background layers
+   of their own. Clear only those pane-filling layers and the thread header so
+   the pane's single translucent layer shows through. The --background token
+   itself stays intact: switch and slider thumbs, focus-ring offsets, and
+   inputs use it as a solid fill. */
+html.window-translucent[data-window-translucency-main-pane] main[data-slot="sidebar-inset"] {
+  background-color: color-mix(
+    in srgb,
+    var(--background) var(--window-translucency-opacity),
+    transparent
+  );
+
+  & .flex-1.bg-background,
+  & [data-chat-header] {
+    background-color: transparent;
+  }
+}
+
 pre,
 code {
   font-family: var(--font-mono);

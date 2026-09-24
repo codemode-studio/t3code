@@ -199,9 +199,46 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     // Prefixed because the slider control already owns the `glass-opacity` id.
     id: "setting-glass-opacity",
-    title: "Glass opacity",
+    title: "Menu & dialog opacity",
     to: "/settings/appearance",
-    searchTerms: ["transparent transparency solid menus dialogs composer"],
+    searchTerms: ["glass transparent transparency solid menus popovers dialogs composer"],
+  },
+  {
+    id: "window-translucency",
+    title: "Window translucency",
+    to: "/settings/appearance",
+    searchTerms: ["transparent transparency glass blur vibrancy acrylic desktop see through"],
+    desktopOnly: true,
+  },
+  {
+    // Prefixed because the slider control already owns the `window-translucency-opacity` id.
+    id: "setting-window-translucency-opacity",
+    // Rendered only while translucency is on; the section is always there.
+    targetId: "appearance-translucency",
+    title: "Sidebar opacity",
+    to: "/settings/appearance",
+    searchTerms: ["window translucency transparent glass blur"],
+    desktopOnly: true,
+  },
+  {
+    // Prefixed because the slider control already owns the `window-translucency-blur` id.
+    id: "setting-window-translucency-blur",
+    // Rendered only while translucency is on; the section is always there.
+    targetId: "appearance-translucency",
+    title: "Blur radius",
+    to: "/settings/appearance",
+    searchTerms: ["window translucency transparent glass"],
+    desktopOnly: true,
+    macOnly: true,
+  },
+  {
+    id: "window-translucency-main-pane",
+    // Rendered only while translucency is on; the section is always there.
+    targetId: "appearance-translucency",
+    title: "Main pane glass",
+    to: "/settings/appearance",
+    searchTerms: ["window translucency transparent glass blur chat"],
+    desktopOnly: true,
   },
   {
     id: "diff-color-scheme",

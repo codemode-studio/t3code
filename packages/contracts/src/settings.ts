@@ -100,6 +100,26 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+export const MIN_WINDOW_TRANSLUCENCY_OPACITY = 15;
+export const MAX_WINDOW_TRANSLUCENCY_OPACITY = 100;
+export const WindowTranslucencyOpacity = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_WINDOW_TRANSLUCENCY_OPACITY,
+    maximum: MAX_WINDOW_TRANSLUCENCY_OPACITY,
+  }),
+);
+export type WindowTranslucencyOpacity = typeof WindowTranslucencyOpacity.Type;
+const DEFAULT_WINDOW_TRANSLUCENCY_OPACITY: WindowTranslucencyOpacity = 85;
+export const MIN_WINDOW_TRANSLUCENCY_BLUR = 0;
+export const MAX_WINDOW_TRANSLUCENCY_BLUR = 64;
+export const WindowTranslucencyBlur = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_WINDOW_TRANSLUCENCY_BLUR,
+    maximum: MAX_WINDOW_TRANSLUCENCY_BLUR,
+  }),
+);
+export type WindowTranslucencyBlur = typeof WindowTranslucencyBlur.Type;
+const DEFAULT_WINDOW_TRANSLUCENCY_BLUR: WindowTranslucencyBlur = 24;
 
 export const MIN_APPEARANCE_CONTRAST = 50;
 export const MAX_APPEARANCE_CONTRAST = 200;
@@ -375,6 +395,20 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
+  ),
+  // Desktop-only. Lets the desktop show through the window. macOS and Linux
+  // apply it when the window opens (Linux leaves the blur to the compositor);
+  // Windows switches its acrylic material immediately.
+  windowTranslucency: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  windowTranslucencyOpacity: WindowTranslucencyOpacity.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WINDOW_TRANSLUCENCY_OPACITY)),
+  ),
+  windowTranslucencyMainPane: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  // macOS-only blur radius behind the translucent window.
+  windowTranslucencyBlur: WindowTranslucencyBlur.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WINDOW_TRANSLUCENCY_BLUR)),
   ),
   fontSizeInterface: InterfaceFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
@@ -1601,6 +1635,10 @@ export const ClientSettingsPatch = Schema.Struct({
   diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  windowTranslucency: Schema.optionalKey(Schema.Boolean),
+  windowTranslucencyOpacity: Schema.optionalKey(WindowTranslucencyOpacity),
+  windowTranslucencyMainPane: Schema.optionalKey(Schema.Boolean),
+  windowTranslucencyBlur: Schema.optionalKey(WindowTranslucencyBlur),
   onboardingCompletedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
   fontSizePrompt: Schema.optionalKey(PromptFontSize),
