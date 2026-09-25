@@ -110,7 +110,7 @@ export function SkillsSettings() {
   return (
     <SettingsPageContainer width="wide">
       <section className="flex flex-col gap-2 px-3 sm:px-4">
-        <h1 className="font-heading text-2xl font-semibold">Skills</h1>
+        <h1 className="text-2xl font-semibold">Skills</h1>
         <p className="text-sm text-muted-foreground">
           File skills in your home folders and selected projects.
         </p>

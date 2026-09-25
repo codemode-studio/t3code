@@ -82,7 +82,9 @@ const makeTmpDir = (
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem | Scope.Scope> =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    return yield* fileSystem.makeTempDirectoryScoped({ prefix });
+    // Native realpath so the directory matches what git reports; macOS puts temp dirs
+    // behind the /var -> /private/var symlink.
+    return NodeFS.realpathSync.native(yield* fileSystem.makeTempDirectoryScoped({ prefix }));
   });
 
 const writeTextFile = (
@@ -1925,7 +1927,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         const envKeys = [
           "GCM_INTERACTIVE",
           "GIT_ASKPASS",
-          "GIT_SSH",
+          "GIT_SSH_COMMAND",
           "GIT_TERMINAL_PROMPT",
           "SSH_ASKPASS",
           "SSH_ASKPASS_REQUIRE",
@@ -1952,7 +1954,9 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["branch", "--set-upstream-to", `origin/${initialBranch}`]);
 
         yield* Effect.gen(function* () {
-          process.env.GIT_SSH = sshWrapperPath;
+          // GIT_SSH_COMMAND outranks a global core.sshCommand, which would otherwise
+          // bypass the wrapper on developer machines.
+          process.env.GIT_SSH_COMMAND = `'${sshWrapperPath}'`;
           process.env.GCM_INTERACTIVE = "always";
           process.env.GIT_ASKPASS = "git-askpass";
           process.env.GIT_TERMINAL_PROMPT = "1";
