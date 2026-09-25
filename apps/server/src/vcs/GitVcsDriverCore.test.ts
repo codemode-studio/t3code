@@ -2212,6 +2212,68 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("worktree operations", () => {
+    it.effect("lists every worktree including detached and locked checkouts", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreeRoot = yield* makeTmpDir("git-worktrees-");
+        const branchPath = pathService.join(worktreeRoot, "feature");
+        const detachedPath = pathService.join(worktreeRoot, "detached");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["worktree", "add", "-b", "feature/listed", branchPath]);
+        yield* git(cwd, ["worktree", "add", "--detach", detachedPath]);
+        yield* git(cwd, ["worktree", "lock", branchPath]);
+
+        const listed = yield* driver.listWorktrees({ cwd });
+        assert.equal(listed.isRepo, true);
+        assert.equal(listed.worktrees.length, 3);
+        assert.deepInclude(listed.worktrees[0], { path: cwd, isMain: true });
+        assert.deepInclude(
+          listed.worktrees.find((tree) => tree.path === branchPath),
+          {
+            branch: "feature/listed",
+            locked: true,
+            isMain: false,
+          },
+        );
+        assert.deepInclude(
+          listed.worktrees.find((tree) => tree.path === detachedPath),
+          {
+            branch: null,
+            isMain: false,
+          },
+        );
+        const fromLinkedCheckout = yield* driver.listWorktrees({ cwd: branchPath });
+        assert.deepEqual(fromLinkedCheckout.worktrees, listed.worktrees);
+      }),
+    );
+
+    it.effect("keeps every linked checkout of a bare repository", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const path = yield* Path.Path;
+        const root = yield* makeTmpDir("bare-worktrees-");
+        const bare = path.join(root, "repo.git");
+        const first = path.join(root, "a");
+        const second = path.join(root, "b");
+        yield* git(cwd, ["clone", "--bare", cwd, bare]);
+        yield* git(bare, ["worktree", "add", first, initialBranch]);
+        yield* git(bare, ["worktree", "add", "-b", "feature/bare", second]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const listed = yield* driver.listWorktrees({ cwd: second });
+        assert.deepEqual(
+          listed.worktrees.map((tree) => [tree.path, tree.isMain]),
+          [
+            [first, false],
+            [second, false],
+          ],
+        );
+      }),
+    );
+
     it.effect("uses parallel checkout without skipping filters or hooks", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
@@ -2565,6 +2627,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* driver.removeWorktree({ cwd, path: worktreePath });
         const fileSystem = yield* FileSystem.FileSystem;
         assert.equal(yield* fileSystem.exists(worktreePath), false);
+        assert.equal(yield* git(cwd, ["branch", "--list", "feature/worktree"]), "feature/worktree");
       }),
     );
 
