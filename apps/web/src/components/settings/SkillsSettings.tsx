@@ -1,12 +1,11 @@
-import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
 import { CopyIcon, EyeIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useProjectFileQuery } from "../files/projectFilesQueryState";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
-import { serverEnvironment } from "../../state/server";
+import { useSkillVisibility } from "../../hooks/useSkillVisibility";
+import { Switch } from "../ui/switch";
+import { AddSkillDialog } from "./AddSkillDialog";
 import { shellEnvironment } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Badge } from "../ui/badge";
@@ -16,10 +15,9 @@ import { Input } from "../ui/input";
 import { toastManager } from "../ui/toast";
 import { SettingsPageContainer } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { collectSettingsSkills, type SettingsSkill, type SkillEnvironment } from "./skillsCatalog";
 import {
   discoverLocalSkillFiles,
-  type ProjectSkillTarget,
+  type SettingsSkill,
   type SkillEnvironmentTarget,
 } from "./projectSkillFiles";
 
@@ -51,131 +49,42 @@ function SkillPreview({ skill, cwd }: { skill: SettingsSkill; cwd: string }) {
 
 export function SkillsSettings() {
   const { scope, connectedEnvironments } = useSettingsScope();
-  const rootsByEnvironment = useMemo(() => {
-    const roots = new Map<EnvironmentId, string[]>();
-    for (const member of scope.members) {
-      const existing = roots.get(member.environmentId) ?? [];
-      existing.push(member.workspaceRoot);
-      roots.set(member.environmentId, existing);
-    }
-    return roots;
-  }, [scope.members]);
-  const providerAtom = useMemo(
-    () =>
-      Atom.make((get): SkillEnvironment[] =>
-        connectedEnvironments.map((environment) => ({
-          environmentId: environment.environmentId,
-          label: environment.label,
-          providers: get(serverEnvironment.providersValueAtom(environment.environmentId)) ?? [],
-          workspaceRoots: rootsByEnvironment.get(environment.environmentId) ?? [],
-        })),
-      ),
-    [connectedEnvironments, rootsByEnvironment],
-  );
-  const environments = useAtomValue(providerAtom);
-  const projectTargets = useMemo(
-    (): ProjectSkillTarget[] =>
-      connectedEnvironments.flatMap((environment) =>
-        (rootsByEnvironment.get(environment.environmentId) ?? []).map((cwd) => ({
-          environmentId: environment.environmentId,
-          environmentLabel: environment.label,
-          cwd,
-        })),
-      ),
-    [connectedEnvironments, rootsByEnvironment],
-  );
-  const environmentTargets = useMemo(
-    (): SkillEnvironmentTarget[] =>
-      connectedEnvironments.map((environment) => ({
-        environmentId: environment.environmentId,
-        environmentLabel: environment.label,
-      })),
-    [connectedEnvironments],
-  );
-  const projectTargetKey = JSON.stringify([projectTargets, environmentTargets]);
-  const [projectFiles, setProjectFiles] = useState<{ key: string; skills: SettingsSkill[] } | null>(
-    null,
-  );
-  const skills = useMemo(() => {
-    const byFile = new Map<string, SettingsSkill>();
-    for (const skill of collectSettingsSkills(environments)) {
-      byFile.set(JSON.stringify([skill.environmentId, skill.path.replaceAll("\\", "/")]), skill);
-    }
-    if (projectFiles?.key === projectTargetKey) {
-      for (const skill of projectFiles.skills) {
-        const key = JSON.stringify([skill.environmentId, skill.path.replaceAll("\\", "/")]);
-        const existing = byFile.get(key);
-        if (!existing || (existing.scope === "project" && skill.scope === "personal")) {
-          byFile.set(key, skill);
-        }
-      }
-    }
-    return [...byFile.values()].sort(
-      (a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path),
-    );
-  }, [environments, projectFiles, projectTargetKey]);
-  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
-    reportFailure: false,
-  });
-  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
-  const [refreshing, setRefreshing] = useState(false);
+  const targets: SkillEnvironmentTarget[] = connectedEnvironments.map((environment) => ({
+    environmentId: environment.environmentId,
+    environmentLabel: environment.label,
+    workspaceRoots: scope.members
+      .filter((member) => member.environmentId === environment.environmentId)
+      .map((member) => member.workspaceRoot),
+  }));
+  // Scope objects also change on provider status updates; those must not trigger disk scans.
+  const targetKey = JSON.stringify(targets);
+  const [revision, setRevision] = useState(0);
+  const [catalog, setCatalog] = useState<{
+    key: string;
+    revision: number;
+    skills: SettingsSkill[];
+    errors: string[];
+  } | null>(null);
+  const { hiddenByEnvironment, setVisible } = useSkillVisibility();
   const [query, setQuery] = useState("");
   const [preview, setPreview] = useState<SettingsSkill | null>(null);
-
+  const [adding, setAdding] = useState(false);
+  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
+  const refreshing = catalog?.key !== targetKey || catalog.revision !== revision;
+  const skills = catalog?.key === targetKey ? catalog.skills : [];
+  const errors = catalog?.key === targetKey ? catalog.errors : [];
   useEffect(() => {
-    let active = true;
-    void discoverLocalSkillFiles(projectTargets, environmentTargets, false).then((found) => {
-      if (active) setProjectFiles({ key: projectTargetKey, skills: found });
-    });
-    return () => {
-      active = false;
-    };
-  }, [projectTargets, environmentTargets, projectTargetKey]);
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    const localSkills = discoverLocalSkillFiles(projectTargets, environmentTargets, true).then(
-      (found) => {
-        setProjectFiles({ key: projectTargetKey, skills: found });
+    const controller = new AbortController();
+    const selectedTargets: SkillEnvironmentTarget[] = JSON.parse(targetKey);
+    void discoverLocalSkillFiles(selectedTargets, revision > 0, controller.signal).then(
+      (result) => {
+        if (!controller.signal.aborted) setCatalog({ key: targetKey, revision, ...result });
       },
     );
-    const requests: Promise<unknown>[] = [];
-    for (const environment of environments) {
-      for (const provider of environment.providers) {
-        if (!provider.enabled || !provider.installed) continue;
-        if (environment.workspaceRoots.length === 0) {
-          requests.push(
-            refreshProviders({
-              environmentId: environment.environmentId,
-              input: { instanceId: provider.instanceId },
-            }),
-          );
-        }
-        for (const cwd of environment.workspaceRoots) {
-          requests.push(
-            refreshProviders({
-              environmentId: environment.environmentId,
-              input: { instanceId: provider.instanceId, cwd, refreshWorkspace: true },
-            }),
-          );
-        }
-      }
-    }
-    const results = await Promise.all(requests);
-    await localSkills;
-    setRefreshing(false);
-    if (
-      results.some(
-        (result) =>
-          typeof result === "object" &&
-          result !== null &&
-          "_tag" in result &&
-          result._tag === "Failure",
-      )
-    ) {
-      toastManager.add({ type: "error", title: "Could not refresh some skills" });
-    }
-  }, [environments, projectTargets, environmentTargets, projectTargetKey, refreshProviders]);
+    return () => {
+      controller.abort();
+    };
+  }, [targetKey, revision]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = skills.filter(
@@ -185,17 +94,16 @@ export function SkillsSettings() {
         (value) => value.toLowerCase().includes(normalizedQuery),
       ),
   );
-  const multipleEnvironments = environments.length > 1;
+  const multipleEnvironments = targets.length > 1;
   const revealableEnvironments = new Set(
     connectedEnvironments
       .filter((environment) => environment.serverConfig?.shellRevealInFileManager === true)
       .map((environment) => environment.environmentId),
   );
   const previewCwd = preview
-    ? (rootsByEnvironment.get(preview.environmentId)?.[0] ??
-      preview.path
+    ? preview.path
         .replaceAll("\\", "/")
-        .slice(0, preview.path.replaceAll("\\", "/").lastIndexOf("/")))
+        .slice(0, preview.path.replaceAll("\\", "/").lastIndexOf("/"))
     : "";
 
   return (
@@ -225,15 +133,37 @@ export function SkillsSettings() {
           variant="ghost"
           aria-label="Refresh skills"
           disabled={refreshing}
-          onClick={() => void refresh()}
+          onClick={() => setRevision((value) => value + 1)}
         >
           <RefreshCwIcon className={refreshing ? "animate-spin" : undefined} />
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={targets.length === 0}
+          onClick={() => setAdding(true)}
+        >
+          Add skill
+        </Button>
       </div>
+      {errors.length > 0 && (
+        <p role="alert" className="px-4 text-sm text-destructive">
+          Some skills could not be loaded. {errors.join("; ")}
+        </p>
+      )}
+      <p className="px-4 text-xs text-muted-foreground">
+        Switches show or hide skills in this client's T3 skill pickers. Providers manage automatic
+        skill discovery.
+      </p>
       <div className="overflow-hidden rounded-xl border">
         {filtered.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {normalizedQuery ? "No matching skills" : "No file skills found for this selection"}
+            {refreshing
+              ? "Loading skills..."
+              : normalizedQuery
+                ? "No matching skills"
+                : "No file skills found for this selection"}
           </p>
         ) : (
           filtered.map((skill) => (
@@ -255,6 +185,18 @@ export function SkillsSettings() {
                 <span className="w-20 shrink-0 truncate text-right text-xs text-muted-foreground">
                   {skill.source}
                 </span>
+                <Switch
+                  size="sm"
+                  checked={
+                    !(hiddenByEnvironment[skill.environmentId] ?? []).includes(
+                      skill.path.replaceAll("\\", "/"),
+                    )
+                  }
+                  aria-label={`Show ${skill.name} in skill pickers`}
+                  onCheckedChange={(checked) =>
+                    setVisible(skill.environmentId, skill.path, checked)
+                  }
+                />
               </div>
               {skill.description ? (
                 <p className="truncate text-sm text-muted-foreground">{skill.description}</p>
@@ -314,6 +256,17 @@ export function SkillsSettings() {
           ))
         )}
       </div>
+      {adding && (
+        <AddSkillDialog
+          targets={targets}
+          onClose={() => setAdding(false)}
+          onCreated={(skill) => {
+            setAdding(false);
+            setRevision((value) => value + 1);
+            setPreview(skill);
+          }}
+        />
+      )}
       <Dialog
         open={preview !== null}
         onOpenChange={(open) => {

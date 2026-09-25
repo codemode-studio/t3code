@@ -1,3 +1,4 @@
+import { listSkillFiles, createSkillFile } from "./workspace/SkillFiles.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -50,6 +51,7 @@ import {
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
+  SkillsError,
   ProjectListEntriesError,
   ProjectReadFileError,
   ProjectSearchContentsError,
@@ -3084,6 +3086,33 @@ const makeWsRpcLayer = (
                   }),
               ),
             ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.skillsList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.skillsList,
+            Effect.gen(function* () {
+              const providers = yield* providerRegistry.getProviders;
+              return yield* Effect.tryPromise({
+                try: (signal) => listSkillFiles(input, providers, undefined, signal),
+                catch: () => new SkillsError({ message: "Could not discover skills" }),
+              });
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.skillsCreate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.skillsCreate,
+            Effect.tryPromise({
+              try: () => createSkillFile(input),
+              catch: (cause) =>
+                new SkillsError({
+                  message:
+                    cause instanceof Error && "code" in cause && cause.code === "EEXIST"
+                      ? "A skill with this name already exists"
+                      : "Could not create skill",
+                }),
+            }),
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.projectsListEntries]: (input) =>

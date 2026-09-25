@@ -156,6 +156,9 @@ Show skills in slash menu**. Only skills enabled for the provider are listed.
 Use **Settings → Skills** to inspect file skills on the selected environments.
 Select a project at the top of Settings to include its project skills, or refresh
 the list after changing skill files. Personal skills appear across projects.
+**Add skill** creates a `SKILL.md` in the chosen location's `.agents/skills` folder.
+The switches control visibility in this client's T3 skill pickers and persist
+separately for each environment. Providers manage automatic skill discovery.
 
 Provider commands must start the message to run. T3 Code commands such as
 `/model` and `/plan`, and skill mentions, work on any line.

@@ -2,6 +2,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applySkillVisibility,
   dedupeProviderSkillsByName,
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
@@ -250,5 +251,21 @@ describe("workspace provider snapshots", () => {
   it("keeps the machine snapshot before this cwd has a provider snapshot", () => {
     expect(resolveProviderSkillsForCwd(provider, "/workspace/project-b")).toEqual(provider.skills);
     expect(resolveProviderSlashCommandsForCwd(provider, null)).toEqual(provider.slashCommands);
+  });
+});
+
+describe("skill visibility", () => {
+  it("hides and restores skills in both pickers, matching Windows path separators", () => {
+    const skills = [
+      { name: "review", path: "C:/Users/dev/.agents/skills/review/SKILL.md", enabled: true },
+      { name: "deploy", path: "C:/work/.agents/skills/deploy/SKILL.md", enabled: true },
+    ];
+    const commands = [{ name: "review" }, { name: "deploy" }, { name: "help" }];
+    const hidden = applySkillVisibility(skills, commands, [skills[0]!.path.replaceAll("/", "\\")]);
+    expect(hidden.skills.map((skill) => skill.name)).toEqual(["deploy"]);
+    expect(hidden.slashCommands.map((command) => command.name)).toEqual(["deploy", "help"]);
+    const restored = applySkillVisibility(skills, commands, []);
+    expect(restored.skills).toBe(skills);
+    expect(restored.slashCommands).toBe(commands);
   });
 });

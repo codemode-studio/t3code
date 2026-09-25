@@ -124,3 +124,22 @@ export function resolveProviderSlashCommandsForCwd(
 ): ServerProvider["slashCommands"] {
   return resolveProviderWorkspaceSnapshot(provider, cwd)?.slashCommands ?? provider.slashCommands;
 }
+
+/** Hide a file from both skill pickers and matching native slash-command entries. */
+export function applySkillVisibility(
+  skills: ReadonlyArray<ServerProviderSkill>,
+  slashCommands: ReadonlyArray<ServerProviderSlashCommand>,
+  hiddenPaths: ReadonlyArray<string>,
+) {
+  if (hiddenPaths.length === 0) return { skills, slashCommands };
+  const hidden = new Set(hiddenPaths.map(normalizePathSeparators));
+  const hiddenNames = new Set(
+    skills
+      .filter((skill) => hidden.has(normalizePathSeparators(skill.path)))
+      .map((skill) => skill.name.toLowerCase()),
+  );
+  return {
+    skills: skills.filter((skill) => !hidden.has(normalizePathSeparators(skill.path))),
+    slashCommands: slashCommands.filter((command) => !hiddenNames.has(command.name.toLowerCase())),
+  };
+}
