@@ -1,7 +1,6 @@
 ---
 name: sync-upstream
 description: Merge pingdotgg/t3code main into this fork's main, keeping every fork commit and resolving conflicts in favor of both intents.
-disable-model-invocation: true
 ---
 
 # Sync fork with upstream
