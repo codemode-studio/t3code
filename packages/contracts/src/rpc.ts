@@ -1,3 +1,10 @@
+import {
+  FileSkill,
+  SkillsListInput,
+  SkillsListResult,
+  SkillsCreateInput,
+  SkillsError,
+} from "./skills.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -299,6 +306,8 @@ export const WS_METHODS = {
   projectsList: "projects.list",
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
+  skillsList: "skills.list",
+  skillsCreate: "skills.create",
   projectsListEntries: "projects.listEntries",
   projectsReadFile: "projects.readFile",
   projectsSearchContents: "projects.searchContents",
@@ -511,6 +520,8 @@ const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, 
      */
     instanceId: Schema.optional(ProviderInstanceId),
     cwd: Schema.optional(TrimmedNonEmptyString),
+    /** Rescan a workspace's skills even when a scoped snapshot already exists. */
+    refreshWorkspace: Schema.optional(Schema.Boolean),
     /** Explicit user request: bypass T3-owned caches and rediscover models.
      * Background status refreshes must not open agent sessions. */
     refreshModels: Schema.optional(Schema.Boolean),
@@ -967,6 +978,17 @@ const WsProjectsSearchContentsRpc = Rpc.make(WS_METHODS.projectsSearchContents, 
   payload: ProjectSearchContentsInput,
   success: ProjectSearchContentsResult,
   error: Schema.Union([ProjectSearchContentsError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillsListRpc = Rpc.make(WS_METHODS.skillsList, {
+  payload: SkillsListInput,
+  success: SkillsListResult,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+const WsSkillsCreateRpc = Rpc.make(WS_METHODS.skillsCreate, {
+  payload: SkillsCreateInput,
+  success: FileSkill,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
 const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
@@ -1571,6 +1593,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectCloneCancelRpc,
   WsProjectCloneRetryRpc,
   WsSubscribeProjectClonesRpc,
+  WsSkillsListRpc,
+  WsSkillsCreateRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchContentsRpc,

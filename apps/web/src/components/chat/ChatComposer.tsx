@@ -1,3 +1,4 @@
+import { useSkillVisibility } from "../../hooks/useSkillVisibility";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -972,6 +973,7 @@ import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import {
+  applySkillVisibility,
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
@@ -1948,12 +1950,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
-  const selectedProviderSkills = selectedProviderStatus
-    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
-    : [];
-  const selectedProviderSlashCommands = selectedProviderStatus
-    ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
-    : [];
+  const { hiddenByEnvironment: hiddenSkillsByEnvironment } = useSkillVisibility();
+  const { skills: selectedProviderSkills, slashCommands: selectedProviderSlashCommands } = useMemo(
+    () =>
+      applySkillVisibility(
+        selectedProviderStatus ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd) : [],
+        selectedProviderStatus
+          ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+          : [],
+        hiddenSkillsByEnvironment[environmentId] ?? [],
+      ),
+    [selectedProviderStatus, gitCwd, hiddenSkillsByEnvironment, environmentId],
+  );
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });

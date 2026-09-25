@@ -110,6 +110,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.projectCloneCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectCloneRetry]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeProjectClones]: AuthOrchestrationReadScope,
+  [WS_METHODS.skillsList]: AuthOrchestrationReadScope,
+  [WS_METHODS.skillsCreate]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsListEntries]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsReadFile]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsSearchContents]: AuthOrchestrationReadScope,

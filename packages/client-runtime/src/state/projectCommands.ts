@@ -60,6 +60,21 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
     }),
+    listSkills: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:list",
+      tag: WS_METHODS.skillsList,
+      staleTimeMs: 30_000,
+      idleTtlMs: 60_000,
+    }),
+    createSkill: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:create",
+      tag: WS_METHODS.skillsCreate,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd, input.name]),
+      },
+    }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,

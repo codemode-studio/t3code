@@ -2,6 +2,8 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applySkillVisibility,
+  setSkillPathVisibility,
   dedupeProviderSkillsByName,
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
@@ -251,4 +253,38 @@ describe("workspace provider snapshots", () => {
     expect(resolveProviderSkillsForCwd(provider, "/workspace/project-b")).toEqual(provider.skills);
     expect(resolveProviderSlashCommandsForCwd(provider, null)).toEqual(provider.slashCommands);
   });
+});
+
+describe("skill visibility", () => {
+  it("hides and restores skills in both pickers, matching Windows path separators", () => {
+    const skills = [
+      { name: "review", path: "C:/Users/dev/.agents/skills/review/SKILL.md", enabled: true },
+      { name: "deploy", path: "C:/work/.agents/skills/deploy/SKILL.md", enabled: true },
+    ];
+    const commands = [{ name: "review" }, { name: "deploy" }, { name: "help" }];
+    const hidden = applySkillVisibility(skills, commands, [skills[0]!.path.replaceAll("/", "\\")]);
+    expect(hidden.skills.map((skill) => skill.name)).toEqual(["deploy"]);
+    expect(hidden.slashCommands.map((command) => command.name)).toEqual(["deploy", "help"]);
+    const restored = applySkillVisibility(skills, commands, []);
+    expect(restored.skills).toBe(skills);
+    expect(restored.slashCommands).toBe(commands);
+  });
+});
+
+it("hides all file aliases and restores them, including Windows drive-letter case", () => {
+  const aliases = [
+    "C:/Users/dev/.agents/skills/review/SKILL.md",
+    "C:/Users/dev/.claude/skills/review/SKILL.md",
+  ];
+  const skills = [
+    { name: "review", enabled: true, path: "c:/Users/dev/.claude/skills/review/SKILL.md" },
+  ];
+  const hidden = setSkillPathVisibility([], aliases, false);
+  expect(applySkillVisibility(skills, [{ name: "review" }], hidden)).toEqual({
+    skills: [],
+    slashCommands: [],
+  });
+  const restored = setSkillPathVisibility(hidden, aliases, true);
+  expect(restored).toEqual([]);
+  expect(applySkillVisibility(skills, [], restored).skills).toEqual(skills);
 });
