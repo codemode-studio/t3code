@@ -989,6 +989,12 @@ for (const { platform, installPath, editor, args } of [
     editor: "zed",
     args: ["/workspace with spaces/file.ts:12:4"],
   },
+  {
+    platform: "linux",
+    installPath: ".local/bin/px0",
+    editor: "px0",
+    args: ["/workspace with spaces/file.ts:12:4"],
+  },
 ] as const) {
   it.effect.skipIf(windowsHost && platform !== "win32")(
     `discovers and launches ${editor} outside PATH on ${platform}`,

@@ -60,6 +60,9 @@ export const EDITORS = [
     remoteScheme: "zed",
   },
   { id: "antigravity", label: "Antigravity", commands: ["agy"], launchStyle: "goto" },
+  // px0 serves its UI from a local server and opens it in the browser; each
+  // launch starts its own server on the next free port. It takes `path:line`.
+  { id: "px0", label: "px0", commands: ["px0"], launchStyle: "direct-path" },
   { id: "idea", label: "IntelliJ IDEA", commands: ["idea"], launchStyle: "line-column" },
   { id: "aqua", label: "Aqua", commands: ["aqua"], launchStyle: "line-column" },
   { id: "clion", label: "CLion", commands: ["clion"], launchStyle: "line-column" },
