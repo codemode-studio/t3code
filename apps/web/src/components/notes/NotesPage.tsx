@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { FileTextIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -8,7 +9,8 @@ import {
   isProviderSendTurnSupportedImageMimeType,
   type Note,
   type NoteError,
-  type EnvironmentId,
+  EnvironmentId,
+  NoteId,
   type ProjectId,
 } from "@t3tools/contracts";
 import { useAssetUrls, resolveAssetUrl } from "../../assets/assetUrls";
@@ -39,6 +41,7 @@ interface Draft {
 }
 
 const keyOf = (note: EnvironmentNote) => `${note.environmentId}:${note.id}`;
+const NoteSelection = Schema.Struct({ environmentId: EnvironmentId, id: NoteId });
 const EMPTY_NOTE_ATOM = Atom.make(AsyncResult.initial<Note, NoteError>(false));
 const draftOf = (note: Note, environmentId: EnvironmentId): Draft => ({
   title: note.title,
@@ -100,19 +103,36 @@ export function NotesPage({
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
-  const selected = notes.find((note) => keyOf(note) === selectedKey) ?? null;
+  const selection = useMemo(() => {
+    const separator = selectedKey?.lastIndexOf(":") ?? -1;
+    if (!selectedKey || separator < 1) return null;
+    return Option.getOrNull(
+      Schema.decodeUnknownOption(NoteSelection)({
+        environmentId: selectedKey.slice(0, separator),
+        id: selectedKey.slice(separator + 1),
+      }),
+    );
+  }, [selectedKey]);
   const detailResult = useAtomValue(
-    selected
-      ? notesEnvironment.get({ environmentId: selected.environmentId, input: { id: selected.id } })
+    selection
+      ? notesEnvironment.get({
+          environmentId: selection.environmentId,
+          input: { id: selection.id },
+        })
       : EMPTY_NOTE_ATOM,
   );
   const detail = Option.getOrNull(AsyncResult.value(detailResult));
+  const selected =
+    selection && detail ? { ...detail, environmentId: selection.environmentId } : null;
   const editor = draft ?? (selected && detail ? draftOf(detail, selected.environmentId) : null);
   const prepared = usePreparedConnection(editor?.environmentId ?? null);
   const visible = notes.filter((note) => !tagFilter || note.tags.includes(tagFilter));
   const tags = [...new Set(notes.flatMap((note) => note.tags))].sort();
   const patch = (next: Partial<Draft>) =>
-    setDraft((current) => (current ? { ...current, ...next } : null));
+    setDraft((current) => {
+      const base = current ?? editor;
+      return base ? { ...base, ...next } : null;
+    });
   const startCreate = () => {
     const environmentId = primaryEnvironmentId ?? environments[0]?.environmentId;
     if (!environmentId) return;

@@ -123,6 +123,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.attachmentsCreateUploadUrl]: AuthOrchestrationOperateScope,
   [WS_METHODS.attachmentsDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.notesList]: AuthOrchestrationReadScope,
+  [WS_METHODS.notesSubscribeChanges]: AuthOrchestrationReadScope,
   [WS_METHODS.notesGet]: AuthOrchestrationReadScope,
   [WS_METHODS.notesCreate]: AuthOrchestrationOperateScope,
   [WS_METHODS.notesUpdate]: AuthOrchestrationOperateScope,

@@ -107,7 +107,6 @@ interface ThreadNavigationSidebarProps {
  * column gets. Other platforms keep the custom header chrome.
  */
 export function ThreadNavigationSidebar(props: ThreadNavigationSidebarProps) {
-  const navigation = useNavigation();
   if (Platform.OS !== "ios") {
     return <ThreadNavigationSidebarPane {...props} nativeChrome={false} />;
   }
@@ -131,6 +130,7 @@ function NativeSidebarContainer(props: ThreadNavigationSidebarProps) {
 function ThreadNavigationSidebarPane(
   props: ThreadNavigationSidebarProps & { readonly nativeChrome: boolean },
 ) {
+  const navigation = useNavigation();
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const drawerColor = materialTheme["--color-drawer"];
 

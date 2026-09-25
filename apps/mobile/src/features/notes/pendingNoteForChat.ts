@@ -1,13 +1,22 @@
 import type { EnvironmentId, NoteSummary } from "@t3tools/contracts";
 
-let pending: { environmentId: EnvironmentId; note: NoteSummary } | null = null;
+import { uuidv4 } from "../../lib/uuid";
 
-export function queueNoteForChat(environmentId: EnvironmentId, note: NoteSummary): void {
-  pending = { environmentId, note };
+let pending: { requestId: string; environmentId: EnvironmentId; note: NoteSummary } | null = null;
+
+export function queueNoteForChat(environmentId: EnvironmentId, note: NoteSummary): string {
+  const requestId = uuidv4();
+  pending = { requestId, environmentId, note };
+  return requestId;
 }
 
-export function pendingNoteForChat(environmentId: EnvironmentId): NoteSummary | null {
-  return pending?.environmentId === environmentId ? pending.note : null;
+export function pendingNoteForChat(
+  environmentId: EnvironmentId,
+  requestId: string | undefined,
+): NoteSummary | null {
+  return pending?.environmentId === environmentId && pending.requestId === requestId
+    ? pending.note
+    : null;
 }
 
 export function clearPendingNoteForChat(environmentId: EnvironmentId, id: NoteSummary["id"]): void {

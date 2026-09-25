@@ -15,6 +15,7 @@ import {
 import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
@@ -25,6 +26,7 @@ import {
   deleteNote,
   getNote,
   listNotes,
+  makeNotes,
   snapshotNotesInCommand,
   updateNote,
 } from "./Notes.ts";
@@ -38,6 +40,109 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(testLayer)("notes", (it) => {
+  it.effect(
+    "notifies every connected client after mutations and supplies the revision on reconnect",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const notes = yield* makeNotes;
+          const first = yield* Stream.toPull(notes.changes);
+          const second = yield* Stream.toPull(notes.changes);
+          expect(yield* first).toEqual([0]);
+          expect(yield* second).toEqual([0]);
+          const note = yield* notes.create({
+            title: "Shared",
+            body: "One",
+            tags: [],
+            projectId: null,
+            sourceThreadId: null,
+            sourceMessageId: null,
+          });
+          expect(yield* first).toEqual([1]);
+          expect(yield* second).toEqual([1]);
+          yield* notes.update({ ...note, body: "Two" });
+          expect(yield* first).toEqual([2]);
+          expect(yield* second).toEqual([2]);
+          yield* notes.remove(note.id);
+          expect(yield* first).toEqual([3]);
+          expect(yield* second).toEqual([3]);
+          const failed = yield* notes.remove(note.id).pipe(Effect.result);
+          expect(failed._tag).toBe("Failure");
+          const reconnected = yield* Stream.toPull(notes.changes);
+          expect(yield* reconnected).toEqual([3]);
+        }),
+      ),
+  );
+
+  it.effect("keeps uploads usable when a later image is missing", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig;
+      const pendingId = "pending-00000000-0000-4000-8000-000000000002";
+      NodeFS.mkdirSync(config.attachmentsDir, { recursive: true });
+      const pendingPath = NodePath.join(config.attachmentsDir, `${pendingId}.png`);
+      NodeFS.writeFileSync(pendingPath, "image bytes");
+      const input = {
+        title: "Retry missing image",
+        body: `![Good](t3-note-image://${pendingId})`,
+        tags: [],
+        projectId: null,
+        sourceThreadId: null,
+        sourceMessageId: null,
+      };
+      const result = yield* createNote({
+        ...input,
+        body: `${input.body}\n![Missing](t3-note-image://pending-00000000-0000-4000-8000-000000000003)`,
+      }).pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect(NodeFS.readFileSync(pendingPath, "utf8")).toBe("image bytes");
+      const saved = yield* createNote(input);
+      expect(saved.body).not.toContain(pendingId);
+      yield* deleteNote(saved.id);
+    }),
+  );
+
+  for (const operation of ["create", "update"] as const) {
+    it.effect(`restores claimed uploads after a failed ${operation} database write`, () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig;
+        const sql = yield* SqlClient.SqlClient;
+        const input = {
+          title: `Retry ${operation}`,
+          body: "Before",
+          tags: [],
+          projectId: null,
+          sourceThreadId: null,
+          sourceMessageId: null,
+        };
+        const existing = operation === "update" ? yield* createNote(input) : null;
+        const pendingId = `pending-00000000-0000-4000-8000-00000000000${operation === "create" ? "4" : "5"}`;
+        const pendingPath = NodePath.join(config.attachmentsDir, `${pendingId}.png`);
+        NodeFS.mkdirSync(config.attachmentsDir, { recursive: true });
+        NodeFS.writeFileSync(pendingPath, "retry bytes");
+        const filesBefore = NodeFS.readdirSync(config.attachmentsDir).sort();
+        const body = `![Retry](t3-note-image://${pendingId})`;
+        const save = existing ? updateNote({ ...existing, body }) : createNote({ ...input, body });
+        if (operation === "create") {
+          yield* sql`CREATE TRIGGER fail_note_write BEFORE INSERT ON notes BEGIN SELECT RAISE(ABORT, 'test write failure'); END`;
+        } else {
+          yield* sql`CREATE TRIGGER fail_note_write BEFORE UPDATE ON notes BEGIN SELECT RAISE(ABORT, 'test write failure'); END`;
+        }
+        const result = yield* save.pipe(
+          Effect.result,
+          Effect.ensuring(sql`DROP TRIGGER fail_note_write`.pipe(Effect.orDie)),
+        );
+        expect(result._tag).toBe("Failure");
+        expect(NodeFS.readdirSync(config.attachmentsDir).sort()).toEqual(filesBefore);
+        expect(NodeFS.readFileSync(pendingPath, "utf8")).toBe("retry bytes");
+        if (existing) expect((yield* getNote(existing.id)).body).toBe("Before");
+        const saved = yield* save;
+        expect(saved.body).not.toContain(pendingId);
+        expect(NodeFS.existsSync(pendingPath)).toBe(false);
+        yield* deleteNote(saved.id);
+      }),
+    );
+  }
+
   it.effect("stores project and transcript provenance, then searches, edits, and deletes", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

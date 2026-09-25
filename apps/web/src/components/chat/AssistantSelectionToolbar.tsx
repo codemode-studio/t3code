@@ -27,7 +27,7 @@ export function AssistantSelectionToolbar({
   viewport: HTMLElement | null;
   threadRef: ScopedThreadRef;
   onCite: (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => boolean;
-  onSave: (messageId: MessageId, text: string) => void;
+  onSave?: ((messageId: MessageId, text: string) => void) | undefined;
 }) {
   const [selection, setSelection] = useState<{
     citation: AssistantCitation;
@@ -101,9 +101,11 @@ export function AssistantSelectionToolbar({
       ) {
         return;
       }
+      const button = toolbar.querySelector<HTMLButtonElement>("button:not(:disabled)");
+      if (!button) return;
       event.preventDefault();
       event.stopPropagation();
-      toolbar.querySelector("button")?.focus({ preventScroll: true });
+      button.focus({ preventScroll: true });
     };
     document.addEventListener("keydown", focusActions, true);
     document.addEventListener("selectionchange", actions.selectionChanged);
@@ -128,7 +130,7 @@ export function AssistantSelectionToolbar({
     return true;
   };
   const save = () => {
-    onSave(selection.citation.messageId, selection.citation.text);
+    onSave?.(selection.citation.messageId, selection.citation.text);
     window.getSelection()?.removeAllRanges();
     dismiss();
   };
@@ -159,10 +161,12 @@ export function AssistantSelectionToolbar({
         <QuoteIcon aria-hidden="true" />
         {tooLong ? "Shorten selection" : "Cite"}
       </Button>
-      <Button type="button" size="xs" variant="ghost" onClick={save}>
-        <FileTextIcon aria-hidden="true" />
-        Save as note
-      </Button>
+      {onSave && (
+        <Button type="button" size="xs" variant="ghost" onClick={save}>
+          <FileTextIcon aria-hidden="true" />
+          Save as note
+        </Button>
+      )}
     </div>,
     document.body,
   );

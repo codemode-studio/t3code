@@ -280,7 +280,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
-  onSaveNote: (messageId: MessageId, text: string) => void;
+  onSaveNote: ((messageId: MessageId, text: string) => void) | undefined;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -588,9 +588,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   }, []);
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
   const createNote = useAtomCommand(notesEnvironment.create);
+  const canSaveNotes = notesEnabled && listIdentityKey === routeThreadKey;
   const saveNote = useCallback(
     (messageId: MessageId, text: string) => {
-      if (!notesEnabled || !citationThreadRef) return;
+      if (!canSaveNotes || !citationThreadRef) return;
       const body = text.trim();
       if (!body || body.length > 128_000) {
         toastManager.add({ type: "error", title: "Message is too long to save as a note" });
@@ -616,7 +617,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           toastManager.add({ type: "success", title: "Saved as note" });
       });
     },
-    [citationThreadRef, createNote, noteProjectId, notesEnabled],
+    [citationThreadRef, createNote, noteProjectId, canSaveNotes],
   );
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
   const expandCitedTurn = useCallback((turnId: TurnId) => {
@@ -1177,7 +1178,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
-      onSaveNote: saveNote,
+      onSaveNote: canSaveNotes ? saveNote : undefined,
       onRevertToTurnCount,
       onUseArtifactTemplate,
       onImageExpand,
@@ -1214,6 +1215,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       saveNote,
+      canSaveNotes,
       onRevertToTurnCount,
       onUseArtifactTemplate,
       onImageExpand,
@@ -1310,7 +1312,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               viewport={timelineViewportElement}
               threadRef={citationThreadRef}
               onCite={onCiteAssistantText}
-              onSave={saveNote}
+              onSave={canSaveNotes ? saveNote : undefined}
             />
           ) : null}
           <LegendList<MessagesTimelineRow>
@@ -2270,12 +2272,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 variant="ghost"
               />
             )}
-            {!row.message.streaming && (
+            {!row.message.streaming && ctx.onSaveNote && (
               <Button
                 size="icon-xs"
                 variant="ghost"
                 aria-label="Save message as note"
-                onClick={() => ctx.onSaveNote(row.message.id, row.message.text)}
+                onClick={() => ctx.onSaveNote?.(row.message.id, row.message.text)}
               >
                 <FileTextIcon />
               </Button>
@@ -2496,12 +2498,12 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
-      {!message.streaming && (
+      {!message.streaming && ctx.onSaveNote && (
         <Button
           size="icon-xs"
           variant="ghost"
           aria-label="Save message as note"
-          onClick={() => ctx.onSaveNote(message.id, message.text)}
+          onClick={() => ctx.onSaveNote?.(message.id, message.text)}
         >
           <FileTextIcon />
         </Button>
@@ -3729,6 +3731,26 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
 >({
   requiredKinds: COMPOSER_CONTEXT_KINDS,
   handlers: [
+    {
+      kind: "note",
+      canRender: (record) => record.kind === "note",
+      render: (record, context) =>
+        record.kind === "note" ? (
+          <UserMessageContextPopover
+            copyMarkdown={context.copyMarkdown}
+            accessibleLabel={`Note, ${record.title}`}
+            kind="note"
+            icon={<FileTextIcon />}
+            label={record.title}
+          >
+            <div className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-sm">
+              {record.content}
+            </div>
+          </UserMessageContextPopover>
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
     {
       kind: "mention",
       canRender: (record) => record.kind === "mention",

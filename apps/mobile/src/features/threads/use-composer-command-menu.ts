@@ -11,6 +11,7 @@ import { pullRequestComposerContext } from "../../lib/composerContext";
 import { uuidv4 } from "../../lib/uuid";
 import {
   getComposerDraftSnapshot,
+  insertComposerDraftContext,
   readComposerDraftSelection,
   setComposerDraftContext,
 } from "../../state/use-composer-drafts";
@@ -511,19 +512,25 @@ export function useComposerCommandMenu({
           title: item.note.title,
           content: "",
         };
-        const result = replaceTextRange(
-          draftMessage,
-          trigger.rangeStart,
-          trigger.rangeEnd,
-          `${formatComposerContextReference(record)} `,
+        const inserted = insertComposerDraftContext(
+          ownerKey,
+          {
+            text: `${formatComposerContextReference(record)} `,
+            context: { version: 1, records: [record] },
+          },
+          { text: draftMessage, start: trigger.rangeStart, end: trigger.rangeEnd },
         );
-        onChangeDraftMessage(result.text);
+        if (!inserted) {
+          Alert.alert(
+            "Too many context items",
+            "Remove some context from the draft and try again.",
+          );
+          return;
+        }
         const draft = getComposerDraftSnapshot(ownerKey);
-        setComposerDraftContext(ownerKey, {
-          version: 1,
-          records: [...(draft.context?.records ?? []), record],
-        });
-        setSelection({ start: result.cursor, end: result.cursor });
+        onChangeDraftMessage(draft.text);
+        const selection = readComposerDraftSelection(ownerKey, draft.text);
+        if (selection) setSelection(selection);
         return;
       }
       if (item.type === "pull-request") {

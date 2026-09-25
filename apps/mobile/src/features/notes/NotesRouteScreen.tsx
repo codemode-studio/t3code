@@ -106,13 +106,12 @@ export function NotesRouteScreen() {
   const update = useAtomCommand(notesEnvironment.update);
   const remove = useAtomCommand(notesEnvironment.remove);
   const upload = useAtomCommand(attachmentEnvironment.createUploadUrl);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selected, setSelected] = useState<EnvironmentNote | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [creating, setCreating] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
-  const selected = notes.find((note) => noteKey(note) === selectedKey) ?? null;
   const detailResult = useAtomValue(
     selected
       ? notesEnvironment.get({ environmentId: selected.environmentId, input: { id: selected.id } })
@@ -150,7 +149,7 @@ export function NotesRouteScreen() {
         setQuery("");
         setCreating(false);
         setDraft(null);
-        setSelectedKey(`${editor.environmentId}:${result.value.id}`);
+        setSelected({ ...result.value, environmentId: editor.environmentId });
       }
     } finally {
       setBusy(false);
@@ -168,7 +167,7 @@ export function NotesRouteScreen() {
             (result) => {
               if (result._tag === "Success") {
                 setQuery("");
-                setSelectedKey(null);
+                setSelected(null);
                 setDraft(null);
               }
             },
@@ -187,13 +186,14 @@ export function NotesRouteScreen() {
       Alert.alert("No project", "Add a project on this environment to start a chat.");
       return;
     }
-    queueNoteForChat(selected.environmentId, selected);
+    const noteRequestId = queueNoteForChat(selected.environmentId, selected);
     navigation.navigate("NewTaskSheet", {
       screen: "NewTaskDraft",
       params: {
         environmentId: project.environmentId,
         projectId: project.id,
         title: project.title,
+        noteRequestId,
       },
     });
   };
@@ -251,7 +251,7 @@ export function NotesRouteScreen() {
           onPress={() => {
             const environmentId = environments[0]?.environmentId;
             if (!environmentId) return;
-            setSelectedKey(null);
+            setSelected(null);
             setCreating(true);
             setPreview(false);
             setDraft({ title: "", body: "", tags: "", projectId: null, environmentId });
@@ -279,7 +279,7 @@ export function NotesRouteScreen() {
         <Pressable
           key={noteKey(note)}
           onPress={() => {
-            setSelectedKey(noteKey(note));
+            setSelected(note);
             setDraft(null);
             setCreating(false);
             setPreview(false);

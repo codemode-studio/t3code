@@ -314,6 +314,7 @@ export const WS_METHODS = {
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
   notesList: "notes.list",
+  notesSubscribeChanges: "notes.subscribeChanges",
   notesGet: "notes.get",
   notesCreate: "notes.create",
   notesUpdate: "notes.update",
@@ -1029,6 +1030,12 @@ const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
 });
 
 const NoteRpcError = Schema.Union([NoteError, EnvironmentAuthorizationError]);
+const WsNotesSubscribeChangesRpc = Rpc.make(WS_METHODS.notesSubscribeChanges, {
+  payload: Schema.Struct({}),
+  success: Schema.Number,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
 const WsNotesListRpc = Rpc.make(WS_METHODS.notesList, {
   payload: NoteListInput,
   success: NoteListResult,
@@ -1568,6 +1575,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
   WsNotesListRpc,
+  WsNotesSubscribeChangesRpc,
   WsNotesGetRpc,
   WsNotesCreateRpc,
   WsNotesUpdateRpc,

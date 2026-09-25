@@ -185,12 +185,13 @@ export function NewTaskDraftScreen(props: {
   readonly draftId?: string;
   /** Durable native share inbox item to merge into this project draft. */
   readonly incomingShareId?: string;
+  readonly noteRequestId?: string;
 }) {
   const projects = useProjects();
   const flow = useNewTaskFlow();
   useEffect(() => {
     if (!flow.draftKey || !flow.selectedProject) return;
-    const note = pendingNoteForChat(flow.selectedProject.environmentId);
+    const note = pendingNoteForChat(flow.selectedProject.environmentId, props.noteRequestId);
     if (!note) return;
     const contextId = ComposerContextId.make(`note_${note.id}`);
     const inserted = insertComposerDraftContext(flow.draftKey, {
@@ -211,7 +212,7 @@ export function NewTaskDraftScreen(props: {
       },
     });
     if (inserted) clearPendingNoteForChat(flow.selectedProject.environmentId, note.id);
-  }, [flow.draftKey, flow.selectedProject]);
+  }, [flow.draftKey, flow.selectedProject, props.noteRequestId]);
   const navigation = useNavigation();
   const {
     consumeShare,

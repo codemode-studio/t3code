@@ -13,8 +13,10 @@ import { NoteContextRecord, NoteError, NoteId as NoteIdSchema } from "@t3tools/c
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { planAttachmentClaim } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
@@ -42,18 +44,32 @@ function claimImages(body: string, noteId: NoteId) {
     if (pendingIds.length === 0) return body;
     const config = yield* ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
+    const claims = yield* Effect.forEach(pendingIds, (pendingId) =>
+      Effect.gen(function* () {
+        const claim = planAttachmentClaim({
+          attachmentsDir: config.attachmentsDir,
+          threadId: `note-${noteId}`,
+          attachmentId: pendingId,
+        });
+        if (!claim.ok)
+          return yield* new NoteError({ message: `Note image ${pendingId}: ${claim.reason}.` });
+        return { ...claim, pendingId };
+      }),
+    );
     let resolved = body;
-    for (const pendingId of pendingIds) {
-      const claim = planAttachmentClaim({
-        attachmentsDir: config.attachmentsDir,
-        threadId: `note-${noteId}`,
-        attachmentId: pendingId,
-      });
-      if (!claim.ok)
-        return yield* new NoteError({ message: `Note image ${pendingId}: ${claim.reason}.` });
-      yield* fileSystem.rename(claim.currentPath, claim.finalPath);
+    for (const claim of claims) {
+      // Keep the upload reusable when a later move or the database write fails.
+      yield* Effect.acquireRelease(
+        fileSystem.rename(claim.currentPath, claim.finalPath),
+        (_, exit) =>
+          Exit.isFailure(exit)
+            ? fileSystem
+                .rename(claim.finalPath, claim.currentPath)
+                .pipe(Effect.ignoreCause({ log: true }))
+            : Effect.void,
+      );
       resolved = resolved.replaceAll(
-        `t3-note-image://${pendingId}`,
+        `t3-note-image://${claim.pendingId}`,
         `t3-note-image://${claim.finalId}`,
       );
     }
@@ -154,16 +170,25 @@ export const createNote = (input: NoteCreateInput) =>
     const now = DateTime.formatIso(yield* DateTime.now);
     const tagsJson = yield* Schema.encodeEffect(TagsJson)(input.tags);
     const body = yield* claimImages(input.body, id);
-    yield* sql`
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`
       INSERT INTO notes (id, title, body, tags_json, project_id, source_thread_id, source_message_id, created_at, updated_at)
       VALUES (${id}, ${input.title}, ${body}, ${tagsJson}, ${input.projectId}, ${input.sourceThreadId}, ${input.sourceMessageId}, ${now}, ${now})
     `;
-    return yield* getNote(id);
-  }).pipe(Effect.mapError((cause) => (isNoteError(cause) ? cause : failed("create")(cause))));
+        return yield* getNote(id);
+      }),
+    );
+  }).pipe(
+    Effect.scoped,
+    Effect.uninterruptible,
+    Effect.mapError((cause) => (isNoteError(cause) ? cause : failed("create")(cause))),
+  );
 
 export const updateNote = (input: NoteUpdateInput) =>
   Effect.gen(function* () {
     yield* getNote(input.id);
+    // Project assignment can change independently of the note's original transcript source.
     yield* validateAssociation({
       projectId: input.projectId,
       sourceThreadId: null,
@@ -173,13 +198,21 @@ export const updateNote = (input: NoteUpdateInput) =>
     const tagsJson = yield* Schema.encodeEffect(TagsJson)(input.tags);
     const now = DateTime.formatIso(yield* DateTime.now);
     const body = yield* claimImages(input.body, input.id);
-    yield* sql`
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`
       UPDATE notes SET title = ${input.title}, body = ${body}, tags_json = ${tagsJson},
         project_id = ${input.projectId}, updated_at = ${now}
       WHERE id = ${input.id}
     `;
-    return yield* getNote(input.id);
-  }).pipe(Effect.mapError((cause) => (isNoteError(cause) ? cause : failed("update")(cause))));
+        return yield* getNote(input.id);
+      }),
+    );
+  }).pipe(
+    Effect.scoped,
+    Effect.uninterruptible,
+    Effect.mapError((cause) => (isNoteError(cause) ? cause : failed("update")(cause))),
+  );
 
 export const deleteNote = (id: NoteId) =>
   Effect.gen(function* () {
@@ -187,6 +220,30 @@ export const deleteNote = (id: NoteId) =>
     const sql = yield* SqlClient.SqlClient;
     yield* sql`DELETE FROM notes WHERE id = ${id}`;
   }).pipe(Effect.mapError((cause) => (isNoteError(cause) ? cause : failed("delete")(cause))));
+
+/** Share one feed across the server's WebSocket sessions; reconnects receive the current revision. */
+export const makeNotes = Effect.gen(function* () {
+  const revision = yield* SubscriptionRef.make(0);
+  const changed = SubscriptionRef.update(revision, (value) => value + 1);
+  return {
+    changes: SubscriptionRef.changes(revision),
+    create: (input: NoteCreateInput) =>
+      createNote(input).pipe(
+        Effect.tap(() => changed),
+        Effect.uninterruptible,
+      ),
+    update: (input: NoteUpdateInput) =>
+      updateNote(input).pipe(
+        Effect.tap(() => changed),
+        Effect.uninterruptible,
+      ),
+    remove: (id: NoteId) =>
+      deleteNote(id).pipe(
+        Effect.tap(() => changed),
+        Effect.uninterruptible,
+      ),
+  };
+});
 
 /** Resolve on the owning server, before the message is appended to the event log. */
 export const snapshotNotesInCommand = (command: OrchestrationCommand) =>

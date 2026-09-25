@@ -501,6 +501,7 @@ const makeWsRpcLayer = (
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  notes: Effect.Success<typeof Notes.makeNotes>,
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -3284,11 +3285,13 @@ const makeWsRpcLayer = (
         [WS_METHODS.notesGet]: (input) =>
           observeRpcEffect(WS_METHODS.notesGet, Notes.getNote(input.id)),
         [WS_METHODS.notesCreate]: (input) =>
-          observeRpcEffect(WS_METHODS.notesCreate, Notes.createNote(input)),
+          observeRpcEffect(WS_METHODS.notesCreate, notes.create(input)),
         [WS_METHODS.notesUpdate]: (input) =>
-          observeRpcEffect(WS_METHODS.notesUpdate, Notes.updateNote(input)),
+          observeRpcEffect(WS_METHODS.notesUpdate, notes.update(input)),
         [WS_METHODS.notesDelete]: (input) =>
-          observeRpcEffect(WS_METHODS.notesDelete, Notes.deleteNote(input.id)),
+          observeRpcEffect(WS_METHODS.notesDelete, notes.remove(input.id)),
+        [WS_METHODS.notesSubscribeChanges]: () =>
+          observeRpcStream(WS_METHODS.notesSubscribeChanges, notes.changes),
         [WS_METHODS.subscribeVcsStatus]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribeVcsStatus,
@@ -3830,6 +3833,7 @@ const makeWsRpcLayer = (
 
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
+    const notes = yield* Notes.makeNotes;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
@@ -3897,6 +3901,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
+              notes,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

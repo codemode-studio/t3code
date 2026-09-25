@@ -2,19 +2,29 @@ import { WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { Atom } from "effect/unstable/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { createEnvironmentRpcCommand, createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
+import {
+  createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentRpcSubscriptionAtomFamily,
+} from "./runtime.ts";
 export function createNotesEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  const changes = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:notes:changes",
+    tag: WS_METHODS.notesSubscribeChanges,
+  });
   const list = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:notes:list",
     tag: WS_METHODS.notesList,
     staleTimeMs: 0,
+    refreshTrigger: ({ environmentId }) => changes({ environmentId, input: {} }),
   });
   const get = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:notes:get",
     tag: WS_METHODS.notesGet,
     staleTimeMs: 0,
+    refreshTrigger: ({ environmentId }) => changes({ environmentId, input: {} }),
   });
   return {
     list,

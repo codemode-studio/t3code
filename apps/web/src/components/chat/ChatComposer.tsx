@@ -2596,6 +2596,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         pullRequestTriggerNumber !== debouncedPullRequestNumber ||
         exactPullRequestLookup.isPending));
   const composerMenuEmptyState = useMemo(() => {
+    if (composerTriggerKind === "note") return "No matching notes.";
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
     }
