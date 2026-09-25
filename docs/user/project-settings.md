@@ -70,8 +70,9 @@ Deleting one removes its files, including uncommitted changes, but keeps the bra
 threads. Select another checkout before deleting the project folder you are managing. T3 Code can
 recreate a thread's worktree when you continue that thread.
 
-Open **Settings → Storage** to enable automatic cleanup on one machine or all connected
-environments. Policies are off by default and run on the server at startup, when changed, and
+Open **Settings → Storage** to enable automatic cleanup. When you open it from Settings with no
+target selected, it selects this client's primary environment. Use the environment picker to choose another machine or
+all environments. Policies are off by default and run on the server at startup, when changed, and
 hourly. Offline machines keep their existing policies.
 
 Select a project to set **Automatic worktree cleanup** to **Inherit**, **Off**, or **Custom**.
