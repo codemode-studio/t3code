@@ -3,7 +3,8 @@ export type ComposerTriggerKind =
   | "pull-request"
   | "slash-command"
   | "slash-model"
-  | "skill";
+  | "skill"
+  | "note";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
 export interface ComposerTrigger {
@@ -119,6 +120,11 @@ export function detectComposerTrigger(
   }
   if (!token.startsWith("@")) {
     return null;
+  }
+
+  const noteMatch = /^@note(?::([\p{L}\p{N}_-]*))?$/iu.exec(token);
+  if (noteMatch) {
+    return { kind: "note", query: noteMatch[1] ?? "", rangeStart: tokenStart, rangeEnd: cursor };
   }
 
   return {

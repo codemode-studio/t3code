@@ -26,6 +26,7 @@ type NewTaskDraftRouteParams = {
   readonly pendingTaskId?: string | string[];
   readonly draftId?: string | string[];
   readonly incomingShareId?: string | string[];
+  readonly noteRequestId?: string;
 };
 
 export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraftRouteParams>) {
@@ -168,6 +169,7 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
           }
           pendingTaskId={pendingTaskId}
           draftId={draftId}
+          noteRequestId={params.noteRequestId}
         />
       )}
     </>

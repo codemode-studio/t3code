@@ -5,6 +5,7 @@ import {
 } from "@t3tools/client-runtime/providerSkills";
 import {
   type ProjectEntry,
+  type NoteSummary,
   type ProviderDriverKind,
   type PullRequestContextMetadata,
   type ServerProviderSkill,
@@ -64,6 +65,13 @@ export type ComposerCommandItem =
       id: string;
       type: "pull-request";
       pullRequest: PullRequestContextMetadata;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "note";
+      note: NoteSummary;
       label: string;
       description: string;
     };
@@ -127,13 +135,17 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                   ? "Searching workspace skills..."
                   : props.triggerKind === "pull-request"
                     ? "Finding pull request..."
-                    : "Searching workspace files..."
+                    : props.triggerKind === "note"
+                      ? "Loading notes..."
+                      : "Searching workspace files..."
                 : (props.emptyStateText ??
                   (props.triggerKind === "skill"
                     ? "No skills found. Try / to browse provider commands."
                     : props.triggerKind === "path"
                       ? "No matching files or folders."
-                      : "No matching command."))}
+                      : props.triggerKind === "note"
+                        ? "No matching notes."
+                        : "No matching command."))}
             </p>
           </div>
         )}

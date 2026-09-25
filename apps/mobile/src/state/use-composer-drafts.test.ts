@@ -4,6 +4,7 @@ import {
   ComposerContextId,
   EnvironmentId,
   MessageId,
+  NoteId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -148,6 +149,7 @@ vi.mock("../features/sharing/incoming-share-storage", () => ({
 }));
 
 import type { DraftComposerAttachment } from "../lib/composerImages";
+import { composerContextSendBlockReason } from "../lib/composerContext";
 import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import { appAtomRegistry } from "./atom-registry";
 import { threadOutboxManager } from "./thread-outbox";
@@ -238,6 +240,39 @@ function contextDraft(start: number, count: number): ComposerDraft {
 }
 
 describe("mobile composer drafts", () => {
+  it.each(["environment:thread", "environment:new-task:draft"])(
+    "can send the same note inserted twice in %s",
+    (key) => {
+      const record = {
+        version: 1 as const,
+        kind: "note" as const,
+        contextId: ComposerContextId.make("note_00000000-0000-4000-8000-000000000001"),
+        noteId: NoteId.make("00000000-0000-4000-8000-000000000001"),
+        label: "Reference",
+        title: "Reference",
+        content: "",
+      };
+      const reference = formatComposerContextReference(record);
+      for (let index = 0; index < 2; index += 1) {
+        const text = `${getComposerDraftSnapshot(key).text}@note`;
+        setComposerDraftText(key, text);
+        expect(
+          insertComposerDraftContext(
+            key,
+            {
+              text: `${reference} `,
+              context: { version: 1, records: [record] },
+            },
+            { text, start: text.length - 5, end: text.length },
+          ),
+        ).toBe(true);
+      }
+      const draft = getComposerDraftSnapshot(key);
+      expect(draft.text).toBe(`${reference} ${reference} `);
+      expect(draft.context?.records).toEqual([record]);
+      expect(composerContextSendBlockReason(draft.context)).toBeNull();
+    },
+  );
   it.each([false, true])(
     "restores visible file chips from legacy drafts (archived: %s)",
     async (archived) => {

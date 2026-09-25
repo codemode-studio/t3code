@@ -1,4 +1,4 @@
-import type { ComposerContextId, ComposerContextRecord } from "@t3tools/contracts";
+import { NoteId, type ComposerContextId, type ComposerContextRecord } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -95,6 +95,27 @@ describe("labels and reference links", () => {
 });
 
 describe("provider projection", () => {
+  it("includes the saved note snapshot in provider context", () => {
+    const noteId = NoteId.make("00000000-0000-4000-8000-000000000001");
+    const contextId = ctx(`note_${noteId}`);
+    const text = formatComposerContextReference({ kind: "note", contextId, label: "Plan" });
+    const projected = projectComposerContextForProvider({
+      text,
+      records: [
+        {
+          version: 1,
+          kind: "note",
+          contextId,
+          noteId,
+          label: "Plan",
+          title: "Plan",
+          content: "Saved at send time",
+        },
+      ],
+    });
+    expect(projected).toContain("Saved at send time");
+    expect(projected).toContain('kind="note"');
+  });
   const terminal: ComposerContextRecord = {
     version: 1,
     contextId: ctx("ctx_t"),

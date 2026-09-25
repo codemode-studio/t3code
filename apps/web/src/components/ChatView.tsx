@@ -318,11 +318,13 @@ import {
 import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
 import {
   buildMessageContext,
+  noteContextRecordsForPrompt,
   previewAnnotationContextLabel,
   previewAnnotationContextReference,
   reviewCommentContextLabel,
   terminalContextReference,
 } from "../lib/composerContextRecords";
+import { useNotes } from "../state/notes";
 import {
   isQueuedMessageDue,
   latestCompletedToolActivityId,
@@ -2325,6 +2327,7 @@ export default function ChatView(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
+  const { notes: allNotes } = useNotes();
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
@@ -7565,6 +7568,10 @@ export default function ChatView(props: ChatViewProps) {
           terminalContexts: sendableComposerTerminalContexts,
           reviewComments: composerReviewComments,
           previewAnnotations: composerPreviewAnnotations,
+          notes: noteContextRecordsForPrompt(
+            followUp.text,
+            allNotes.filter((note) => note.environmentId === environmentId),
+          ),
         }),
         interactionMode: followUp.interactionMode,
       });
@@ -7714,6 +7721,10 @@ export default function ChatView(props: ChatViewProps) {
           attachment,
           attachmentId: attachmentIds[index] ?? attachment.id,
         })),
+        notes: noteContextRecordsForPrompt(
+          messageTextForSend,
+          allNotes.filter((note) => note.environmentId === environmentId),
+        ),
       });
     const outgoingMessageContext = buildOutgoingMessageContext(
       composerAttachmentsSnapshot.map((attachment) => attachment.id),
@@ -9929,6 +9940,8 @@ export default function ChatView(props: ChatViewProps) {
                 activeThreadEnvironmentId={
                   displayedThreadRef?.environmentId ?? activeThread.environmentId
                 }
+                noteProjectId={activeThread.projectId}
+                notesEnabled={!paintOnlyDisplayedTimeline}
                 routeThreadKey={displayedTimelineKey}
                 displayThreadKey={displayedTimelineKey}
                 onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}

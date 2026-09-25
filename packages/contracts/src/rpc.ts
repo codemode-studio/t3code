@@ -3,6 +3,15 @@ import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
+  Note,
+  NoteCreateInput,
+  NoteError,
+  NoteIdInput,
+  NoteListInput,
+  NoteListResult,
+  NoteUpdateInput,
+} from "./notes.ts";
+import {
   ProviderAuthCancelInput,
   ProviderAuthCompleteInput,
   ProviderAuthState,
@@ -306,6 +315,12 @@ export const WS_METHODS = {
   assetsCreateUrl: "assets.createUrl",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
+  notesList: "notes.list",
+  notesSubscribeChanges: "notes.subscribeChanges",
+  notesGet: "notes.get",
+  notesCreate: "notes.create",
+  notesUpdate: "notes.update",
+  notesDelete: "notes.delete",
 
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
@@ -1017,6 +1032,38 @@ const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
   error: EnvironmentAuthorizationError,
 });
 
+const NoteRpcError = Schema.Union([NoteError, EnvironmentAuthorizationError]);
+const WsNotesSubscribeChangesRpc = Rpc.make(WS_METHODS.notesSubscribeChanges, {
+  payload: Schema.Struct({}),
+  success: Schema.Number,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+const WsNotesListRpc = Rpc.make(WS_METHODS.notesList, {
+  payload: NoteListInput,
+  success: NoteListResult,
+  error: NoteRpcError,
+});
+const WsNotesGetRpc = Rpc.make(WS_METHODS.notesGet, {
+  payload: NoteIdInput,
+  success: Note,
+  error: NoteRpcError,
+});
+const WsNotesCreateRpc = Rpc.make(WS_METHODS.notesCreate, {
+  payload: NoteCreateInput,
+  success: Note,
+  error: NoteRpcError,
+});
+const WsNotesUpdateRpc = Rpc.make(WS_METHODS.notesUpdate, {
+  payload: NoteUpdateInput,
+  success: Note,
+  error: NoteRpcError,
+});
+const WsNotesDeleteRpc = Rpc.make(WS_METHODS.notesDelete, {
+  payload: NoteIdInput,
+  error: NoteRpcError,
+});
+
 const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
   payload: ProviderUploadFeedbackInput,
   success: ProviderUploadFeedbackResult,
@@ -1536,6 +1583,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsAssetsCreateUrlRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
+  WsNotesListRpc,
+  WsNotesSubscribeChangesRpc,
+  WsNotesGetRpc,
+  WsNotesCreateRpc,
+  WsNotesUpdateRpc,
+  WsNotesDeleteRpc,
   WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeWorktreeSetupRpc,

@@ -164,6 +164,7 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Notes from "./notes/Notes.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -501,6 +502,7 @@ const makeWsRpcLayer = (
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  notes: Effect.Success<typeof Notes.makeNotes>,
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1885,7 +1887,14 @@ const makeWsRpcLayer = (
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               yield* ProjectCloneTracker.rejectCommandsDuringClone(projectCloneTracker, command);
-              const normalizedCommand = yield* normalizeDispatchCommand(command);
+              const normalized = yield* normalizeDispatchCommand(command);
+              const normalizedCommand = yield* Notes.snapshotNotesInCommand(normalized).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new OrchestrationDispatchCommandError({ message: error.message, cause: error }),
+                ),
+                Effect.tapError(() => cleanupFailedUploadedAttachments(command, normalized)),
+              );
               // Archive removes the thread from the client, so this transport
               // closes its session and terminals after the command lands.
               // Settlement cleanup is driven by thread.settled events in the
@@ -3272,6 +3281,18 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.notesList]: (input) =>
+          observeRpcEffect(WS_METHODS.notesList, Notes.listNotes(input)),
+        [WS_METHODS.notesGet]: (input) =>
+          observeRpcEffect(WS_METHODS.notesGet, Notes.getNote(input.id)),
+        [WS_METHODS.notesCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.notesCreate, notes.create(input)),
+        [WS_METHODS.notesUpdate]: (input) =>
+          observeRpcEffect(WS_METHODS.notesUpdate, notes.update(input)),
+        [WS_METHODS.notesDelete]: (input) =>
+          observeRpcEffect(WS_METHODS.notesDelete, notes.remove(input.id)),
+        [WS_METHODS.notesSubscribeChanges]: () =>
+          observeRpcStream(WS_METHODS.notesSubscribeChanges, notes.changes),
         [WS_METHODS.subscribeVcsStatus]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribeVcsStatus,
@@ -3817,6 +3838,7 @@ const makeWsRpcLayer = (
 
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
+    const notes = yield* Notes.makeNotes;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
@@ -3884,6 +3906,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
+              notes,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

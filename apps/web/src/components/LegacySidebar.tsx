@@ -196,6 +196,7 @@ import {
 import { sortThreads } from "../lib/threadSort";
 import {
   SidebarAutomationsLink,
+  SidebarNotesLink,
   SidebarChromeFooter,
   SidebarChromeHeader,
 } from "./sidebar/SidebarChrome";
@@ -2966,6 +2967,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         // header and would otherwise paint across the search row's outline.
         <SidebarGroup className="z-[1]">
           <SidebarAutomationsLink />
+          <SidebarNotesLink />
           <SidebarMenu>
             <SidebarMenuItem>
               <CommandDialogTrigger
