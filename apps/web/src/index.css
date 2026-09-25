@@ -1653,6 +1653,17 @@ html.window-translucent [data-slot="sidebar-inner"] {
   );
 }
 
+/* The container's border sits outside the tinted inner layer, so over a clear
+   window it lets more desktop through than the sidebar beside it and glows
+   wherever the desktop is bright. Draw the divider on top of the tint instead. */
+html.window-translucent [data-slot="sidebar-container"] {
+  border-width: 0;
+
+  & [data-slot="sidebar-inner"] {
+    box-shadow: inset -1px 0 0 var(--color-sidebar-border);
+  }
+}
+
 /* Routes and panes inside the main pane stack full-size bg-background layers
    of their own. Clear only those pane-filling layers and the thread header so
    the pane's single translucent layer shows through. The --background token
@@ -1666,6 +1677,7 @@ html.window-translucent[data-window-translucency-main-pane] main[data-slot="side
   );
 
   & .flex-1.bg-background,
+  & [data-timeline-loading],
   & [data-chat-header] {
     background-color: transparent;
   }

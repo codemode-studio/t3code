@@ -1146,6 +1146,12 @@ export interface DesktopBridge {
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
+  /**
+   * Whether the open window can show translucency. macOS and Linux only allow
+   * it on windows created with it, so turning it on waits for a reopen.
+   * Optional: older desktop builds do not have it.
+   */
+  canShowWindowTranslucency?: () => boolean;
   getConnectionCatalog?: () => Promise<string | null>;
   setConnectionCatalog?: (catalog: string) => Promise<boolean>;
   clearConnectionCatalog?: () => Promise<void>;

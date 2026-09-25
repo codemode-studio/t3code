@@ -77,6 +77,7 @@ import {
 
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { installDesktopPasteAsText } from "../lib/desktopPasteAsText";
+import { canShowWindowTranslucency } from "../lib/windowTranslucency";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
 
 export const Route = createRootRoute({
@@ -297,8 +298,11 @@ function WindowTranslucencySync() {
   useEffect(() => {
     if (!isElectron) return;
     const root = document.documentElement;
-    root.classList.toggle("window-translucent", translucent);
-    root.toggleAttribute("data-window-translucency-main-pane", translucent && mainPane);
+    // Until a reopen gives the window an alpha channel, clearing the page
+    // would only darken it.
+    const active = translucent && canShowWindowTranslucency();
+    root.classList.toggle("window-translucent", active);
+    root.toggleAttribute("data-window-translucency-main-pane", active && mainPane);
     root.style.setProperty("--window-translucency-opacity", `${opacity}%`);
   }, [mainPane, opacity, translucent]);
 

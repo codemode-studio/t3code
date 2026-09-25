@@ -141,6 +141,9 @@ export class DesktopWindow extends Context.Service<
     // Linux can only turn it on or off when the window opens, so there only the
     // macOS blur radius changes live.
     readonly syncTranslucency: Effect.Effect<void>;
+    // Whether the open main window can show translucency now. Windows can
+    // switch it live; macOS and Linux need a window that was created with it.
+    readonly canShowTranslucency: Effect.Effect<boolean>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
 
@@ -1128,6 +1131,9 @@ export const make = Effect.gen(function* () {
         yield* applyMacBlurRadius(mainWindow.value, blurRadius);
       }
     }).pipe(Effect.withSpan("desktop.window.syncTranslucency")),
+    canShowTranslucency: Effect.sync(
+      () => appliesTranslucencyLive(environment.platform) || mainWindowCreatedTranslucent,
+    ),
   });
 });
 

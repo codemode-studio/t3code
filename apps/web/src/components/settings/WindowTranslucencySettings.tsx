@@ -8,6 +8,7 @@ import {
 import type { CSSProperties } from "react";
 
 import { isMacPlatform, isWindowsPlatform } from "../../lib/utils";
+import { canShowWindowTranslucency } from "../../lib/windowTranslucency";
 import { Switch } from "../ui/switch";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -15,12 +16,12 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 
 function translucencyDescription(platform: string): string {
   if (isMacPlatform(platform)) {
-    return "Show a blurred view of the desktop behind T3 Code. Turning this on or off applies after restarting T3 Code.";
+    return "Show a blurred view of the desktop behind T3 Code.";
   }
   if (isWindowsPlatform(platform)) {
     return "Show a blurred view of the desktop behind T3 Code. Requires Windows 11 22H2 or later.";
   }
-  return "Let the desktop show through T3 Code. Your compositor controls the blur. Turning this on or off applies after restarting T3 Code.";
+  return "Let the desktop show through T3 Code. Your compositor controls the blur.";
 }
 
 function sliderStyle(value: number, min: number, max: number): CSSProperties {
@@ -42,6 +43,11 @@ export function WindowTranslucencySection() {
       <SettingsRow
         {...searchableSetting("window-translucency")}
         description={translucencyDescription(platform)}
+        status={
+          settings.windowTranslucency && !canShowWindowTranslucency() ? (
+            <span className="block text-warning">Quit and reopen T3 Code to apply.</span>
+          ) : null
+        }
         resetAction={
           settings.windowTranslucency !== DEFAULT_UNIFIED_SETTINGS.windowTranslucency ? (
             <SettingResetButton

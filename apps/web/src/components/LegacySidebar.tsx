@@ -2977,8 +2977,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         // Lifted above the stage backdrop, whose fade bleeds below the
         // header and would otherwise paint across the search row's outline.
         <SidebarGroup className="z-[1]">
-          <SidebarAutomationsLink />
           <SidebarNotesLink />
+          <SidebarAutomationsLink />
           <SidebarMenu>
             <SidebarMenuItem>
               <CommandDialogTrigger

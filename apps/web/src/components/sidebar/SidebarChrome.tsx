@@ -138,7 +138,7 @@ export const SidebarAutomationsLink = memo(function SidebarAutomationsLink() {
   const { isMobile, setOpenMobile } = useSidebar();
   const active = useLocation({ select: (location) => location.pathname === "/automations" });
   return (
-    <SidebarMenu>
+    <SidebarMenu className="mb-1">
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={active}
@@ -160,7 +160,7 @@ export const SidebarNotesLink = memo(function SidebarNotesLink() {
   const { isMobile, setOpenMobile } = useSidebar();
   const active = useLocation({ select: (location) => location.pathname === "/notes" });
   return (
-    <SidebarMenu>
+    <SidebarMenu className="mb-1">
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={active}

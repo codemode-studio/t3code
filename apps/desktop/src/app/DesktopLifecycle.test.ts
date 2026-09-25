@@ -98,6 +98,7 @@ function makeDesktopWindowLayer(
     zoomMain: () => Effect.void,
     syncAppearance: Effect.void,
     syncTranslucency: Effect.void,
+    canShowTranslucency: Effect.succeed(false),
   });
 }
 

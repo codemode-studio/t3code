@@ -89,6 +89,7 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),
     syncAppearance: Effect.void,
     syncTranslucency: Effect.void,
+    canShowTranslucency: Effect.succeed(false),
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 
 const makeElectronMenuLayer = (
