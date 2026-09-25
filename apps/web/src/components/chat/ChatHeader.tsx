@@ -496,10 +496,8 @@ export const ChatHeader = memo(function ChatHeader({
           // plus the same gap the actions keep between themselves (gap-2, gap-3 at @3xl) so the
           // terminal toggle does not sit against the last action. The page header adds 8px more
           // right padding at sm.
-          rightPanelOpen
-            ? "pr-0"
-            : "pr-[calc(--spacing(19)+1px)] sm:pr-[calc(--spacing(15)+1px)] @3xl/header-actions:pr-[calc(--spacing(16)+1px)]",
-          "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
+          rightPanelOpen ? "pr-0" : "pr-19.25 sm:pr-15.25 @3xl/header-actions:pr-16.25",
+          "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
         <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
