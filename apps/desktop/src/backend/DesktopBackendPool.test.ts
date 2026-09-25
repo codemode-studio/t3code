@@ -101,6 +101,7 @@ function makePoolLayer(
           zoomMain: () => Effect.die("unexpected zoom"),
           syncAppearance: Effect.void,
           syncTranslucency: Effect.void,
+          canShowTranslucency: Effect.succeed(false),
         } satisfies DesktopWindow.DesktopWindow["Service"]),
       ),
     ),

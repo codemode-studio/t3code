@@ -19,6 +19,15 @@ export const getClientSettings = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const canShowWindowTranslucency = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.CAN_SHOW_WINDOW_TRANSLUCENCY_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.clientSettings.canShowWindowTranslucency")(function* () {
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    return yield* desktopWindow.canShowTranslucency;
+  }),
+});
+
 export const setClientSettings = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.SET_CLIENT_SETTINGS_CHANNEL,
   payload: ClientSettingsSchema,

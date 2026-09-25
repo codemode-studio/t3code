@@ -3,7 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { FileTextIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { ArrowUpRightIcon, FileTextIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   isProviderSendTurnSupportedImageMimeType,
@@ -24,12 +24,18 @@ import { notesEnvironment, useNotes, type EnvironmentNote } from "../../state/no
 import { useDebouncedValue } from "../../state/queries";
 import { usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { isElectron } from "../../env";
+import { cn } from "../../lib/utils";
 import ChatMarkdown from "../ChatMarkdown";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import { ScrollArea } from "../ui/scroll-area";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
+import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 
 interface Draft {
@@ -243,202 +249,262 @@ export function NotesPage({
   };
 
   return (
-    <SidebarInset className="min-w-0">
-      <WorkspacePageHeader>
-        <FileTextIcon className="size-4 text-muted-foreground" />
-        <span className="font-medium">Notes</span>
-      </WorkspacePageHeader>
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-72 shrink-0 flex-col border-r max-sm:w-48">
-          <div className="flex items-center gap-2 border-b p-2">
-            <SearchIcon className="size-4 text-muted-foreground" />
-            <Input
-              aria-label="Search notes"
-              placeholder="Search notes"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <Button size="icon-xs" variant="ghost" aria-label="New note" onClick={startCreate}>
-              <PlusIcon />
-            </Button>
-          </div>
-          <select
-            aria-label="Filter by tag"
-            value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
-            className="m-2 rounded-md border border-input bg-background p-1 text-sm"
-          >
-            <option value="">All tags</option>
-            {tags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {visible.map((note) => (
-              <button
-                key={keyOf(note)}
-                type="button"
-                onClick={() => select(note)}
-                className={`flex w-full flex-col gap-1 border-b px-3 py-2 text-left hover:bg-accent ${selectedKey === keyOf(note) ? "bg-accent" : ""}`}
-              >
-                <span className="truncate text-sm font-medium">{note.title}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {environments.find(
-                    (environment) => environment.environmentId === note.environmentId,
-                  )?.label ?? note.environmentId}
-                </span>
-              </button>
-            ))}
-            {!isPending && visible.length === 0 && (
-              <p className="p-3 text-sm text-muted-foreground">
-                No notes yet. Create one or save a transcript message.
-              </p>
-            )}
-          </div>
-        </aside>
-        <main className="min-w-0 flex-1 overflow-y-auto p-4">
-          {editor ? (
-            <div className="mx-auto flex max-w-3xl flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <Input
-                  aria-label="Note title"
-                  placeholder="Title"
-                  value={editor.title}
-                  onChange={(event) => patch({ title: event.target.value })}
-                />
-                {selected && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label="Delete note"
-                    onClick={() => void deleteSelected()}
-                  >
-                    <Trash2Icon />
-                  </Button>
-                )}
-                {selected && (
-                  <Button size="sm" variant="outline" onClick={() => void addToChat()}>
-                    Add to chat
-                  </Button>
-                )}
-                <Button
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
+        <WorkspacePageHeader electron={isElectron} className="border-b">
+          <WorkspaceBreadcrumb ariaLabel="Notes breadcrumb" className="min-w-0">
+            <WorkspaceBreadcrumbItem current>
+              <h1 className="flex items-center gap-2">
+                <FileTextIcon className="size-4 text-muted-foreground" />
+                Notes
+              </h1>
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+        </WorkspacePageHeader>
+        <div className="flex min-h-0 flex-1">
+          <aside className="flex w-72 shrink-0 flex-col border-r max-sm:w-48">
+            <div className="flex items-center gap-1 border-b p-2">
+              <InputGroup className="min-w-0 flex-1">
+                <InputGroupAddon>
+                  <SearchIcon />
+                </InputGroupAddon>
+                <InputGroupInput
                   size="sm"
-                  disabled={saving || !editor.title.trim()}
-                  onClick={() => void save()}
-                >
-                  Save
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {creating && (
-                  <select
-                    aria-label="Environment"
-                    value={editor.environmentId}
-                    onChange={(event) =>
-                      patch({ environmentId: event.target.value as EnvironmentId, projectId: null })
-                    }
-                    className="rounded-md border border-input bg-background p-1 text-sm"
+                  aria-label="Search notes"
+                  placeholder="Search notes"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </InputGroup>
+              <Button size="icon-sm" variant="ghost" aria-label="New note" onClick={startCreate}>
+                <PlusIcon />
+              </Button>
+            </div>
+            <div className="border-b p-2">
+              <Select value={tagFilter} onValueChange={(value) => setTagFilter(value ?? "")}>
+                <SelectTrigger size="sm" aria-label="Filter by tag">
+                  <SelectValue>{tagFilter || "All tags"}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value="">All tags</SelectItem>
+                  {tags.map((tag) => (
+                    <SelectItem key={tag} value={tag}>
+                      {tag}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="flex flex-col gap-0.5 p-2">
+                {visible.map((note) => (
+                  <button
+                    key={keyOf(note)}
+                    type="button"
+                    onClick={() => select(note)}
+                    className={cn(
+                      "flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent/60",
+                      selectedKey === keyOf(note) && "bg-accent",
+                    )}
                   >
-                    {environments.map((environment) => (
-                      <option key={environment.environmentId} value={environment.environmentId}>
-                        {environment.label}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="truncate text-sm font-medium">{note.title}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {environments.find(
+                        (environment) => environment.environmentId === note.environmentId,
+                      )?.label ?? note.environmentId}
+                    </span>
+                  </button>
+                ))}
+                {!isPending && visible.length === 0 && (
+                  <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                    No notes yet. Create one or save a transcript message.
+                  </p>
                 )}
-                <span className="rounded-md bg-muted px-2 py-1 text-xs">
-                  {environments.find(
-                    (environment) => environment.environmentId === editor.environmentId,
-                  )?.label ?? editor.environmentId}
-                </span>
-                <select
-                  aria-label="Project"
-                  value={editor.projectId ?? ""}
-                  onChange={(event) =>
-                    patch({
-                      projectId: event.target.value ? (event.target.value as ProjectId) : null,
-                    })
-                  }
-                  className="rounded-md border border-input bg-background p-1 text-sm"
-                >
-                  <option value="">All projects</option>
-                  {projects
-                    .filter((project) => project.environmentId === editor.environmentId)
-                    .map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.title}
-                      </option>
-                    ))}
-                </select>
               </div>
-              <Input
-                aria-label="Tags"
-                placeholder="Tags, separated by commas"
-                value={editor.tags}
-                onChange={(event) => patch({ tags: event.target.value })}
-              />
-              <div className="flex gap-2">
-                <Button
-                  size="xs"
-                  variant={!preview ? "secondary" : "ghost"}
-                  onClick={() => setPreview(false)}
-                >
-                  Markdown
-                </Button>
-                <Button
-                  size="xs"
-                  variant={preview ? "secondary" : "ghost"}
-                  onClick={() => setPreview(true)}
-                >
-                  Preview
-                </Button>
-              </div>
-              {preview ? (
-                <NotePreview body={editor.body} environmentId={editor.environmentId} />
-              ) : (
-                <div
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const file = event.dataTransfer.files[0];
-                    if (file) void addImage(file);
-                  }}
-                >
-                  <Textarea
-                    aria-label="Note Markdown"
-                    placeholder="Write a note… Drop images here."
-                    value={editor.body}
-                    onChange={(event) => patch({ body: event.target.value })}
-                    className="min-h-80"
+            </ScrollArea>
+          </aside>
+          <main className="min-w-0 flex-1 overflow-y-auto p-4">
+            {editor ? (
+              <div className="mx-auto flex max-w-3xl flex-col gap-4">
+                <div className="flex flex-wrap items-start gap-3">
+                  <input
+                    aria-label="Note title"
+                    placeholder="Untitled"
+                    value={editor.title}
+                    onChange={(event) => patch({ title: event.target.value })}
+                    className="min-w-40 flex-1 bg-transparent text-xl font-semibold outline-hidden placeholder:text-muted-foreground/60"
                   />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {selected && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Delete note"
+                        onClick={() => void deleteSelected()}
+                      >
+                        <Trash2Icon />
+                      </Button>
+                    )}
+                    {selected && (
+                      <Button size="sm" variant="outline" onClick={() => void addToChat()}>
+                        Add to chat
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={saving || !editor.title.trim()}
+                      onClick={() => void save()}
+                    >
+                      Save
+                    </Button>
+                  </div>
                 </div>
-              )}
-              {selected?.sourceThreadId && (
-                <Button
-                  size="xs"
-                  variant="link"
-                  onClick={() =>
-                    void navigate({
-                      to: "/$environmentId/$threadId",
-                      params: {
-                        environmentId: selected.environmentId,
-                        threadId: selected.sourceThreadId!,
-                      },
-                    })
-                  }
-                >
-                  Open source thread
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Select a note
-            </div>
-          )}
-        </main>
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  {creating && (
+                    <div className="w-48 max-w-full">
+                      <Select
+                        value={editor.environmentId}
+                        onValueChange={(value) => {
+                          const environment = environments.find(
+                            (entry) => entry.environmentId === value,
+                          );
+                          if (environment) {
+                            patch({ environmentId: environment.environmentId, projectId: null });
+                          }
+                        }}
+                      >
+                        <SelectTrigger size="sm" aria-label="Environment">
+                          <SelectValue>
+                            {environments.find(
+                              (environment) => environment.environmentId === editor.environmentId,
+                            )?.label ?? editor.environmentId}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {environments.map((environment) => (
+                            <SelectItem
+                              key={environment.environmentId}
+                              value={environment.environmentId}
+                            >
+                              {environment.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    </div>
+                  )}
+                  {!creating && (
+                    <span className="text-muted-foreground">
+                      {environments.find(
+                        (environment) => environment.environmentId === editor.environmentId,
+                      )?.label ?? editor.environmentId}
+                    </span>
+                  )}
+                  <div className="w-40 max-w-full">
+                    <Select
+                      value={editor.projectId ?? ""}
+                      onValueChange={(value) => {
+                        if (!value) {
+                          patch({ projectId: null });
+                          return;
+                        }
+                        const project = projects.find(
+                          (entry) =>
+                            entry.environmentId === editor.environmentId && entry.id === value,
+                        );
+                        if (project) patch({ projectId: project.id });
+                      }}
+                    >
+                      <SelectTrigger size="sm" aria-label="Project">
+                        <SelectValue>
+                          {projects.find(
+                            (project) =>
+                              project.environmentId === editor.environmentId &&
+                              project.id === editor.projectId,
+                          )?.title ?? "All projects"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        <SelectItem value="">All projects</SelectItem>
+                        {projects
+                          .filter((project) => project.environmentId === editor.environmentId)
+                          .map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.title}
+                            </SelectItem>
+                          ))}
+                      </SelectPopup>
+                    </Select>
+                  </div>
+                  {selected?.sourceThreadId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void navigate({
+                          to: "/$environmentId/$threadId",
+                          params: {
+                            environmentId: selected.environmentId,
+                            threadId: selected.sourceThreadId!,
+                          },
+                        })
+                      }
+                    >
+                      Open source thread
+                      <ArrowUpRightIcon />
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  aria-label="Tags"
+                  placeholder="Tags, separated by commas"
+                  value={editor.tags}
+                  onChange={(event) => patch({ tags: event.target.value })}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="xs"
+                    variant={!preview ? "secondary" : "ghost"}
+                    onClick={() => setPreview(false)}
+                  >
+                    Markdown
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant={preview ? "secondary" : "ghost"}
+                    onClick={() => setPreview(true)}
+                  >
+                    Preview
+                  </Button>
+                </div>
+                {preview ? (
+                  <NotePreview body={editor.body} environmentId={editor.environmentId} />
+                ) : (
+                  <div
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const file = event.dataTransfer.files[0];
+                      if (file) void addImage(file);
+                    }}
+                  >
+                    <Textarea
+                      size="editor"
+                      aria-label="Note Markdown"
+                      placeholder="Write a note… Drop images here."
+                      value={editor.body}
+                      onChange={(event) => patch({ body: event.target.value })}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Select a note
+              </div>
+            )}
+          </main>
+        </div>
       </div>
     </SidebarInset>
   );
