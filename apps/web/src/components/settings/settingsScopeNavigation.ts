@@ -1,4 +1,5 @@
 import type { SearchMiddleware } from "@tanstack/react-router";
+import type { EnvironmentId } from "@t3tools/contracts";
 
 import { validateSettingsScopeSearch, type SettingsScopeSearch } from "./settingsScope";
 
@@ -30,3 +31,18 @@ export const retainSettingsScope: SearchMiddleware<SettingsScopeSearch> = ({ sea
   );
   return { ...previousScope, ...result };
 };
+
+/** Start Storage on this client's primary environment when no target is selected. */
+export function defaultStorageTarget(
+  pathname: string,
+  scope: SettingsScopeSearch,
+  primaryEnvironmentId: EnvironmentId | null,
+): SettingsScopeSearch | undefined {
+  return pathname === "/settings/storage" &&
+    !scope.project &&
+    !scope.machine &&
+    !scope.checkout &&
+    primaryEnvironmentId !== null
+    ? { machine: primaryEnvironmentId }
+    : undefined;
+}

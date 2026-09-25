@@ -50,6 +50,8 @@ import {
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
+import { defaultStorageTarget } from "./settingsScopeNavigation";
+import { usePrimaryEnvironmentId } from "../../state/environments";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -111,6 +113,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const navItems = SETTINGS_NAV_ITEMS.filter(
     (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
   );
@@ -172,14 +175,16 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       if (isMobile) {
         setOpenMobile(false);
       }
+      const search = defaultStorageTarget(to, scopeSearch, primaryEnvironmentId);
       void navigate({
         to,
+        ...(search ? { search } : {}),
         hash: "",
         replace: true,
         hashScrollIntoView: false,
       });
     },
-    [isMobile, navigate, setOpenMobile],
+    [isMobile, navigate, primaryEnvironmentId, scopeSearch, setOpenMobile],
   );
   const clearSearch = useCallback(() => {
     setQuery("");
@@ -196,15 +201,26 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         scrollToSettingsTarget(targetId);
         return;
       }
+      const search = defaultStorageTarget(item.to, scopeSearch, primaryEnvironmentId);
       void navigate({
         to: item.to,
+        ...(search ? { search } : {}),
         hash: targetId,
         replace: true,
         hashScrollIntoView: false,
         state: { settingsTargetHighlight: true },
       });
     },
-    [clearSearch, currentHash, isMobile, navigate, pathname, setOpenMobile],
+    [
+      clearSearch,
+      currentHash,
+      isMobile,
+      navigate,
+      pathname,
+      primaryEnvironmentId,
+      scopeSearch,
+      setOpenMobile,
+    ],
   );
   const handleSearchKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {

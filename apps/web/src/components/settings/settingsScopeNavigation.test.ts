@@ -9,7 +9,11 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveSettingsScope } from "./settingsScope";
-import { retainSettingsScope, validateSettingsRouteSearch } from "./settingsScopeNavigation";
+import {
+  defaultStorageTarget,
+  retainSettingsScope,
+  validateSettingsRouteSearch,
+} from "./settingsScopeNavigation";
 
 const checkoutSearch = {
   project: "repository:t3code",
@@ -46,6 +50,7 @@ function createSettingsRouter(initialEntry = "/settings/general") {
         : {}),
     }),
   });
+  const storage = createRoute({ getParentRoute: () => settings, path: "storage" });
   const legacyProject = createRoute({
     getParentRoute: () => root,
     path: "projects/$projectKey",
@@ -59,7 +64,7 @@ function createSettingsRouter(initialEntry = "/settings/general") {
   });
   return createRouter({
     routeTree: root.addChildren([
-      settings.addChildren([general, projects, integrations, sourceControl, providers]),
+      settings.addChildren([general, projects, integrations, sourceControl, providers, storage]),
       legacyProject,
     ]),
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
@@ -67,6 +72,36 @@ function createSettingsRouter(initialEntry = "/settings/general") {
 }
 
 describe("settings scope navigation", () => {
+  it("opens Storage on the primary environment from the all-environments scope", async () => {
+    const router = createSettingsRouter();
+    await router.load();
+    const target = defaultStorageTarget(
+      "/settings/storage",
+      router.state.location.search,
+      EnvironmentId.make("this-device"),
+    );
+    expect(target).toEqual({ machine: "this-device" });
+    await router.navigate({ to: "/settings/storage", search: target ?? {} });
+    expect(router.state.location.search).toEqual({ machine: "this-device" });
+    expect(
+      defaultStorageTarget(
+        "/settings/storage",
+        { machine: "remote" },
+        EnvironmentId.make("this-device"),
+      ),
+    ).toBeUndefined();
+    expect(
+      defaultStorageTarget(
+        "/settings/storage",
+        { project: "project" },
+        EnvironmentId.make("this-device"),
+      ),
+    ).toBeUndefined();
+    expect(
+      defaultStorageTarget("/settings/general", {}, EnvironmentId.make("this-device")),
+    ).toBeUndefined();
+    expect(defaultStorageTarget("/settings/storage", {}, null)).toBeUndefined();
+  });
   it("replaces the default scope with an explicit environment, then replaces it with a project", async () => {
     const router = createSettingsRouter();
     await router.load();
