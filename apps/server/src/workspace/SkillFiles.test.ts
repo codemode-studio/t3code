@@ -10,7 +10,10 @@ let temp: string;
 let home: string;
 let project: string;
 beforeEach(async () => {
-  temp = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-skills-"));
+  // Realpath so linked-skill paths match; macOS temp dirs sit behind the /var symlink.
+  temp = await NodeFSP.realpath(
+    await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-skills-")),
+  );
   home = NodePath.join(temp, "custom-home");
   project = NodePath.join(temp, "project");
   await Promise.all([NodeFSP.mkdir(home), NodeFSP.mkdir(project)]);
