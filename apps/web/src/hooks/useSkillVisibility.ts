@@ -1,3 +1,4 @@
+import { setSkillPathVisibility } from "@t3tools/client-runtime/providerSkills";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "./useLocalStorage";
@@ -12,15 +13,12 @@ export function useSkillVisibility() {
     EMPTY,
     HiddenSkills,
   );
-  function setVisible(environmentId: EnvironmentId, path: string, visible: boolean) {
-    const normalizedPath = path.replaceAll("\\", "/");
+  function setVisible(environmentId: EnvironmentId, aliases: readonly string[], visible: boolean) {
     setHidden((previous) => {
       const paths = previous[environmentId] ?? [];
       return {
         ...previous,
-        [environmentId]: visible
-          ? paths.filter((entry) => entry !== normalizedPath)
-          : [...new Set([...paths, normalizedPath])],
+        [environmentId]: setSkillPathVisibility(paths, aliases, visible),
       };
     });
   }

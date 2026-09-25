@@ -135,6 +135,7 @@ export async function listSkillFiles(
     signal,
   );
   const excludedPaths = new Set<string>();
+  const providerPaths = new Set<string>();
   for (const provider of providers) {
     const hints = [
       ...provider.skills,
@@ -149,6 +150,7 @@ export async function listSkillFiles(
         continue;
       }
       if (!provider.enabled || !provider.installed) continue;
+      providerPaths.add(file);
       const homeSkill =
         within(file, home) && !roots.some((root) => root !== home && within(file, root));
       if (
@@ -197,18 +199,40 @@ export async function listSkillFiles(
         const row = {
           ...location,
           path: file,
+          aliases: [file, canonical],
           name: metadata.name?.trim() || NodePath.basename(NodePath.dirname(file)),
           description: metadata.description?.trim() ?? "",
         };
         const previous = skills.get(canonical);
+        const aliases = [...new Set([...(previous?.aliases ?? []), ...row.aliases])].sort();
         if (
           !previous ||
           (row.scope === "personal" && previous.scope !== "personal") ||
           (row.scope === previous.scope && row.path.localeCompare(previous.path) < 0)
         )
-          skills.set(canonical, row);
+          skills.set(canonical, { ...row, aliases });
+        else skills.set(canonical, { ...previous, aliases });
       } catch (error) {
         if (!missing(error)) errors.push(`Could not read skill metadata: ${file}`);
+      }
+    },
+    signal,
+  );
+  // A provider can report the resolved target outside a linked project directory.
+  // Such paths are aliases of already-discovered files, not additional catalog entries.
+  await forEachConcurrent(
+    [...providerPaths].filter((file) => !candidates.has(file)),
+    async (file) => {
+      try {
+        const canonical = await NodeFSP.realpath(file);
+        const skill = skills.get(canonical);
+        if (skill)
+          skills.set(canonical, {
+            ...skill,
+            aliases: [...new Set([...skill.aliases, file])].sort(),
+          });
+      } catch {
+        /* Missing provider inventory entries are discarded. */
       }
     },
     signal,
@@ -238,6 +262,7 @@ export async function createSkillFile(
     name: validated.name,
     description: validated.description,
     path: file,
+    aliases: [...new Set([file, await NodeFSP.realpath(file)])],
     scope: within(file, NodePath.join(home, ".agents", "skills")) ? "personal" : "project",
     source: "agents",
   };

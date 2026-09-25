@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applySkillVisibility,
+  setSkillPathVisibility,
   dedupeProviderSkillsByName,
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
@@ -268,4 +269,22 @@ describe("skill visibility", () => {
     expect(restored.skills).toBe(skills);
     expect(restored.slashCommands).toBe(commands);
   });
+});
+
+it("hides all file aliases and restores them, including Windows drive-letter case", () => {
+  const aliases = [
+    "C:/Users/dev/.agents/skills/review/SKILL.md",
+    "C:/Users/dev/.claude/skills/review/SKILL.md",
+  ];
+  const skills = [
+    { name: "review", enabled: true, path: "c:/Users/dev/.claude/skills/review/SKILL.md" },
+  ];
+  const hidden = setSkillPathVisibility([], aliases, false);
+  expect(applySkillVisibility(skills, [{ name: "review" }], hidden)).toEqual({
+    skills: [],
+    slashCommands: [],
+  });
+  const restored = setSkillPathVisibility(hidden, aliases, true);
+  expect(restored).toEqual([]);
+  expect(applySkillVisibility(skills, [], restored).skills).toEqual(skills);
 });

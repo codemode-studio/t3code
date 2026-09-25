@@ -64,11 +64,30 @@ describe("file skills catalog", () => {
       NodePath.join(home, ".agents", "skills", "review"),
       "dir",
     );
-    result = await listSkillFiles({ workspaceRoots: [project] }, [], home);
+    const providerAlias = NodePath.join(temp, "provider-alias");
+    await NodeFSP.symlink(
+      NodePath.join(shared, ".agents", "skills", "review"),
+      providerAlias,
+      "dir",
+    );
+    const providerFile = NodePath.join(providerAlias, "SKILL.md");
+    result = await listSkillFiles(
+      { workspaceRoots: [project] },
+      [provider([{ name: "review", path: providerFile, scope: "project", enabled: true }])],
+      home,
+    );
     expect(result.errors).toEqual([]);
     expect(result.skills.map((skill) => [skill.name, skill.scope])).toEqual([
       ["review", "personal"],
     ]);
+    expect(result.skills[0]?.aliases).toEqual(
+      [
+        NodePath.join(home, ".agents", "skills", "review", "SKILL.md"),
+        NodePath.join(project, ".agents", "skills", "review", "SKILL.md"),
+        NodePath.join(shared, ".agents", "skills", "review", "SKILL.md"),
+        providerFile,
+      ].sort(),
+    );
   });
 
   it("reads all skills after 300 candidates including later projects and personal skills", async () => {

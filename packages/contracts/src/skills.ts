@@ -5,6 +5,7 @@ export const FileSkill = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
   path: TrimmedNonEmptyString,
+  aliases: Schema.Array(TrimmedNonEmptyString),
   source: Schema.String,
   scope: Schema.Literals(["personal", "project"]),
 });

@@ -1,3 +1,4 @@
+import { normalizeSkillVisibilityPath } from "@t3tools/client-runtime/providerSkills";
 import { CopyIcon, EyeIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -188,13 +189,17 @@ export function SkillsSettings() {
                 <Switch
                   size="sm"
                   checked={
-                    !(hiddenByEnvironment[skill.environmentId] ?? []).includes(
-                      skill.path.replaceAll("\\", "/"),
+                    !skill.aliases.some((alias) =>
+                      (hiddenByEnvironment[skill.environmentId] ?? []).some(
+                        (hidden) =>
+                          normalizeSkillVisibilityPath(hidden) ===
+                          normalizeSkillVisibilityPath(alias),
+                      ),
                     )
                   }
                   aria-label={`Show ${skill.name} in skill pickers`}
                   onCheckedChange={(checked) =>
-                    setVisible(skill.environmentId, skill.path, checked)
+                    setVisible(skill.environmentId, skill.aliases, checked)
                   }
                 />
               </div>

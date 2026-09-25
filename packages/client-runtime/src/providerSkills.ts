@@ -125,6 +125,27 @@ export function resolveProviderSlashCommandsForCwd(
   return resolveProviderWorkspaceSnapshot(provider, cwd)?.slashCommands ?? provider.slashCommands;
 }
 
+/** Windows paths compare without case; POSIX paths preserve it. */
+export function normalizeSkillVisibilityPath(path: string): string {
+  const normalized = normalizePathSeparators(path);
+  return /^[a-z]:\//i.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLowerCase()
+    : normalized;
+}
+
+/** Expand or remove every known alias together so re-enabling reverses hiding. */
+export function setSkillPathVisibility(
+  hiddenPaths: readonly string[],
+  aliases: readonly string[],
+  visible: boolean,
+): string[] {
+  const normalizedAliases = new Set(aliases.map(normalizeSkillVisibilityPath));
+  const normalizedHidden = hiddenPaths.map(normalizeSkillVisibilityPath);
+  return visible
+    ? normalizedHidden.filter((path) => !normalizedAliases.has(path))
+    : [...new Set([...normalizedHidden, ...normalizedAliases])];
+}
+
 /** Hide a file from both skill pickers and matching native slash-command entries. */
 export function applySkillVisibility(
   skills: ReadonlyArray<ServerProviderSkill>,
@@ -132,14 +153,14 @@ export function applySkillVisibility(
   hiddenPaths: ReadonlyArray<string>,
 ) {
   if (hiddenPaths.length === 0) return { skills, slashCommands };
-  const hidden = new Set(hiddenPaths.map(normalizePathSeparators));
+  const hidden = new Set(hiddenPaths.map(normalizeSkillVisibilityPath));
   const hiddenNames = new Set(
     skills
-      .filter((skill) => hidden.has(normalizePathSeparators(skill.path)))
+      .filter((skill) => hidden.has(normalizeSkillVisibilityPath(skill.path)))
       .map((skill) => skill.name.toLowerCase()),
   );
   return {
-    skills: skills.filter((skill) => !hidden.has(normalizePathSeparators(skill.path))),
+    skills: skills.filter((skill) => !hidden.has(normalizeSkillVisibilityPath(skill.path))),
     slashCommands: slashCommands.filter((command) => !hiddenNames.has(command.name.toLowerCase())),
   };
 }
