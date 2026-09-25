@@ -358,7 +358,7 @@ function AutomationListItem({
           aria-hidden
           className={cn(
             "size-1.5 shrink-0 rounded-full",
-            automation.enabled ? "bg-emerald-500" : "bg-muted-foreground/40",
+            automation.enabled ? "bg-success" : "bg-muted-foreground/40",
           )}
         />
         <span className="min-w-0 truncate font-medium">{automation.name}</span>
@@ -1344,7 +1344,7 @@ function RunHistory({
                   aria-hidden
                   className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    run.error ? "bg-destructive" : "bg-emerald-500",
+                    run.error ? "bg-destructive" : "bg-success",
                   )}
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
