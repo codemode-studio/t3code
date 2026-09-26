@@ -84,6 +84,7 @@ import {
   XAiExitPlanModeRequest,
 } from "../acp/XAiAcpExtension.ts";
 import { type GrokAdapterShape } from "../Services/GrokAdapter.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -349,6 +350,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const gitHubAccountEnvironment = yield* GitHubCliAccountEnvironment;
     const serverConfig = yield* Effect.service(ServerConfig);
     const crypto = yield* Crypto.Crypto;
     const nativeEventLogger =
@@ -994,12 +996,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           });
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const gitHubEnvironment = yield* gitHubAccountEnvironment.forCwd(cwd);
           const acp = yield* makeGrokAcpRuntime({
             grokSettings,
-            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+            ...(options?.environment ||
+            mcpSession?.agentDeviceEnvironment ||
+            Object.keys(gitHubEnvironment).length > 0
               ? {
                   environment: McpProviderSession.withAgentDeviceEnvironment(
-                    options?.environment ?? process.env,
+                    { ...(options?.environment ?? process.env), ...gitHubEnvironment },
                     mcpSession,
                   ),
                 }

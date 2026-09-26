@@ -291,9 +291,16 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const GitHubCliAccountSelectionLive = GitHubCliAccountSelection.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+);
+
 // Every server-side GitHub command resolves its checkout's selected `gh` login through this one instance.
-const GitHubCliLayerLive = GitHubCli.layer.pipe(
-  Layer.provide(GitHubCliAccountSelection.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
+const GitHubCliLayerLive = GitHubCli.layer.pipe(Layer.provide(GitHubCliAccountSelectionLive));
+
+// Terminals and agent sessions start as the checkout's selected `gh` login too.
+const GitHubCliAccountEnvironmentLive = GitHubCliAccountSelection.environmentLayer.pipe(
+  Layer.provide(GitHubCliAccountSelectionLive),
 );
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
@@ -419,6 +426,7 @@ const CheckpointingLayerLive = Layer.empty.pipe(
 const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
 const TerminalLayerLive = TerminalManager.layer.pipe(
+  Layer.provide(GitHubCliAccountEnvironmentLive),
   Layer.provide(PtyAdapterLive),
   Layer.provide(PortScannerLayerLive),
   Layer.provide(NativeTelemetryLayerLive),
@@ -537,7 +545,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydrationLive.pipe(Layer.provide(GitHubCliAccountEnvironmentLive)),
+  ),
 ).pipe(
   Layer.provideMerge(AntigravityInstallation.layer),
   // Shared native/canonical NDJSON writers used by both the per-instance
