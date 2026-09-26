@@ -33,6 +33,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
@@ -68,6 +69,7 @@ type MessageEntry = {
 const runtimeMock = {
   state: {
     startCalls: [] as string[],
+    connectEnvironments: [] as Array<NodeJS.ProcessEnv | undefined>,
     sessionCreateUrls: [] as string[],
     sessionCreateInputs: [] as Array<Record<string, unknown>>,
     createdSessionIds: [] as string[],
@@ -138,6 +140,7 @@ const runtimeMock = {
   },
   reset() {
     this.state.startCalls.length = 0;
+    this.state.connectEnvironments.length = 0;
     this.state.sessionCreateUrls.length = 0;
     this.state.sessionCreateInputs.length = 0;
     this.state.createdSessionIds.length = 0;
@@ -218,8 +221,9 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
         isRunning: Effect.succeed(true),
       };
     }),
-  connectToOpenCodeServer: ({ serverUrl, serverPassword }) =>
+  connectToOpenCodeServer: ({ serverUrl, serverPassword, environment }) =>
     Effect.gen(function* () {
+      runtimeMock.state.connectEnvironments.push(environment);
       const url = serverUrl ?? "http://127.0.0.1:4301";
       // Always register a finalizer so the closeCalls/closeError probes fire;
       // production attaches none for external servers.
@@ -667,6 +671,25 @@ const questionRequest = (id: string, sessionID: string): QuestionRequest => ({
 });
 
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
+  it.effect("starts servers as the checkout's selected GitHub CLI login", () =>
+    Effect.gen(function* () {
+      const adapter = yield* makeOpenCodeAdapter(openCodeAdapterTestSettings, {
+        environment: { ...process.env, GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+      }).pipe(
+        Effect.provideService(GitHubCliAccountEnvironment, {
+          forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
+        }),
+      );
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId: asThreadId("thread-opencode-github-login"),
+        runtimeMode: "full-access",
+      });
+      NodeAssert.equal(runtimeMock.state.connectEnvironments[0]?.GH_TOKEN, "selected");
+      NodeAssert.equal(runtimeMock.state.connectEnvironments[0]?.GITHUB_TOKEN, "selected");
+    }),
+  );
+
   it.effect("reuses a configured OpenCode server URL instead of spawning a local server", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

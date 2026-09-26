@@ -11,7 +11,8 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import * as ServerSettings from "../serverSettings.ts";
-import { GitHubCliAccountSelection } from "./GitHubCli.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { GitHubCliAccountEnvironment, GitHubCliAccountSelection, tokenEnv } from "./GitHubCli.ts";
 
 /**
  * Resolves the `gh` login for a GitHub command from its cwd: the project
@@ -70,6 +71,63 @@ export const layer = Layer.effect(
         const projectId = yield* Cache.get(projectIds, cwd);
         return resolveProjectSettings(settings, projectId).settings.githubCliAccount;
       }, Effect.orDie),
+    };
+  }),
+);
+
+/**
+ * Hands terminals and agent sessions the selected login's token, so `gh` in them
+ * matches the checkout's selection instead of the CLI's globally active login.
+ * An unreadable login leaves the environment untouched rather than blocking the process.
+ */
+export const environmentLayer = Layer.effect(
+  GitHubCliAccountEnvironment,
+  Effect.gen(function* () {
+    const selection = yield* GitHubCliAccountSelection;
+    const process = yield* VcsProcess.VcsProcess;
+    const environments = yield* Cache.makeWith(
+      (key: string) => {
+        const [host = "", login = ""] = key.split("\0");
+        return process
+          .run({
+            operation: "GitHubCliAccountEnvironment.token",
+            command: "gh",
+            args: ["auth", "token", "--hostname", host, "--user", login],
+            cwd: globalThis.process.cwd(),
+            timeoutMs: 10_000,
+            // Blank env tokens so an ambient GH_TOKEN cannot answer for the login.
+            env: { ...tokenEnv(host, ""), GH_DEBUG: "" },
+          })
+          .pipe(
+            Effect.map((result) => result.stdout.trim()),
+            Effect.flatMap((token) =>
+              token ? Effect.succeed(tokenEnv(host, token)) : Effect.fail(null),
+            ),
+          );
+      },
+      {
+        capacity: 16,
+        timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.minutes(1) : Duration.zero),
+      },
+    );
+    return {
+      forCwd: Effect.fn("GitHubCliAccountEnvironment.forCwd")(function* (cwd: string) {
+        const account = yield* selection.forCwd(cwd);
+        if (account === null) return {};
+        const host = account.host.toLowerCase();
+        return yield* Cache.get(environments, `${host}\0${account.login}`).pipe(
+          // Never attach credential lookup output to the log.
+          Effect.catch(() =>
+            Effect.logWarning(
+              "Selected GitHub CLI account is unavailable; using gh's active login.",
+              {
+                host,
+                login: account.login,
+              },
+            ).pipe(Effect.as({})),
+          ),
+        );
+      }),
     };
   }),
 );

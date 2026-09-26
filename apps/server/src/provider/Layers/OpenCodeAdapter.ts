@@ -45,6 +45,7 @@ import {
 } from "../Errors.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import {
   buildOpenCodePermissionRules,
   OpenCodeRuntime,
@@ -946,6 +947,7 @@ export function makeOpenCodeAdapter(
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("opencode");
     const serverConfig = yield* ServerConfig;
     const openCodeRuntime = yield* OpenCodeRuntime;
+    const gitHubAccountEnvironment = yield* GitHubCliAccountEnvironment;
     const crypto = yield* Crypto.Crypto;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -2852,13 +2854,15 @@ export function makeOpenCodeAdapter(
               // we provide below — closing `sessionScope` kills the child
               // process automatically. No manual `server.close()` needed.
               const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+              // An external `serverUrl` server keeps its own environment and login.
+              const gitHubEnvironment = yield* gitHubAccountEnvironment.forCwd(directory);
               const server = yield* openCodeRuntime.connectToOpenCodeServer({
                 binaryPath,
                 directory,
                 serverUrl,
                 ...(serverPassword ? { serverPassword } : {}),
                 environment: McpProviderSession.withAgentDeviceEnvironment(
-                  options?.environment ?? process.env,
+                  { ...(options?.environment ?? process.env), ...gitHubEnvironment },
                   mcpSession,
                 ),
               });

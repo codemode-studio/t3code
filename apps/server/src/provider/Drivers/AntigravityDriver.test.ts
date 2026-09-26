@@ -4,6 +4,7 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderInstanceId,
   type AntigravitySettings,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   HostProcessEnvironment,
@@ -24,6 +25,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import {
   AntigravityInstallation,
   AntigravityInstallationError,
@@ -126,6 +128,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     forceFileStorage: string | undefined;
     credentialKeys: ReadonlyArray<string>;
     geminiApiKey: string | undefined;
+    gitHubToken: string | undefined;
     tempDirectory: string | undefined;
     handle: ChildProcessSpawner.ChildProcessHandle;
   }> = [];
@@ -179,6 +182,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
           blockedCredentialKeys.has(key.toUpperCase()),
         ),
         geminiApiKey: environment.GEMINI_API_KEY,
+        gitHubToken: environment.GH_TOKEN,
         // Only the agent gets a per-process temp directory. Other launches
         // inherit the host TMPDIR.
         tempDirectory:
@@ -275,6 +279,27 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         Effect.provideService(HostProcessIsExecutable, true),
         Effect.provideService(HostProcessEnvironment, { PATH: "" }),
       ),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "starts session agents as the checkout's selected GitHub CLI login",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({ enabled: true }).pipe(
+          Effect.provideService(GitHubCliAccountEnvironment, {
+            forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
+          }),
+        );
+        const threadId = ThreadId.make("antigravity-github-login");
+        yield* h.instance.adapter.startSession({
+          threadId,
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+        yield* h.instance.adapter.stopSession(threadId);
+        const agentLaunches = h.launches.filter((launch) => launch.harnessPath !== undefined);
+        expect(agentLaunches.map((launch) => launch.gitHubToken)).toEqual(["selected"]);
+      }).pipe(Effect.scoped),
   );
 
   it.effect.skipIf(windowsHost)("does not launch a process for a disabled instance", () =>

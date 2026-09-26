@@ -20,9 +20,12 @@ gh auth login
 When `gh` holds more than one login, choose which one T3 Code uses under **GitHub CLI account**
 in the GitHub entry of **Settings → Source Control**. Select a project to give it a different
 account, for example a work login for company repositories. T3 Code passes that login's token to
-its own GitHub commands and never switches the login active in `gh`, so terminals and other apps
-are unaffected. If the chosen login is signed out, GitHub actions fail until you sign it back in
-or pick another account; they never fall back to a different login.
+its own GitHub commands, to terminals it opens, and to agent sessions it starts, so `gh` there acts
+as the selected login. It never switches the login active in `gh`, so apps outside T3 Code are
+unaffected. A change applies to terminals and agent sessions started afterwards. If the chosen
+login is signed out, GitHub actions fail until you sign it back in or pick another account; they
+never fall back to a different login. Terminals and agent sessions start with `gh`'s active login
+instead. An OpenCode server you connect to by URL keeps its own login.
 
 ### Forgejo and Gitea
 

@@ -77,6 +77,7 @@ import {
   extractTodosAsPlan,
 } from "../acp/CursorAcpExtension.ts";
 import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
@@ -332,6 +333,7 @@ export function makeCursorAdapter(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const gitHubAccountEnvironment = yield* GitHubCliAccountEnvironment;
     const serverConfig = yield* Effect.service(ServerConfig);
     const crypto = yield* Crypto.Crypto;
     const nativeEventLogger =
@@ -545,12 +547,15 @@ export function makeCursorAdapter(
             : cursorSettings;
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const gitHubEnvironment = yield* gitHubAccountEnvironment.forCwd(cwd);
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
-            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+            ...(options?.environment ||
+            mcpSession?.agentDeviceEnvironment ||
+            Object.keys(gitHubEnvironment).length > 0
               ? {
                   environment: McpProviderSession.withAgentDeviceEnvironment(
-                    options?.environment ?? process.env,
+                    { ...(options?.environment ?? process.env), ...gitHubEnvironment },
                     mcpSession,
                   ),
                 }
