@@ -152,7 +152,8 @@ export function StorageSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <WorktreeManager />
+      {/* Remount per project so a stale error or delete dialog never carries over. */}
+      <WorktreeManager key={"group" in scope ? scope.group.projectKey : null} />
       <SettingsSection id="storage-worktrees" title="Worktrees">
         {isProjectScope && (
           <SettingsRow

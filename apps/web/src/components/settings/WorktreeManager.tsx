@@ -175,7 +175,7 @@ function CreateWorktreeDialog({
 }
 
 export function WorktreeManager() {
-  const { scope, groups, selectScope, connectedEnvironments } = useSettingsScope();
+  const { scope, connectedEnvironments } = useSettingsScope();
   const [selectedMemberKey, setSelectedMemberKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<WorktreeDeletionTarget | null>(null);
@@ -231,38 +231,7 @@ export function WorktreeManager() {
   return (
     <SettingsSection id="storage-manage-worktrees" title="Manage worktrees">
       <div className="flex flex-col gap-4 p-4">
-        <p className="text-sm text-muted-foreground">
-          Create and remove additional worktrees for a project.
-        </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={projectKey}
-            onValueChange={(value) => {
-              if (typeof value === "string") {
-                selectScope({ project: value });
-                setSelectedMemberKey(null);
-                setError(null);
-                setDeleting(null);
-              }
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Project">
-              <SelectValue>
-                {scope.kind === "project" || scope.kind === "checkout"
-                  ? scope.group.displayName
-                  : "Choose project"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectGroup>
-                {groups.map((group) => (
-                  <SelectItem key={group.projectKey} value={group.projectKey}>
-                    {group.displayName}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectPopup>
-          </Select>
           {connectedMembers.length > 1 && (
             <Select
               value={member?.physicalProjectKey ?? null}
@@ -322,7 +291,9 @@ export function WorktreeManager() {
           </p>
         )}
         {!projectKey ? (
-          <p className="text-sm text-muted-foreground">Choose a project to manage its worktrees.</p>
+          <p className="text-sm text-muted-foreground">
+            Choose a project above to manage its worktrees.
+          </p>
         ) : !member ? (
           <p className="text-sm text-muted-foreground">
             Connect an environment with this project to manage its worktrees.
