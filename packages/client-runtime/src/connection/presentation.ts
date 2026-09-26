@@ -25,6 +25,15 @@ export interface EnvironmentPresentation {
   readonly serverConfig: ServerConfig | null;
 }
 
+/**
+ * Whether a pending subscription on this environment is worth showing as loading.
+ * Offline or failing environments never answer and must not hold a merged list in loading.
+ */
+export function isAnswerExpected(presentation: EnvironmentPresentation): boolean {
+  const { phase } = presentation.connection;
+  return phase === "connected" || phase === "connecting";
+}
+
 export function presentConnectionState(
   state: SupervisorConnectionState,
 ): EnvironmentConnectionPresentation {
