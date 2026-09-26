@@ -10,6 +10,7 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
+import { isAnswerExpected } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
@@ -47,18 +48,19 @@ export const runAutomationNow = createEnvironmentRpcCommand(connectionAtomRuntim
 
 interface AutomationsView {
   readonly automations: readonly EnvironmentAutomation[];
-  /** True until every environment has answered at least once. */
+  /** True while a reachable environment has not answered yet. */
   readonly isPending: boolean;
 }
 
 const allAutomationsAtom = Atom.make((get): AutomationsView => {
   const automations: EnvironmentAutomation[] = [];
   let isPending = false;
-  for (const environmentId of get(environmentPresentations.presentationsAtom).keys()) {
+  for (const [environmentId, presentation] of get(environmentPresentations.presentationsAtom)) {
     const result = get(automationsByEnvironment({ environmentId, input: {} }));
     const snapshot = Option.getOrNull(AsyncResult.value(result));
     if (snapshot === null) {
-      isPending ||= result._tag !== "Failure";
+      // An unreachable environment never answers; it must not hold the whole list in loading.
+      isPending ||= result._tag !== "Failure" && isAnswerExpected(presentation);
       continue;
     }
     for (const automation of snapshot.automations) {
