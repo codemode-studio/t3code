@@ -59,7 +59,14 @@ export const EDITORS = [
     launchStyle: "direct-path",
     remoteScheme: "zed",
   },
-  { id: "antigravity", label: "Antigravity", commands: ["agy"], launchStyle: "goto" },
+  {
+    id: "antigravity",
+    label: "Antigravity",
+    // `agy` is the standalone Antigravity CLI, not the IDE. The IDE bundle
+    // ships `antigravity-ide`, so it comes first for install-folder lookups.
+    commands: ["antigravity-ide", "agy-ide"],
+    launchStyle: "goto",
+  },
   // px0 serves its UI from a local server and opens it in the browser; each
   // launch starts its own server on the next free port. It takes `path:line`.
   { id: "px0", label: "px0", commands: ["px0"], launchStyle: "direct-path" },
