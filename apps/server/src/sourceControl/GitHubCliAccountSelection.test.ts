@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import { ProjectId, ProviderInstanceId, ThreadId, VcsProcessExitError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ProjectionProjectRepositoryLive } from "../persistence/Layers/ProjectionProjects.ts";
@@ -177,6 +178,73 @@ it.effect("hands processes the selected login's token, or nothing when it is unr
                     stderrTruncated: false,
                   });
             },
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+it.effect("follows selection changes, token expiry, and a recovered login", () => {
+  let selected = work;
+  let issued = 0;
+  let signedOut = false;
+  const lookups: Array<string | undefined> = [];
+  return Effect.gen(function* () {
+    const environment = yield* GitHubCliAccountEnvironment;
+    const token = Effect.map(environment.forCwd("/src/work"), (env) => env.GH_TOKEN);
+
+    assert.strictEqual(yield* token, "work-1");
+    // A new selection applies to the next launch without waiting for expiry.
+    selected = personal;
+    assert.strictEqual(yield* token, "personal-2");
+    selected = work;
+    assert.strictEqual(yield* token, "work-1");
+
+    // Tokens are re-read once the cached one is a minute old.
+    yield* TestClock.adjust("61 seconds");
+    assert.strictEqual(yield* token, "work-3");
+
+    // A failed lookup is not cached, so signing back in works on the next launch.
+    yield* TestClock.adjust("61 seconds");
+    signedOut = true;
+    assert.strictEqual(yield* token, undefined);
+    signedOut = false;
+    assert.strictEqual(yield* token, "work-5");
+    assert.deepStrictEqual(lookups, ["work", "personal", "work", "work", "work"]);
+  }).pipe(
+    Effect.provide(
+      GitHubCliAccountSelectionLayer.environmentLayer.pipe(
+        Layer.provide(
+          Layer.succeed(GitHubCliAccountSelection, {
+            forCwd: () => Effect.sync(() => selected),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(VcsProcess.VcsProcess)({
+            run: (input) =>
+              Effect.suspend(() => {
+                lookups.push(input.args[5]);
+                issued += 1;
+                return signedOut
+                  ? Effect.fail(
+                      new VcsProcessExitError({
+                        operation: input.operation,
+                        command: "gh",
+                        cwd: input.cwd,
+                        exitCode: 1,
+                        failureKind: "authentication",
+                        detail: "no oauth token found",
+                      }),
+                    )
+                  : Effect.succeed({
+                      exitCode: ChildProcessSpawner.ExitCode(0),
+                      stdout: `${input.args[5]}-${issued}\n`,
+                      stderr: "",
+                      stdoutTruncated: false,
+                      stderrTruncated: false,
+                    });
+              }),
           }),
         ),
       ),

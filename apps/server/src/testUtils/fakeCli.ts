@@ -82,11 +82,18 @@ export function execScriptSource(options: {
   readonly argvLogPath?: string;
   /** Wait before handing over, for tests that race a slow startup. */
   readonly delayMs?: number;
+  /** Writes the named variables as JSON here at startup, for launch-environment assertions. */
+  readonly envLog?: { readonly path: string; readonly keys: ReadonlyArray<string> };
 }): string {
   return [
-    'import { appendFileSync } from "node:fs";',
+    'import { appendFileSync, writeFileSync } from "node:fs";',
     'import { pathToFileURL } from "node:url";',
     "const args = process.argv.slice(2);",
+    ...(options.envLog === undefined
+      ? []
+      : [
+          `writeFileSync(${JSON.stringify(options.envLog.path)}, JSON.stringify(Object.fromEntries(${JSON.stringify(options.envLog.keys)}.map((key) => [key, process.env[key]]))));`,
+        ]),
     ...(options.argvLogPath === undefined
       ? []
       : [

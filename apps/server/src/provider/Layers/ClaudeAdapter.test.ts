@@ -39,6 +39,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   SYNTHETIC_CLAUDE_CAPABLE_MODEL,
@@ -173,6 +174,7 @@ function makeHarness(config?: {
   readonly environment?: ClaudeAdapterLiveOptions["environment"];
   readonly getSessionMessages?: ClaudeAdapterLiveOptions["getSessionMessages"];
   readonly forkSession?: ClaudeAdapterLiveOptions["forkSession"];
+  readonly gitHubAccountEnvironment?: Readonly<Record<string, string>>;
 }) {
   const query = new FakeClaudeQuery();
   const queries = [query];
@@ -212,7 +214,11 @@ function makeHarness(config?: {
       ClaudeAdapter,
       Effect.gen(function* () {
         const claudeConfig = decodeClaudeSettings(config?.claudeConfig ?? {});
-        return yield* makeClaudeAdapter(claudeConfig, adapterOptions);
+        return yield* makeClaudeAdapter(claudeConfig, adapterOptions).pipe(
+          Effect.provideService(GitHubCliAccountEnvironment, {
+            forCwd: () => Effect.succeed(config?.gitHubAccountEnvironment ?? {}),
+          }),
+        );
       }),
     ).pipe(
       Layer.provideMerge(
@@ -369,6 +375,29 @@ const sendCompletedClaudeTurn = (
   });
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("starts queries as the checkout's selected GitHub CLI login", () => {
+    const harness = makeHarness({
+      environment: { ...process.env, GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+      gitHubAccountEnvironment: { GH_TOKEN: "selected", GITHUB_TOKEN: "selected" },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/claude-github-login",
+      });
+      assert.include(harness.getLastCreateQueryInput()?.options.env, {
+        GH_TOKEN: "selected",
+        GITHUB_TOKEN: "selected",
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
