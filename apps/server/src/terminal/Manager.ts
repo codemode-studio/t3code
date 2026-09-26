@@ -64,6 +64,7 @@ import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
 import {
   increment,
   terminalRestartsTotal,
@@ -1283,6 +1284,7 @@ function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 function createTerminalSpawnEnv(
   baseEnv: NodeJS.ProcessEnv,
   runtimeEnv?: Record<string, string> | null,
+  gitHubAccountEnv: Readonly<Record<string, string>> = {},
 ): NodeJS.ProcessEnv {
   const spawnEnv: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(baseEnv)) {
@@ -1290,6 +1292,7 @@ function createTerminalSpawnEnv(
     if (shouldExcludeTerminalEnvKey(key)) continue;
     spawnEnv[key] = value;
   }
+  Object.assign(spawnEnv, gitHubAccountEnv);
   if (runtimeEnv) {
     for (const [key, value] of Object.entries(runtimeEnv)) {
       spawnEnv[key] =
@@ -1437,6 +1440,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const gitHubAccountEnvironment = yield* GitHubCliAccountEnvironment;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
     function* <Input extends TerminalOpenInput | TerminalAttachInput | TerminalRestartInput>(
       input: Input,
@@ -2214,7 +2218,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.andThen(
           Effect.gen(function* () {
             const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
-            const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
+            const terminalEnv = createTerminalSpawnEnv(
+              baseEnv,
+              session.runtimeEnv,
+              yield* gitHubAccountEnvironment.forCwd(session.cwd),
+            );
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;

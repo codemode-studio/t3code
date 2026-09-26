@@ -84,6 +84,7 @@ import {
   selectAntigravityPermissionOptionId,
 } from "../acp/AntigravityProtocol.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import type { EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const PROVIDER = ProviderDriverKind.make("antigravity");
@@ -310,6 +311,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
+  const gitHubAccountEnvironment = yield* GitHubCliAccountEnvironment;
   const ownerScope = yield* Effect.scope;
   const makeNativeLoggers = yield* makeAcpNativeLoggerFactory();
   const sessions = new Map<ThreadId, SessionContext>();
@@ -786,6 +788,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
             stopOwned,
             Effect.gen(function* () {
               const mcp = McpProviderSession.readMcpProviderSession(input.threadId);
+              const gitHubEnvironment = yield* gitHubAccountEnvironment.forCwd(cwd);
               // The attachments dir grant lets the agent read pasted files at
               // the paths ProviderService injects into the turn text. It is a
               // leaf directory holding only uploads.
@@ -796,6 +799,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 ...(mcp?.agentDeviceEnvironment
                   ? { agentDeviceEnvironment: mcp.agentDeviceEnvironment }
                   : {}),
+                gitHubEnvironment,
                 additionalDirectories: [serverConfig.attachmentsDir],
                 ...(Option.isSome(cursor) ? { resumeSessionId: cursor.value.sessionId } : {}),
                 mcpServers: mcp

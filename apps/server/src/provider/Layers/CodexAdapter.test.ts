@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -36,6 +37,8 @@ import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -495,6 +498,67 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       }
     }),
   );
+
+  it.effect("starts app-servers as the checkout's selected GitHub CLI login", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const mcpThreadId = asThreadId("sess-github-login-mcp");
+    const layer = Layer.effect(
+      CodexAdapter,
+      makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: runtimeFactory.factory,
+        environment: { PATH: "/usr/bin", GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+      }).pipe(
+        Effect.provideService(GitHubCliAccountEnvironment, {
+          forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
+        }),
+      ),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-github-login"),
+        runtimeMode: "full-access",
+      });
+      NodeAssert.deepEqual(runtimeFactory.lastRuntime?.options.environment, {
+        PATH: "/usr/bin",
+        GH_TOKEN: "selected",
+        GITHUB_TOKEN: "selected",
+      });
+
+      // The device environment is layered over the selected login, not instead of it.
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: mcpThreadId,
+        providerSessionId: "provider-session-1",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:1/mcp",
+        authorizationHeader: "Bearer mcp-token",
+        capabilities: new Set(["device"]),
+        agentDeviceEnvironment: { PATH: "/t3/device/bin", PATH_SEPARATOR: ":" },
+      });
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: mcpThreadId,
+        runtimeMode: "full-access",
+      });
+      NodeAssert.deepEqual(runtimeFactory.lastRuntime?.options.environment, {
+        PATH: "/t3/device/bin:/usr/bin",
+        GH_TOKEN: "selected",
+        GITHUB_TOKEN: "selected",
+        T3_MCP_BEARER_TOKEN: "mcp-token",
+      });
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(mcpThreadId))),
+      Effect.provide(layer),
+    );
+  });
 
   it.effect("passes configured launch args into the session runtime", () => {
     const runtimeFactory = makeRuntimeFactory();

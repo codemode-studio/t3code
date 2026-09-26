@@ -1,3 +1,4 @@
+import * as NodeOS from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -39,6 +40,7 @@ import * as ServerConfig from "../config.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
@@ -1845,6 +1847,34 @@ it.layer(
       // Arbitrary host env vars must pass through — terminals inherit the
       // user's environment apart from the explicit blocklist.
       expect(spawnInput.env.TEST_TERMINAL_KEEP).toBe("keep-me");
+    }),
+  );
+
+  it.effect("starts shells as the checkout's selected GitHub CLI login", () =>
+    Effect.gen(function* () {
+      const selectedCwd = process.cwd();
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        env: { GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+      }).pipe(
+        Effect.provideService(GitHubCliAccountEnvironment, {
+          forCwd: (cwd) =>
+            Effect.succeed(
+              cwd === selectedCwd ? { GH_TOKEN: "selected", GITHUB_TOKEN: "selected" } : {},
+            ),
+        }),
+      );
+      yield* manager.open(openInput({ cwd: selectedCwd }));
+      yield* manager.open(openInput({ terminalId: "other", cwd: NodeOS.tmpdir() }));
+
+      expect(ptyAdapter.spawnInputs[0]?.env).toMatchObject({
+        GH_TOKEN: "selected",
+        GITHUB_TOKEN: "selected",
+      });
+      // Without a selection the shell keeps gh's own resolution.
+      expect(ptyAdapter.spawnInputs[1]?.env).toMatchObject({
+        GH_TOKEN: "ambient",
+        GITHUB_TOKEN: "ambient",
+      });
     }),
   );
 

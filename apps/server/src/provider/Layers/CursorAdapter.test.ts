@@ -31,6 +31,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { makeCursorAdapter } from "./CursorAdapter.ts";
 import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 const decodeCursorSettings = Schema.decodeSync(CursorSettings);
 
@@ -162,6 +163,45 @@ const cursorAdapterTestLayer = it.layer(
 );
 
 cursorAdapterTestLayer("CursorAdapterLive", (it) => {
+  it.effect("starts the agent as the checkout's selected GitHub CLI login", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("cursor-github-login");
+      const dir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-github-login-")),
+      );
+      const envLogPath = NodePath.join(dir, "env.json");
+      const wrapperPath = writeFakeCli({
+        directory: dir,
+        name: "fake-agent",
+        source: execScriptSource({
+          scriptPath: mockAgentPath,
+          envLog: { path: envLogPath, keys: ["GH_TOKEN", "GITHUB_TOKEN"] },
+        }),
+      });
+      const adapter = yield* makeCursorAdapter(decodeCursorSettings({ binaryPath: wrapperPath }), {
+        environment: { ...process.env, GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+      }).pipe(
+        Effect.provideService(GitHubCliAccountEnvironment, {
+          forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
+        }),
+      );
+      yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+      yield* adapter.stopSession(threadId);
+      const logged = yield* Effect.promise(() => NodeFSP.readFile(envLogPath, "utf8"));
+      assert.deepStrictEqual(
+        yield* Schema.decodeEffect(
+          Schema.fromJsonString(
+            Schema.Struct({ GH_TOKEN: Schema.String, GITHUB_TOKEN: Schema.String }),
+          ),
+        )(logged),
+        {
+          GH_TOKEN: "selected",
+          GITHUB_TOKEN: "selected",
+        },
+      );
+    }),
+  );
+
   it.effect("rejects rollback without discarding the provider conversation", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
