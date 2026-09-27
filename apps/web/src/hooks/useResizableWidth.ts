@@ -57,12 +57,13 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     [defaultWidth, maxWidth, minWidth],
   );
 
-  // No cross-tab subscription: panel width is per-window state.
+  // No cross-tab subscription: panel width is per-window state. The stored
+  // width is kept unclamped so a pane restored into a narrow window returns to
+  // it once the bounds grow again; the clamp applies at render.
   const readWidth = () => {
     if (typeof window === "undefined") return defaultWidth;
     try {
-      const stored = getLocalStorageItem(storageKey, WidthSchema);
-      return clamp(stored ?? defaultWidth);
+      return getLocalStorageItem(storageKey, WidthSchema) ?? defaultWidth;
     } catch (error) {
       console.error("Could not read persisted panel width.", error);
       return defaultWidth;
