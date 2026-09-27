@@ -6,8 +6,8 @@
 #   this repository, so the installed AppImage updates itself.
 # - macOS runs on a self-hosted runner labelled `t3-mac`. Without an Apple
 #   Developer ID the app cannot update itself (Squirrel.Mac requires a real
-#   signature), so the job installs the build onto that Mac directly and the
-#   app ships without an update feed.
+#   signature), so the app ships without an update feed and install-mac puts
+#   each published build onto that Mac directly.
 # - Both desktop builds bake in this repository's release URL, so SSH remotes
 #   download the matching t3 archive from here instead of upstream.
 #
@@ -208,45 +208,20 @@ jobs:
             --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
           node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$VERSION"
 
-      - name: Install on this Mac
-        shell: bash
-        run: |
-          set -euo pipefail
-          app="$(find release -maxdepth 2 -name '*.app' -type d | head -n 1)"
-          name="$(basename "$app")"
-          dest_dir=/Applications
-          [[ -w "$dest_dir" ]] || { dest_dir="$HOME/Applications"; mkdir -p "$dest_dir"; }
-          dest="$dest_dir/$name"
-
-          was_running=false
-          if pgrep -f "$dest/Contents/MacOS/" >/dev/null; then
-            was_running=true
-            pkill -TERM -f "$dest/Contents/MacOS/" || true
-            for _ in $(seq 1 30); do pgrep -f "$dest/Contents/MacOS/" >/dev/null || break; sleep 1; done
-          fi
-
-          rm -rf "$dest.new"
-          ditto "$app" "$dest.new"
-          rm -rf "$dest"
-          mv "$dest.new" "$dest"
-          echo "Installed $VERSION to $dest"
-
-          # Pre-seed the runtime SSH clients would otherwise download.
-          runtime="$HOME/.t3/runtime/versions/$VERSION"
-          staging="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
-          tar -xzf release-cli/t3-"$VERSION"-darwin-arm64.tar.gz -C "$staging" --strip-components=1
-          printf '%s\n' "$VERSION" > "$staging/.install-complete"
-          rm -rf "$runtime"
-          mv "$staging" "$runtime"
-
-          if [[ "$was_running" == true ]]; then open "$dest"; fi
-
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: build-mac-arm64
           path: |
             release/*.dmg
             release-cli/*
+          if-no-files-found: error
+
+      # The packaged .app only survives inside the zip electron-builder writes
+      # beside the dmg; install-mac unpacks it from there.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: install-mac-arm64
+          path: release/*.zip
           if-no-files-found: error
 
   release:
@@ -288,3 +263,77 @@ jobs:
             | while read -r tag; do
                 gh release delete "$tag" --yes --cleanup-tag
               done
+
+  # Runs only after the release exists, so the Mac never runs a version whose
+  # runtime archive SSH remotes cannot download.
+  install-mac:
+    name: Install on the Mac
+    needs: [version, mac, release]
+    runs-on: [self-hosted, macOS, ARM64, t3-mac]
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Clean workspace
+        run: find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: "*-mac-arm64"
+          merge-multiple: true
+          path: artifacts
+
+      - name: Install app and runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          zips=(artifacts/*.zip)
+          archive="artifacts/t3-$VERSION-darwin-arm64.tar.gz"
+          [[ ${#zips[@]} -eq 1 ]] || { echo "Expected one app zip, found ${#zips[@]}." >&2; exit 1; }
+          [[ -f "$archive" ]] || { echo "Missing $archive." >&2; exit 1; }
+
+          # Unpack and check everything before touching the installed copy.
+          unpacked="$RUNNER_TEMP/app"
+          rm -rf "$unpacked"
+          ditto -x -k "${zips[0]}" "$unpacked"
+          apps=("$unpacked"/*.app)
+          [[ ${#apps[@]} -eq 1 ]] || { echo "Expected one .app in ${zips[0]}, found ${#apps[@]}." >&2; exit 1; }
+          app="${apps[0]}"
+          bundle_id="$(defaults read "$app/Contents/Info" CFBundleIdentifier)"
+          [[ -n "$bundle_id" ]] || { echo "$app has no bundle identifier." >&2; exit 1; }
+
+          runtime_root="$HOME/.t3/runtime/versions"
+          mkdir -p "$runtime_root"
+          staging="$(mktemp -d "$runtime_root/.staging-XXXXXX")"
+          trap 'rm -rf "$staging"' EXIT
+          tar -xzf "$archive" -C "$staging" --strip-components=1
+          "$staging/t3" --version
+
+          dest_dir=/Applications
+          [[ -w "$dest_dir" ]] || { dest_dir="$HOME/Applications"; mkdir -p "$dest_dir"; }
+          dest="$dest_dir/$(basename "$app")"
+
+          # Quit the running copy by the PID macOS registered for its bundle id.
+          pid="$(lsappinfo info -only pid "$(lsappinfo find bundleid="$bundle_id")" 2>/dev/null | sed -n 's/.*=//p')"
+          was_running=false
+          if [[ "$pid" =~ ^[0-9]+$ ]]; then
+            was_running=true
+            kill -TERM "$pid"
+            for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          fi
+
+          rm -rf "$dest.new"
+          ditto "$app" "$dest.new"
+          rm -rf "$dest"
+          mv "$dest.new" "$dest"
+          echo "Installed $VERSION to $dest"
+
+          # Pre-seed the runtime SSH clients would otherwise download.
+          printf '%s\n' "$VERSION" > "$staging/.install-complete"
+          rm -rf "$runtime_root/$VERSION"
+          mv "$staging" "$runtime_root/$VERSION"
+          trap - EXIT
+
+          if [[ "$was_running" == true ]]; then open "$dest"; fi
