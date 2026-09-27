@@ -48,7 +48,7 @@ import { searchableSetting } from "./settingsSearch";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow, SettingsSection } from "./settingsLayout";
 
 /** Provider instance entries for an environment, in settings order. */
-export function useProviderInstanceEntries(
+function useProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
   settings: Pick<UnifiedSettings, "providerInstances" | "providers">,
 ): ReadonlyArray<ProviderInstanceEntry> {
@@ -91,7 +91,7 @@ export function ProviderProfileInstances({
   );
 }
 
-export function describeProfileModel(
+function describeProfileModel(
   selection: ModelSelection | null,
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): string {
