@@ -9,6 +9,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildDeleteProviderProfilePatch,
+  decodeProviderProfileValue,
+  encodeProviderProfileValue,
+  NO_PROVIDER_PROFILE_VALUE,
   providerProfileIdFromName,
   resolveProjectProviderProfileId,
 } from "./ProviderProfilesSettings.logic";
@@ -72,5 +75,20 @@ describe("resolveProjectProviderProfileId", () => {
     expect(resolveProjectProviderProfileId(settings, other)).toBe(globex);
     expect(resolveProjectProviderProfileId(settings, optedOut)).toBeNull();
     expect(resolveProjectProviderProfileId(settings, inheriting)).toBe(acme);
+  });
+});
+
+describe("provider profile select values", () => {
+  it("keeps a profile named None distinct from the opt-out", () => {
+    const noneProfile = providerProfileIdFromName("None", {});
+    expect(noneProfile).toBe("none");
+    const value = encodeProviderProfileValue(noneProfile);
+    expect(value).not.toBe(NO_PROVIDER_PROFILE_VALUE);
+    expect(decodeProviderProfileValue(value)).toBe(noneProfile);
+    expect(decodeProviderProfileValue(encodeProviderProfileValue(null))).toBeNull();
+    // Ids are slugs, so even one spelled like the opt-out value stays a profile.
+    const lookalike = providerProfileIdFromName("No profile", {});
+    expect(decodeProviderProfileValue(encodeProviderProfileValue(lookalike))).toBe(lookalike);
+    expect(decodeProviderProfileValue("none")).toBeUndefined();
   });
 });

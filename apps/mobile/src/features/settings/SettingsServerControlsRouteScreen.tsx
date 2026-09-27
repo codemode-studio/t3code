@@ -13,6 +13,7 @@ import {
   type ProjectScopedServerSettingKey,
   type ProviderProfileId,
 } from "@t3tools/contracts";
+import { commonProviderProfiles } from "@t3tools/shared/projectSettings";
 import { useRef, useState, type ComponentProps } from "react";
 import { Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -214,16 +215,12 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
-  // Profiles are per environment; list every one the selection knows by id.
-  const profileChoices = [
-    ...new Map(
-      displayTargets.flatMap((target) =>
-        Object.entries(target.settings.providerProfiles).map(
-          ([id, profile]) => [id, profile] as const,
-        ),
-      ),
-    ),
-  ];
+  // Profiles are per environment: offer only those every write target
+  // defines, so one choice never saves an id some environment lacks.
+  const profileChoices = commonProviderProfiles(targets.map((target) => target.settings));
+  const anyTargetHasProfiles = targets.some(
+    (target) => Object.keys(target.settings.providerProfiles).length > 0,
+  );
   const disabledFor = (key: string) =>
     disabled ||
     (projectSelected &&
@@ -266,7 +263,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               ) : null}
               {props.page === "new-threads" ? (
                 <>
-                  {profileChoices.length > 0 ? (
+                  {anyTargetHasProfiles ? (
                     <SettingsSection
                       title="Provider profile"
                       trailing={
@@ -277,18 +274,21 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     >
                       {[
                         ...profileChoices.map(([id, profile]) => ({
-                          id: id as ProviderProfileId,
+                          id: id as ProviderProfileId | null,
                           label: profile.name,
                           description: `${profile.instanceIds.length} provider${profile.instanceIds.length === 1 ? "" : "s"}`,
                         })),
                         {
                           id: null,
                           label: "No profile",
-                          description: "Offer every provider in the model picker.",
+                          description:
+                            profileChoices.length === 0
+                              ? "The selected environments share no profile. Filter to one environment to pick one of its profiles."
+                              : "Offer every provider in the model picker.",
                         },
                       ].map((choice, index) => (
                         <ChoiceRow
-                          key={choice.id ?? "none"}
+                          key={choice.id === null ? "no-profile" : `profile:${choice.id}`}
                           label={choice.label}
                           description={choice.description}
                           selected={

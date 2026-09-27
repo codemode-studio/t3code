@@ -2,11 +2,14 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
   type ProviderInstanceId,
-  ProviderProfileId,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
+import {
+  commonProviderProfiles,
+  resolveProjectSettings,
+  resolveProviderProfile,
+} from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
@@ -30,6 +33,11 @@ import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
 import type { ProjectSettingsCategory } from "./ProjectSettingsPanel";
 import { ProviderProfileInstances } from "./ProviderProfilesSettings";
+import {
+  decodeProviderProfileValue,
+  encodeProviderProfileValue,
+  NO_PROVIDER_PROFILE_VALUE,
+} from "./ProviderProfilesSettings.logic";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import {
@@ -79,7 +87,13 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
   const mixedProfile = useScopedSettingsMixed(["providerProfileId"]);
   const profile = resolveProviderProfile(settings);
-  const profiles = Object.entries(settings.providerProfiles);
+  // Offer only profiles every target defines, so a multi-environment write
+  // never saves an id some environment lacks.
+  const profileTargets = targets.length > 0 ? targets.map((entry) => entry.settings) : [settings];
+  const profiles = commonProviderProfiles(profileTargets);
+  const anyTargetHasProfiles = profileTargets.some(
+    (entry) => Object.keys(entry.providerProfiles).length > 0,
+  );
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
@@ -153,11 +167,13 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       mixed={mixedProfile}
       {...searchableSetting("provider-profile")}
       description={
-        profiles.length === 0 && settings.providerProfileId === null
+        !anyTargetHasProfiles && settings.providerProfileId === null
           ? "Profiles limit a project to a set of providers, such as one per client. Create one in provider settings."
-          : isProjectScope
-            ? "This project only offers the profile's providers in the model picker, and new threads start on its default model."
-            : "Projects only offer this profile's providers in the model picker, and new threads start on its default model."
+          : profiles.length === 0 && anyTargetHasProfiles
+            ? "The selected environments share no profile. Choose one environment to pick one of its profiles."
+            : isProjectScope
+              ? "This project only offers the profile's providers in the model picker, and new threads start on its default model."
+              : "Projects only offer this profile's providers in the model picker, and new threads start on its default model."
       }
       status={
         profile && !mixedProfile ? (
@@ -174,34 +190,30 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         ) : null
       }
       control={
-        profiles.length === 0 && settings.providerProfileId === null ? (
+        !anyTargetHasProfiles && settings.providerProfileId === null ? (
           <Button size="xs" variant="outline" onClick={openProviderSettings}>
             Create a profile
           </Button>
         ) : (
           <Select
-            value={mixedProfile ? null : (profile?.id ?? "none")}
+            value={mixedProfile ? null : encodeProviderProfileValue(profile?.id ?? null)}
             onValueChange={(value) => {
-              if (value === "none") updateSettings({ providerProfileId: null });
-              else if (value) updateSettings({ providerProfileId: ProviderProfileId.make(value) });
+              const providerProfileId = value ? decodeProviderProfileValue(value) : undefined;
+              if (providerProfileId !== undefined) updateSettings({ providerProfileId });
             }}
           >
             <SelectTrigger size="sm" aria-label="Provider profile">
               <SelectValue>
-                {(value: string | null) =>
-                  value === null
-                    ? unavailable
-                      ? "Unavailable"
-                      : "Mixed"
-                    : value === "none"
-                      ? "No profile"
-                      : (settings.providerProfiles[ProviderProfileId.make(value)]?.name ?? value)
-                }
+                {(value: string | null) => {
+                  if (value === null) return unavailable ? "Unavailable" : "Mixed";
+                  const id = decodeProviderProfileValue(value);
+                  return id ? (settings.providerProfiles[id]?.name ?? id) : "No profile";
+                }}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {profiles.map(([id, option]) => (
-                <SelectItem key={id} value={id}>
+                <SelectItem key={id} value={encodeProviderProfileValue(id)}>
                   <span className="flex items-center gap-2">
                     <span
                       aria-hidden
@@ -212,7 +224,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                   </span>
                 </SelectItem>
               ))}
-              <SelectItem value="none">No profile (all providers)</SelectItem>
+              <SelectItem value={NO_PROVIDER_PROFILE_VALUE}>No profile (all providers)</SelectItem>
             </SelectPopup>
           </Select>
         )

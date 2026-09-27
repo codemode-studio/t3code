@@ -29,7 +29,11 @@ import {
   latestTriggerAt,
 } from "@t3tools/shared/automationSchedule";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import {
+  resolveProjectSettings,
+  resolveProviderProfile,
+  resolveProviderProfileFallbackModelSelection,
+} from "@t3tools/shared/projectSettings";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -56,6 +60,7 @@ import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEng
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "../orchestration/Services/ThreadDeletionReactor.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
@@ -145,6 +150,7 @@ const make = Effect.gen(function* () {
   const setupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const gitHubCli = yield* GitHubCli.GitHubCli;
+  const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
 
   const filePath = path.join(config.stateDir, "automations.json");
   // Captured so writes from RPC handlers and the scheduler fiber need no extra services.
@@ -294,10 +300,19 @@ const make = Effect.gen(function* () {
         return yield* failWith("The automation's project no longer exists.");
       }
       const settings = yield* settingsService.getSettings;
+      const projectSettings = resolveProjectSettings(settings, project.id, project).settings;
+      const providerProfile = resolveProviderProfile(projectSettings);
+      // With a profile, a missing default resolves inside it; the environment
+      // default may belong to another profile's account.
       const modelSelection =
         automation.modelSelection ??
-        resolveProjectSettings(settings, project.id, project).settings.defaultModelSelection ??
-        settings.defaultModelSelection;
+        projectSettings.defaultModelSelection ??
+        (providerProfile
+          ? resolveProviderProfileFallbackModelSelection(
+              providerProfile,
+              yield* providerRegistry.getProviders,
+            )
+          : settings.defaultModelSelection);
       if (!modelSelection) {
         return yield* failWith("Choose a model for this automation.");
       }

@@ -6,16 +6,19 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderProfileId,
+  type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
 import {
   clearProjectSettingsOverrides,
+  commonProviderProfiles,
   hasProjectSettingsOverrides,
   resolveProjectFileBackedSetting,
   resolveProjectSettings,
   resolveProviderProfile,
+  resolveProviderProfileFallbackModelSelection,
   resolveWorktreeCleanup,
   withProjectSettingsOverrides,
 } from "./projectSettings.ts";
@@ -448,6 +451,54 @@ describe("provider profiles", () => {
     const resolved = resolveProjectSettings(settings, projectId);
     expect(resolveProviderProfile(resolved.settings)).toBeNull();
     expect(resolved.settings.defaultModelSelection).toEqual(createModelSelection(ccB, "sonnet"));
+  });
+
+  it("falls back to a ready profile instance, never one outside the profile", () => {
+    const provider = (
+      instanceId: ProviderInstanceId,
+      status: ServerProvider["status"],
+      enabled = true,
+    ) =>
+      ({
+        instanceId,
+        enabled,
+        status,
+        models: [
+          { slug: "custom", isCustom: true },
+          { slug: "haiku", isCustom: false },
+          { slug: "opus", isCustom: false, isDefault: true },
+        ],
+      }) as unknown as ServerProvider;
+    const profile = { instanceIds: [ccA, codexA] };
+
+    expect(
+      resolveProviderProfileFallbackModelSelection(profile, [
+        provider(ccB, "ready"),
+        provider(ccA, "warning"),
+        provider(codexA, "ready"),
+      ]),
+    ).toEqual(createModelSelection(codexA, "opus"));
+    expect(
+      resolveProviderProfileFallbackModelSelection(profile, [
+        provider(ccB, "ready"),
+        provider(ccA, "error"),
+        provider(codexA, "ready", false),
+      ]),
+    ).toBeNull();
+  });
+
+  it("only offers profiles every selected environment defines", () => {
+    const globex = ProviderProfileId.make("globex");
+    const onlyAcme = { providerProfiles: base.providerProfiles };
+    const both = {
+      providerProfiles: {
+        ...base.providerProfiles,
+        [globex]: { name: "Globex", instanceIds: [ccB], defaultModelSelection: null },
+      },
+    };
+    expect(commonProviderProfiles([both, onlyAcme]).map(([id]) => id)).toEqual([acme]);
+    expect(commonProviderProfiles([both]).map(([id]) => id)).toEqual([acme, globex]);
+    expect(commonProviderProfiles([both, { providerProfiles: {} }])).toEqual([]);
   });
 
   it("upserts and removes profiles per entry", () => {

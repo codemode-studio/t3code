@@ -15,7 +15,11 @@ import {
   isValidAutomationCronExpression,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
+import {
+  resolveProjectSettings,
+  resolveProviderProfile,
+  resolveProviderProfileFallbackModelSelection,
+} from "@t3tools/shared/projectSettings";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
@@ -1269,11 +1273,26 @@ function AutomationInstructions({
   // Runs resolve the project's default model the same way on the server.
   const projectSettings = resolveProjectSettings(settings, projectId).settings;
   const providerProfile = resolveProviderProfile(projectSettings);
-  // Until the user picks one, `modelSelection` stays null and runs follow the default model.
-  const selection = resolveDefaultProviderModelSelection(
-    providers,
-    modelSelection ?? projectSettings.defaultModelSelection,
-  );
+  // Until the user picks one, `modelSelection` stays null and runs follow the
+  // default model, resolved inside the project's profile like the server does.
+  const selection =
+    modelSelection === null && providerProfile
+      ? projectSettings.defaultModelSelection
+        ? resolveDefaultProviderModelSelection(
+            // A project may pin a model outside its profile; an unavailable
+            // default still only falls back inside the profile.
+            providers.filter(
+              (provider) =>
+                providerProfile.instanceIdSet.has(provider.instanceId) ||
+                provider.instanceId === projectSettings.defaultModelSelection?.instanceId,
+            ),
+            projectSettings.defaultModelSelection,
+          )
+        : resolveProviderProfileFallbackModelSelection(providerProfile, providers)
+      : resolveDefaultProviderModelSelection(
+          providers,
+          modelSelection ?? projectSettings.defaultModelSelection,
+        );
   const entries = leadWithProviderProfile(
     sortProviderInstanceEntries(
       applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),

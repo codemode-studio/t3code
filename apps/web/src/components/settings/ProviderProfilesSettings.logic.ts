@@ -72,3 +72,23 @@ export function resolveProjectProviderProfileId(
     ? (entry.providerProfileId ?? null)
     : settings.providerProfileId;
 }
+
+/**
+ * Select values for the profile picker. Profile ids are user-derived slugs
+ * (a profile named "None" gets id `none`), so they are prefixed to never
+ * collide with the opt-out value.
+ */
+export const NO_PROVIDER_PROFILE_VALUE = "no-profile";
+const PROFILE_VALUE_PREFIX = "profile:";
+
+export function encodeProviderProfileValue(id: ProviderProfileId | null): string {
+  return id === null ? NO_PROVIDER_PROFILE_VALUE : `${PROFILE_VALUE_PREFIX}${id}`;
+}
+
+/** `null` is the opt-out; `undefined` is a value this picker never produces. */
+export function decodeProviderProfileValue(value: string): ProviderProfileId | null | undefined {
+  if (value === NO_PROVIDER_PROFILE_VALUE) return null;
+  return value.startsWith(PROFILE_VALUE_PREFIX)
+    ? ProviderProfileId.make(value.slice(PROFILE_VALUE_PREFIX.length))
+    : undefined;
+}

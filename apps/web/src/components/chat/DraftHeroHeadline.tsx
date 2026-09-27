@@ -30,7 +30,7 @@ import {
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 
 interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
@@ -175,13 +175,18 @@ export function DraftHeroHeadline({
               draftId,
             );
             if (!hasExplicitComposerModelSelection(currentDraft)) {
-              applyStickyState(draftId);
               const environmentSettings = environments.find(
                 (environment) => environment.environmentId === project.environmentId,
               )?.serverConfig?.settings;
-              const defaultModelSelection = environmentSettings
+              const projectSettings = environmentSettings
                 ? resolveProjectSettings(environmentSettings, project.id, project).settings
-                    .defaultModelSelection
+                : null;
+              applyStickyState(
+                draftId,
+                projectSettings ? resolveProviderProfile(projectSettings) : null,
+              );
+              const defaultModelSelection = projectSettings
+                ? projectSettings.defaultModelSelection
                 : project.defaultModelSelection;
               if (defaultModelSelection) {
                 setModelSelection(draftId, defaultModelSelection, {

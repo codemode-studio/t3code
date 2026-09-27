@@ -22,7 +22,7 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 import { readProjects, readThreadShell, useProjects, useThread } from "../state/entities";
 import {
   hasExplicitComposerModelSelection,
@@ -136,6 +136,7 @@ export function useNewThreadHandler() {
         project,
       );
       const projectDefaultModelSelection = projectSettings.settings.defaultModelSelection;
+      const providerProfile = resolveProviderProfile(projectSettings.settings);
       const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({
@@ -144,6 +145,7 @@ export function useNewThreadHandler() {
           carrySourceDraftId:
             currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
           destinationDraftId,
+          providerProfile,
         });
       // The shared resolver owns the priority order. The t3.json read is
       // skipped entirely when a higher-priority source decides, and its
@@ -276,7 +278,7 @@ export function useNewThreadHandler() {
           const storedDraft = getComposerDraft(emptyStoredDraftThread.draftId);
           const storedDraftHasExplicitModelPick = hasExplicitComposerModelSelection(storedDraft);
           if (!storedDraftHasExplicitModelPick) {
-            applyStickyState(emptyStoredDraftThread.draftId);
+            applyStickyState(emptyStoredDraftThread.draftId, providerProfile);
             const modelSelectionOverride = resolveModelSelectionOverride(
               emptyStoredDraftThread.draftId,
             );
@@ -415,7 +417,7 @@ export function useNewThreadHandler() {
           runtimeMode: defaultRuntimeMode,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });
-        applyStickyState(draftId);
+        applyStickyState(draftId, providerProfile);
         const modelSelectionOverride = resolveModelSelectionOverride(draftId);
         if (modelSelectionOverride) {
           // Project defaults and carried selections both outrank global sticky
