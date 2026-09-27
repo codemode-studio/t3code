@@ -18,6 +18,9 @@ const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
+  // Where SSH remotes download this build's t3 archive. Unset keeps the
+  // upstream GitHub releases; a fork that publishes its own builds sets it.
+  __T3CODE_BUILD_RELEASE_BASE_URL__: JSON.stringify(repoEnv.T3CODE_RELEASE_BASE_URL?.trim() ?? ""),
 };
 
 export default defineConfig({
