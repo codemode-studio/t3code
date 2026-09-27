@@ -14,7 +14,7 @@
 # Only push and manual dispatch run here: a pull_request trigger would let
 # untrusted code reach the self-hosted Mac.
 
-name: Main build
+name: Fork Release
 
 on:
   push:
@@ -26,7 +26,7 @@ permissions:
 
 # The newest main wins; a superseded build is not worth finishing.
 concurrency:
-  group: main-build
+  group: fork-release
   cancel-in-progress: true
 
 env:
@@ -262,7 +262,7 @@ jobs:
           gh release create "${{ needs.version.outputs.tag }}" assets/* \
             --target "$GITHUB_SHA" \
             --title "${{ needs.version.outputs.name }}" \
-            --notes "Main build of ${GITHUB_SHA::12}." \
+            --notes "Fork build of ${GITHUB_SHA::12}." \
             --prerelease
 
       - name: Prune old builds
