@@ -239,7 +239,15 @@ jobs:
         with:
           pattern: build-*
           merge-multiple: true
-          path: assets
+          path: downloaded
+
+      # Multi-path uploads keep their directories (release/, release-cli/),
+      # and a release takes files only.
+      - name: Flatten assets
+        run: |
+          mkdir assets
+          find downloaded -type f -exec mv -n {} assets/ \;
+          ls -la assets
 
       - name: Write checksums
         working-directory: assets
@@ -247,8 +255,10 @@ jobs:
           sha256sum t3-*.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
+      # A re-run replaces the release its failed attempt may have left behind.
       - name: Create release
         run: |
+          gh release delete "${{ needs.version.outputs.tag }}" --yes --cleanup-tag 2>/dev/null || true
           gh release create "${{ needs.version.outputs.tag }}" assets/* \
             --target "$GITHUB_SHA" \
             --title "${{ needs.version.outputs.name }}" \
@@ -289,10 +299,12 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          zips=(artifacts/*.zip)
-          archive="artifacts/t3-$VERSION-darwin-arm64.tar.gz"
+          # Artifacts keep their upload directories, so locate files by name.
+          zips=()
+          while IFS= read -r zip; do zips+=("$zip"); done < <(find artifacts -type f -name '*.zip')
+          archive="$(find artifacts -type f -name "t3-$VERSION-darwin-arm64.tar.gz" | head -n 1)"
           [[ ${#zips[@]} -eq 1 ]] || { echo "Expected one app zip, found ${#zips[@]}." >&2; exit 1; }
-          [[ -f "$archive" ]] || { echo "Missing $archive." >&2; exit 1; }
+          [[ -n "$archive" ]] || { echo "Missing t3-$VERSION-darwin-arm64.tar.gz." >&2; exit 1; }
 
           # Unpack and check everything before touching the installed copy.
           unpacked="$RUNNER_TEMP/app"
