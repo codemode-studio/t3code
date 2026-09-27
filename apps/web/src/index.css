@@ -261,6 +261,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-row-selected: var(--sidebar-row-selected);
   --color-sidebar-border: var(--contrast-sidebar-border);
+  --color-pane-edge: var(--pane-edge);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -1130,6 +1131,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --sidebar-row-active: var(--accent);
     --sidebar-row-selected: var(--muted);
     --sidebar-stage-fade: var(--card);
+    /* Same as the app sidebar's own dark border, so --pane-edge matches it. */
+    --sidebar-border: rgb(255 255 255 / 8%);
     --terminal-cursor: rgb(180 203 255);
     --terminal-selection-background: rgb(180 203 255 / 25%);
   }
@@ -1449,19 +1452,32 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
   --sidebar-stage-fade: var(--app-theme-sidebar);
-  border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 10%, transparent);
+}
+
+/* The app sidebar's edge. Dividers between a page's own panes (border-pane-edge)
+   share it so every vertical seam in the workspace reads as one line. */
+:root {
+  --pane-edge: var(--contrast-sidebar-border);
+}
+
+html[data-theme-id] {
+  --pane-edge: color-mix(in srgb, var(--contrast-sidebar-foreground) 10%, transparent);
 
   @variant dark {
-    border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 8%, transparent);
+    --pane-edge: color-mix(in srgb, var(--contrast-sidebar-foreground) 8%, transparent);
   }
 }
 
 /* T3 Chat's panel divider is deliberately pink, and its resize affordance
    keeps that color while hovered. Do not neutralize this branded edge. */
-html[data-theme-id="t3-chat"] [data-app-sidebar] {
+html[data-theme-id="t3-chat"] {
   @variant dark {
-    border-color: var(--contrast-sidebar-border);
+    --pane-edge: var(--contrast-sidebar-border);
   }
+}
+
+[data-app-sidebar] {
+  border-color: var(--pane-edge);
 }
 
 /* Recompute contrast wherever a subtree owns its own semantic color palette. */
