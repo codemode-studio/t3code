@@ -194,6 +194,20 @@ describe("panel resize cleanup", () => {
 });
 
 describe("panel width storage changes", () => {
+  it("restores a wide stored width into narrow bounds and recovers it when they grow", async () => {
+    savedWidths.set("wide-pane", "700");
+    await act(() => renderer.unmount());
+    await act(() => {
+      renderer = create(<Panel storageKey="wide-pane" maxWidth={300} />);
+    });
+    expect(result.width).toBe(300);
+    await act(() => renderer.update(<Panel storageKey="wide-pane" maxWidth={250} />));
+    expect(result.width).toBe(250);
+    await act(() => renderer.update(<Panel storageKey="wide-pane" maxWidth={800} />));
+    expect(result.width).toBe(700);
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
   it("restores separate thread widths without remounting and retains them after reload", async () => {
     await act(() => {
       result.handlers.onPointerDown(pointer());

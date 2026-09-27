@@ -93,6 +93,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { toastManager } from "../ui/toast";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { WorkspaceListPane } from "../WorkspaceListPane";
 import { AutomationPromptField } from "./AutomationPromptField";
 import {
   AUTOMATION_TEMPLATE_CATEGORIES,
@@ -261,7 +262,7 @@ export function AutomationsPage({
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <WorkspacePageHeader electron={isElectron} className="border-b">
+        <WorkspacePageHeader electron={isElectron} className="border-b border-pane-edge">
           <WorkspaceBreadcrumb ariaLabel="Automations breadcrumb" className="min-w-0">
             <WorkspaceBreadcrumbItem current>
               <h1 className="flex items-center gap-2">
@@ -272,8 +273,8 @@ export function AutomationsPage({
           </WorkspaceBreadcrumb>
         </WorkspacePageHeader>
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-72 shrink-0 flex-col border-r max-md:hidden">
-            <div className="flex items-center gap-1 border-b p-2">
+          <WorkspaceListPane storageKey="automations_list_pane_width" className="max-md:hidden">
+            <div className="flex items-center gap-1 border-b border-pane-edge p-2">
               <InputGroup className="min-w-0 flex-1">
                 <InputGroupAddon>
                   <SearchIcon />
@@ -320,7 +321,7 @@ export function AutomationsPage({
                 )}
               </div>
             </ScrollArea>
-          </aside>
+          </WorkspaceListPane>
           <ScrollArea className="min-h-0 min-w-0 flex-1">
             <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-8">{content}</div>
           </ScrollArea>

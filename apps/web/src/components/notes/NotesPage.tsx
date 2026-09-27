@@ -37,6 +37,7 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { WorkspaceListPane } from "../WorkspaceListPane";
 
 interface Draft {
   title: string;
@@ -251,7 +252,7 @@ export function NotesPage({
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <WorkspacePageHeader electron={isElectron} className="border-b">
+        <WorkspacePageHeader electron={isElectron} className="border-b border-pane-edge">
           <WorkspaceBreadcrumb ariaLabel="Notes breadcrumb" className="min-w-0">
             <WorkspaceBreadcrumbItem current>
               <h1 className="flex items-center gap-2">
@@ -262,8 +263,8 @@ export function NotesPage({
           </WorkspaceBreadcrumb>
         </WorkspacePageHeader>
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-72 shrink-0 flex-col border-r max-sm:w-48">
-            <div className="flex items-center gap-1 border-b p-2">
+          <WorkspaceListPane storageKey="notes_list_pane_width" className="max-sm:w-48">
+            <div className="flex items-center gap-1 border-b border-pane-edge p-2">
               <InputGroup className="min-w-0 flex-1">
                 <InputGroupAddon>
                   <SearchIcon />
@@ -280,7 +281,7 @@ export function NotesPage({
                 <PlusIcon />
               </Button>
             </div>
-            <div className="border-b p-2">
+            <div className="border-b border-pane-edge p-2">
               <Select value={tagFilter} onValueChange={(value) => setTagFilter(value ?? "")}>
                 <SelectTrigger size="sm" aria-label="Filter by tag">
                   <SelectValue>{tagFilter || "All tags"}</SelectValue>
@@ -322,7 +323,7 @@ export function NotesPage({
                 )}
               </div>
             </ScrollArea>
-          </aside>
+          </WorkspaceListPane>
           <main className="min-w-0 flex-1 overflow-y-auto p-4">
             {editor ? (
               <div className="mx-auto flex max-w-3xl flex-col gap-4">
