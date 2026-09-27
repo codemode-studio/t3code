@@ -1,0 +1,290 @@
+# Fork-only build train: every push to main becomes one nightly-versioned
+# prerelease on this repository, so a Linux and a macOS install of the same
+# commit share one version and can each fetch the other's t3 runtime over SSH.
+#
+# - Linux (GitHub-hosted) builds the AppImage with an update feed pointing at
+#   this repository, so the installed AppImage updates itself.
+# - macOS runs on a self-hosted runner labelled `t3-mac`. Without an Apple
+#   Developer ID the app cannot update itself (Squirrel.Mac requires a real
+#   signature), so the job installs the build onto that Mac directly and the
+#   app ships without an update feed.
+# - Both desktop builds bake in this repository's release URL, so SSH remotes
+#   download the matching t3 archive from here instead of upstream.
+#
+# Only push and manual dispatch run here: a pull_request trigger would let
+# untrusted code reach the self-hosted Mac.
+
+name: Main build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The newest main wins; a superseded build is not worth finishing.
+concurrency:
+  group: main-build
+  cancel-in-progress: true
+
+env:
+  T3CODE_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download
+  # Keep in step with SEA_NODE_VERSION in apps/server/vite.config.ts.
+  SEA_NODE_VERSION: "26.8.2"
+  KEEP_RELEASES: "15"
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      name: ${{ steps.resolve.outputs.name }}
+    steps:
+      - name: Checkout
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - run: vp install --filter=@t3tools/scripts...
+
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/resolve-nightly-release.ts \
+            --date "$(date -u -d "${{ github.event.head_commit.timestamp || github.run_started_at }}" +%Y%m%d)" \
+            --run-number "${{ github.run_number }}" \
+            --sha "$GITHUB_SHA" \
+            --github-output
+          cat "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux x64
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
+          rustup update stable --no-self-update
+          rustup default stable
+
+      - run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/web... --filter=@t3tools/scripts...
+
+      - run: node scripts/update-release-package-versions.ts "$VERSION"
+
+      - name: Build JS bundle
+        run: vp run build:desktop
+
+      # GITHUB_REPOSITORY gives the AppImage an update feed on this repo.
+      - name: Build AppImage
+        run: vp run dist:desktop:artifact --platform linux --target AppImage --arch x64 --build-version "$VERSION" --skip-build --verbose
+
+      - name: Build CLI archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          VP_NODE_VERSION="$SEA_NODE_VERSION" node apps/server/scripts/cli.ts build-exe --verbose
+          monitor="$(find native/resource-monitor/target -path '*/release/t3-resource-monitor' -type f | head -n 1)"
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
+          cp "$monitor" "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
+          node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$VERSION" \
+            --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$VERSION"
+
+      - name: Collect assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p out
+          cp release/*.AppImage release/*.blockmap out/
+          for manifest in release/*.yml; do
+            [[ "$manifest" == */builder-debug.yml ]] || cp "$manifest" out/
+          done
+          cp release-cli/* out/
+          ls -la out
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-linux-x64
+          path: out/*
+          if-no-files-found: error
+
+  mac:
+    name: macOS arm64 (self-hosted)
+    needs: version
+    runs-on: [self-hosted, macOS, ARM64, t3-mac]
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      # The workspace persists between runs on a self-hosted runner.
+      - name: Checkout
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Put cargo on PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" update stable --no-self-update
+
+      - run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/web... --filter=@t3tools/scripts...
+
+      - run: node scripts/update-release-package-versions.ts "$VERSION"
+
+      - name: Build JS bundle
+        run: vp run build:desktop
+
+      # No GITHUB_REPOSITORY: an ad-hoc signed app cannot apply updates, so it
+      # gets no feed and this job installs each build instead.
+      - name: Build app
+        run: env -u GITHUB_REPOSITORY vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 --build-version "$VERSION" --skip-build --verbose
+
+      - name: Build CLI archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          VP_NODE_VERSION="$SEA_NODE_VERSION" node apps/server/scripts/cli.ts build-exe --verbose
+          monitor="$(find native/resource-monitor/target -path '*/release/t3-resource-monitor' -type f | head -n 1)"
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64"
+          cp "$monitor" "$RUNNER_TEMP/cli-resource-monitor/darwin-arm64/"
+          node scripts/build-cli-archive.ts --platform mac --arch arm64 --version "$VERSION" \
+            --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$VERSION"
+
+      - name: Install on this Mac
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find release -maxdepth 2 -name '*.app' -type d | head -n 1)"
+          name="$(basename "$app")"
+          dest_dir=/Applications
+          [[ -w "$dest_dir" ]] || { dest_dir="$HOME/Applications"; mkdir -p "$dest_dir"; }
+          dest="$dest_dir/$name"
+
+          was_running=false
+          if pgrep -f "$dest/Contents/MacOS/" >/dev/null; then
+            was_running=true
+            pkill -TERM -f "$dest/Contents/MacOS/" || true
+            for _ in $(seq 1 30); do pgrep -f "$dest/Contents/MacOS/" >/dev/null || break; sleep 1; done
+          fi
+
+          rm -rf "$dest.new"
+          ditto "$app" "$dest.new"
+          rm -rf "$dest"
+          mv "$dest.new" "$dest"
+          echo "Installed $VERSION to $dest"
+
+          # Pre-seed the runtime SSH clients would otherwise download.
+          runtime="$HOME/.t3/runtime/versions/$VERSION"
+          staging="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
+          tar -xzf release-cli/t3-"$VERSION"-darwin-arm64.tar.gz -C "$staging" --strip-components=1
+          printf '%s\n' "$VERSION" > "$staging/.install-complete"
+          rm -rf "$runtime"
+          mv "$staging" "$runtime"
+
+          if [[ "$was_running" == true ]]; then open "$dest"; fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-mac-arm64
+          path: |
+            release/*.dmg
+            release-cli/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, linux, mac]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: assets
+
+      - name: Write checksums
+        working-directory: assets
+        run: |
+          sha256sum t3-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create release
+        run: |
+          gh release create "${{ needs.version.outputs.tag }}" assets/* \
+            --target "$GITHUB_SHA" \
+            --title "${{ needs.version.outputs.name }}" \
+            --notes "Main build of ${GITHUB_SHA::12}." \
+            --prerelease
+
+      - name: Prune old builds
+        run: |
+          gh release list --limit 200 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease and (.tagName | test("-nightly\\."))) | .tagName' \
+            | tail -n +"$((KEEP_RELEASES + 1))" \
+            | while read -r tag; do
+                gh release delete "$tag" --yes --cleanup-tag
+              done

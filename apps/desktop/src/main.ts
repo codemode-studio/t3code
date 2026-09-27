@@ -85,6 +85,8 @@ const desktopEnvironmentLayer = Layer.unwrap(
   }),
 );
 
+declare const __T3CODE_BUILD_RELEASE_BASE_URL__: string | undefined;
+
 // The remote runs the exact release this app is on, from its self-contained
 // archive, so it needs neither Node nor npm. Development points the remote at
 // a source checkout instead so the two sides can be iterated together.
@@ -98,7 +100,14 @@ const resolveDesktopSshCliRunner = (
       nodeEngineRange: serverPackageJson.engines.node,
     };
   }
-  return { archiveVersion: environment.appVersion };
+  const releaseBaseUrl =
+    typeof __T3CODE_BUILD_RELEASE_BASE_URL__ === "undefined"
+      ? ""
+      : __T3CODE_BUILD_RELEASE_BASE_URL__;
+  return {
+    archiveVersion: environment.appVersion,
+    ...(releaseBaseUrl ? { releaseBaseUrl } : {}),
+  };
 };
 
 const desktopSshEnvironmentLayer = Layer.unwrap(
