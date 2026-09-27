@@ -19,7 +19,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { sanitizeNewRefName } from "@t3tools/shared/git";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
@@ -486,22 +486,32 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     selectedEnvironmentServerConfig,
     projectSettings.settings.defaultModelSelection,
   );
+  const providerProfile = useMemo(
+    () => resolveProviderProfile(projectSettings.settings),
+    [projectSettings.settings],
+  );
   const storedStickyModelSelection = useStickyComposerModelSelection();
+  // The last app-wide pick only carries over when the project's profile has it.
   const stickyModelSelection = resolveDefaultableModelSelection(
     selectedEnvironmentServerConfig,
-    storedStickyModelSelection,
+    storedStickyModelSelection &&
+      (!providerProfile || providerProfile.instanceIdSet.has(storedStickyModelSelection.instanceId))
+      ? storedStickyModelSelection
+      : null,
   );
   const modelOptions = useMemo(
     () =>
       buildModelOptions(
         selectedEnvironmentServerConfig,
         draftModelSelection ?? projectDefaultModelSelection ?? stickyModelSelection,
+        providerProfile,
       ),
     [
       selectedEnvironmentServerConfig,
       draftModelSelection,
       projectDefaultModelSelection,
       stickyModelSelection,
+      providerProfile,
     ],
   );
 

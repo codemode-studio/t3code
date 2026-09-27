@@ -1038,8 +1038,30 @@ export const WorktreeCleanup = Schema.NullOr(
 );
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
+export const ProviderProfileId = TrimmedNonEmptyString.pipe(Schema.brand("ProviderProfileId"));
+export type ProviderProfileId = typeof ProviderProfileId.Type;
+
+/**
+ * A named set of provider instances, usually one per company or client. A
+ * project assigned to a profile only offers these instances in the model
+ * picker, and new threads start on the profile's default model. Ids of
+ * instances that no longer exist are ignored, not removed.
+ */
+export const ProviderProfile = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  color: Schema.optionalKey(TrimmedNonEmptyString),
+  instanceIds: Schema.Array(ProviderInstanceId).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+});
+export type ProviderProfile = typeof ProviderProfile.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "worktreeCleanup",
+  "providerProfileId",
   "defaultModelSelection",
   "defaultRuntimeMode",
   "defaultThreadEnvMode",
@@ -1068,6 +1090,7 @@ export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTIN
  */
 export const ProjectSettingsOverrides = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
+  providerProfileId: Schema.optionalKey(Schema.NullOr(ProviderProfileId)),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
@@ -1103,6 +1126,7 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
     [K in ProjectScopedServerSettingKey]: null extends ProjectSettingsOverrides[K] ? K : never;
   }[ProjectScopedServerSettingKey]
 >([
+  "providerProfileId",
   "defaultModelSelection",
   "sourceControlWriterModelSelection",
   "pullRequestMergeMethod",
@@ -1167,6 +1191,13 @@ export const ServerSettings = Schema.Struct({
   ),
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  /** The profile projects use unless they override it; `null` offers every provider. */
+  providerProfileId: Schema.NullOr(ProviderProfileId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  providerProfiles: Schema.Record(ProviderProfileId, ProviderProfile).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
   defaultRuntimeMode: RuntimeMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE)),
@@ -1536,6 +1567,12 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),
   ),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  providerProfileId: Schema.optionalKey(Schema.NullOr(ProviderProfileId)),
+  // Per-entry like `usageLimitSources`: each entry replaces one profile and
+  // `null` removes it.
+  providerProfiles: Schema.optionalKey(
+    Schema.Record(ProviderProfileId, Schema.NullOr(ProviderProfile)),
+  ),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   /**
    * Per-project entry replacement: each entry replaces that project's whole

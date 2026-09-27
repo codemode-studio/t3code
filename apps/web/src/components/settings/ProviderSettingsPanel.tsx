@@ -82,6 +82,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
+import { ProviderProfilesSettings } from "./ProviderProfilesSettings";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
@@ -336,7 +337,8 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
     if (
       !target.scoped &&
       (searchTargetId === searchableSetting("provider-health-check-interval").id ||
-        searchTargetId === searchableSetting("usage-providers").id) &&
+        searchTargetId === searchableSetting("usage-providers").id ||
+        searchTargetId === searchableSetting("provider-profiles").id) &&
       !selectedEnvironmentCanRenderSettings &&
       searchableEnvironmentId !== undefined
     ) {
@@ -904,6 +906,11 @@ export function EnvironmentProviderSettings({
     });
   };
 
+  const profiles = Object.entries(settings.providerProfiles).map(([id, profile]) => ({
+    id,
+    ...profile,
+  }));
+
   const renderProviderInstance = (row: InstanceRow, mode: "list" | "editor") => {
     const driverOption = getDriverOption(row.driver);
     const liveProvider = serverProviders.find(
@@ -935,6 +942,11 @@ export function EnvironmentProviderSettings({
         selected={mode === "list" && selectedRow?.instanceId === row.instanceId}
         onSelect={mode === "list" ? () => setSelectedInstanceId(row.instanceId) : undefined}
         readOnly={readOnly}
+        profiles={
+          mode === "editor" && profiles.length > 0
+            ? profiles.filter((profile) => profile.instanceIds.includes(row.instanceId))
+            : undefined
+        }
         setup={
           mode === "editor" && row.driver === "antigravity" ? (
             <ProviderSetupSection
@@ -1116,6 +1128,13 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
       </SettingsSection>
+
+      <ProviderProfilesSettings
+        environmentId={environmentId}
+        settings={settings}
+        providers={serverProviders}
+        readOnly={readOnly}
+      />
 
       <UsageProviderSettings
         key={environmentId}

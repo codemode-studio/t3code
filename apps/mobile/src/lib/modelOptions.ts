@@ -147,14 +147,20 @@ export function resolveNewTaskModelSelection(input: {
   );
 }
 
+/**
+ * With a provider profile, only its instances are offered; the fallback
+ * selection is still listed so a pick outside the profile stays visible.
+ */
 export function buildModelOptions(
   config: T3ServerConfig | null | undefined,
   fallbackModelSelection: ModelSelection | null,
+  providerProfile?: { readonly instanceIdSet: ReadonlySet<string> } | null,
 ): ReadonlyArray<ModelOption> {
   const options = new Map<string, ModelOption>();
 
   for (const provider of config?.providers ?? []) {
     if (
+      (providerProfile && !providerProfile.instanceIdSet.has(provider.instanceId)) ||
       !provider.enabled ||
       !provider.installed ||
       provider.auth.status === "unauthenticated" ||

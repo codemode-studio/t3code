@@ -2,16 +2,18 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
   type ProviderInstanceId,
+  ProviderProfileId,
   type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  leadWithProviderProfile,
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
@@ -22,10 +24,12 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { toastManager } from "../ui/toast";
 import { Switch } from "../ui/switch";
 import type { ProjectSettingsCategory } from "./ProjectSettingsPanel";
+import { ProviderProfileInstances } from "./ProviderProfilesSettings";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import {
@@ -73,6 +77,9 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   );
   const activeEntry = entries.find((entry) => entry.instanceId === selection?.instanceId);
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
+  const mixedProfile = useScopedSettingsMixed(["providerProfileId"]);
+  const profile = resolveProviderProfile(settings);
+  const profiles = Object.entries(settings.providerProfiles);
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
@@ -129,6 +136,90 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     updateSettings({ defaultModelSelection: value });
   };
 
+  const openProviderSettings = () => {
+    if (representative)
+      void navigate({
+        to: "/settings/providers",
+        search: { environmentId: representative.environmentId },
+      });
+  };
+
+  // Null is a real value here: at a project scope it opts the project out of
+  // the environment's profile. Inheriting again is the row's reset arrow.
+  const profileRow = (
+    <SettingsRow
+      serverScoped
+      settingKeys={["providerProfileId"]}
+      mixed={mixedProfile}
+      {...searchableSetting("provider-profile")}
+      description={
+        profiles.length === 0 && settings.providerProfileId === null
+          ? "Profiles limit a project to a set of providers, such as one per client. Create one in provider settings."
+          : isProjectScope
+            ? "This project only offers the profile's providers in the model picker, and new threads start on its default model."
+            : "Projects only offer this profile's providers in the model picker, and new threads start on its default model."
+      }
+      status={
+        profile && !mixedProfile ? (
+          <ProviderProfileInstances instanceIds={profile.instanceIds} entries={entries} />
+        ) : undefined
+      }
+      resetAction={
+        settings.providerProfileId !== null ? (
+          <SettingResetButton
+            label="provider profile"
+            tooltip="Reset to no profile"
+            onClick={() => updateSettings({ providerProfileId: null })}
+          />
+        ) : null
+      }
+      control={
+        profiles.length === 0 && settings.providerProfileId === null ? (
+          <Button size="xs" variant="outline" onClick={openProviderSettings}>
+            Create a profile
+          </Button>
+        ) : (
+          <Select
+            value={mixedProfile ? null : (profile?.id ?? "none")}
+            onValueChange={(value) => {
+              if (value === "none") updateSettings({ providerProfileId: null });
+              else if (value) updateSettings({ providerProfileId: ProviderProfileId.make(value) });
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="Provider profile">
+              <SelectValue>
+                {(value: string | null) =>
+                  value === null
+                    ? unavailable
+                      ? "Unavailable"
+                      : "Mixed"
+                    : value === "none"
+                      ? "No profile"
+                      : (settings.providerProfiles[ProviderProfileId.make(value)]?.name ?? value)
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {profiles.map(([id, option]) => (
+                <SelectItem key={id} value={id}>
+                  <span className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className="size-2 shrink-0 rounded-full bg-muted-foreground"
+                      style={option.color ? { background: option.color } : undefined}
+                    />
+                    {option.name}
+                  </span>
+                </SelectItem>
+              ))}
+              <SelectItem value="none">No profile (all providers)</SelectItem>
+            </SelectPopup>
+          </Select>
+        )
+      }
+    />
+  );
+
   const modelRow = (
     <SettingsRow
       serverScoped
@@ -138,8 +229,10 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       title="Model"
       description={
         isProjectScope
-          ? "Model for new threads in this project."
-          : "Default model for new threads. Projects can override it."
+          ? "Model for new threads in this project. When inherited, it follows the provider profile."
+          : profile?.defaultModelSelection
+            ? `Default model for new threads. The ${profile.name} profile's own default takes precedence. Projects can override it.`
+            : "Default model for new threads. Projects can override it."
       }
       status={
         unavailable || mixedModel || modelSource === "project"
@@ -160,7 +253,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
               activeInstanceId={selection.instanceId}
               model={selection.model}
               lockedProvider={null}
-              instanceEntries={entries}
+              instanceEntries={leadWithProviderProfile(entries, profile)}
+              providerProfile={profile}
               modelOptionsByInstance={modelOptions}
               triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
               {...(mixedModel ? { triggerLabel: "Mixed" } : {})}
@@ -266,11 +360,13 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     >
       {category === "project" ? (
         <>
+          {profileRow}
           {modelRow}
           {workspaceRow}
         </>
       ) : category === "general" ? (
         <>
+          {profileRow}
           {modelRow}
           <SettingsRow
             serverScoped

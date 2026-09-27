@@ -6,6 +6,9 @@ import {
   type ProjectId,
   type ProjectScopedServerSettingKey,
   type ProjectSettingsOverrides,
+  type ProviderInstanceId,
+  type ProviderProfile,
+  type ProviderProfileId,
   type ResolvedServerSettings,
   type ServerSettings,
   type T3ProjectFile,
@@ -95,7 +98,9 @@ export function resolveProjectSettings(
   project?: LegacyProjectSettingsFields | null,
   projectFile?: T3ProjectFile | null,
 ): ResolvedProjectSettings {
-  const resolved = resolveProjectOverrides(settings, projectId, project);
+  const resolved = applyProviderProfileDefaultModel(
+    resolveProjectOverrides(settings, projectId, project),
+  );
   return projectFile === undefined ? resolved : applyProjectFile(resolved, projectFile);
 }
 
@@ -186,6 +191,52 @@ function resolveProjectOverrides(
     sources[key] = "project";
   }
   return { settings: effective as ServerSettings, sources, overrides };
+}
+
+export interface ResolvedProviderProfile extends ProviderProfile {
+  readonly id: ProviderProfileId;
+  /** The profile's instance ids as a set, for membership checks in pickers. */
+  readonly instanceIdSet: ReadonlySet<ProviderInstanceId>;
+}
+
+/**
+ * The profile selected by already-resolved settings (see
+ * `resolveProjectSettings`), or null when every provider is offered. A
+ * dangling id, left behind by a deleted profile, also means no profile.
+ */
+export function resolveProviderProfile(
+  settings: Pick<ServerSettings, "providerProfileId" | "providerProfiles">,
+): ResolvedProviderProfile | null {
+  const id = settings.providerProfileId;
+  const profile = id === null ? undefined : settings.providerProfiles[id];
+  if (id === null || profile === undefined) return null;
+  return { ...profile, id, instanceIdSet: new Set(profile.instanceIds) };
+}
+
+/**
+ * A profile replaces the inherited new-thread model: its own default when it
+ * has one, otherwise the environment default only if the profile includes
+ * that provider. A project's explicit model override always wins.
+ */
+function applyProviderProfileDefaultModel(
+  resolved: ResolvedProjectSettings,
+): ResolvedProjectSettings {
+  if (resolved.sources.defaultModelSelection === "project") return resolved;
+  const profile = resolveProviderProfile(resolved.settings);
+  if (profile === null) return resolved;
+  const inherited = resolved.settings.defaultModelSelection;
+  const profileDefault = profile.defaultModelSelection;
+  const next =
+    profileDefault !== null &&
+    profile.instanceIdSet.has(profileDefault.instanceId) &&
+    isModelSelectionProviderEnabled(resolved.settings, profileDefault)
+      ? profileDefault
+      : inherited !== null && profile.instanceIdSet.has(inherited.instanceId)
+        ? inherited
+        : null;
+  return next === inherited
+    ? resolved
+    : { ...resolved, settings: { ...resolved.settings, defaultModelSelection: next } };
 }
 
 /** Replace the project's entry, dropping it entirely when nothing is overridden. */

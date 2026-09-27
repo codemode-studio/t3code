@@ -8,8 +8,9 @@ import { resolveSelectableModel } from "@t3tools/shared/model";
 import { useAtomValue } from "@effect/atom-react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { memo, useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
+import { ProviderProfileChip } from "../ProviderProfileChip";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
@@ -147,6 +148,44 @@ function ModelListSeparator() {
   return <div className="h-0.5" />;
 }
 
+/** The subset of a resolved provider profile the picker needs. */
+export type ModelPickerProviderProfile = {
+  readonly name: string;
+  readonly color?: string | undefined;
+  readonly instanceIdSet: ReadonlySet<ProviderInstanceId>;
+};
+
+/**
+ * Split entries by the project's provider profile. In-profile entries come
+ * first; the rest are listed only while revealed, except the active instance,
+ * which stays reachable so a thread already outside its profile still shows
+ * where it runs.
+ */
+export function partitionModelPickerProfileEntries(input: {
+  entries: ReadonlyArray<ProviderInstanceEntry>;
+  profile: ModelPickerProviderProfile | null | undefined;
+  showOthers: boolean;
+  activeInstanceId: ProviderInstanceId;
+}): {
+  entries: ReadonlyArray<ProviderInstanceEntry>;
+  outsideInstanceIds: ReadonlySet<ProviderInstanceId>;
+} {
+  const { profile } = input;
+  if (!profile) return { entries: input.entries, outsideInstanceIds: new Set() };
+  const inside: ProviderInstanceEntry[] = [];
+  const outside: ProviderInstanceEntry[] = [];
+  const outsideInstanceIds = new Set<ProviderInstanceId>();
+  for (const entry of input.entries) {
+    if (profile.instanceIdSet.has(entry.instanceId)) {
+      inside.push(entry);
+      continue;
+    }
+    outsideInstanceIds.add(entry.instanceId);
+    if (input.showOthers || entry.instanceId === input.activeInstanceId) outside.push(entry);
+  }
+  return { entries: [...inside, ...outside], outsideInstanceIds };
+}
+
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** The instance currently selected in the composer (combobox "value"). */
   activeInstanceId: ProviderInstanceId;
@@ -181,15 +220,30 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  /** The project's provider profile; instances outside it start hidden. */
+  providerProfile?: ModelPickerProviderProfile | null;
 }) {
+  const [showOtherProfiles, setShowOtherProfiles] = useState(false);
+  // Hidden instances drop out of every derived list below (rail, favorites,
+  // search) because they are absent from `instanceEntries`.
+  const profilePartition = useMemo(
+    () =>
+      partitionModelPickerProfileEntries({
+        entries: props.instanceEntries,
+        profile: props.providerProfile,
+        showOthers: showOtherProfiles,
+        activeInstanceId: props.activeInstanceId,
+      }),
+    [props.activeInstanceId, props.instanceEntries, props.providerProfile, showOtherProfiles],
+  );
   const {
     keybindings: providedKeybindings,
     modelOptionsByInstance,
-    instanceEntries,
     getModelDisabledReason,
     onInstanceModelChange,
     onToggleModel,
   } = props;
+  const instanceEntries = profilePartition.entries;
   const [searchQuery, setSearchQuery] = useState("");
   const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
@@ -822,6 +876,26 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             onFocusSearch={focusSearchInput}
             instanceEntries={sidebarInstanceEntries}
             showFavorites
+            {...(props.providerProfile
+              ? {
+                  profile: {
+                    name: props.providerProfile.name,
+                    outsideInstanceIds: profilePartition.outsideInstanceIds,
+                    showingOthers: showOtherProfiles,
+                    onToggleOthers: () => {
+                      if (
+                        showOtherProfiles &&
+                        selectedInstanceId !== "favorites" &&
+                        selectedInstanceId !== props.activeInstanceId &&
+                        profilePartition.outsideInstanceIds.has(selectedInstanceId)
+                      ) {
+                        setSelectedInstanceId(props.activeInstanceId);
+                      }
+                      setShowOtherProfiles((shown) => !shown);
+                    },
+                  },
+                }
+              : {})}
             {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
             {...(lockedDisabledInstanceIds
               ? {
@@ -938,6 +1012,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             />
+            {props.providerProfile &&
+            !isSearching &&
+            selectedInstanceId !== "favorites" &&
+            profilePartition.outsideInstanceIds.has(selectedInstanceId) ? (
+              <p className="flex shrink-0 items-start gap-1.5 px-3 pt-2 text-xs leading-snug text-warning-foreground">
+                <TriangleAlertIcon className="mt-px size-3.5 shrink-0" aria-hidden />
+                Not in the {props.providerProfile.name} profile. Threads use this provider's own
+                credentials and MCP servers.
+              </p>
+            ) : null}
 
             {/* Model list */}
             <div className="relative min-h-0 flex-1 overflow-hidden pr-px">
@@ -1048,6 +1132,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             ) : (
               <ComboboxEmpty className="empty:h-0">No models found</ComboboxEmpty>
             )}
+            {props.providerProfile ? (
+              <div className="flex shrink-0 items-center border-t border-border/70 px-3 py-1.5">
+                <ProviderProfileChip
+                  name={props.providerProfile.name}
+                  color={props.providerProfile.color}
+                  size="sm"
+                />
+              </div>
+            ) : null}
           </div>
         </Combobox>
       </div>

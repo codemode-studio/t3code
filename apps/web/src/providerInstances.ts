@@ -211,6 +211,22 @@ export function sortProviderInstanceEntries(
 }
 
 /**
+ * Move a provider profile's instances to the front, keeping relative order.
+ * Composer fallbacks pick the first selectable entry, so a project with a
+ * profile falls back inside it.
+ */
+export function leadWithProviderProfile(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  profile: { readonly instanceIdSet: ReadonlySet<ProviderInstanceId> } | null,
+): ReadonlyArray<ProviderInstanceEntry> {
+  if (!profile) return entries;
+  return [
+    ...entries.filter((entry) => profile.instanceIdSet.has(entry.instanceId)),
+    ...entries.filter((entry) => !profile.instanceIdSet.has(entry.instanceId)),
+  ];
+}
+
+/**
  * Look up a single instance entry by exact `instanceId`. Missing snapshots
  * are not inferred from driver kind in UI routing code.
  */

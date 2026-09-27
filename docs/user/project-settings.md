@@ -62,6 +62,22 @@ itself, or **Skip** to leave them for a setup script. It resolves in the same or
 workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
 applies when the project and environment are both on **Inherit**.
 
+## Provider profiles
+
+If you keep separate provider instances per company or client, such as a Claude and a Codex
+instance for each with their own accounts and MCP servers, group them into profiles in
+**Settings → Providers**. Each profile names its instances and can set a default model.
+
+Pick a profile with **Provider profile** in **Settings → General**, with a project selected to
+assign it to that project, or with no project to set the environment default. That project's
+model picker then lists only the profile's instances, and new threads start on the profile's
+default model unless the project sets its own. **No profile** offers every instance. On mobile, the
+same choice is on the **New threads** server settings page.
+
+The eye button at the bottom of the picker's provider rail reveals instances outside the profile.
+Models picked from them are marked **Outside profile** because they run with that instance's
+credentials and MCP servers. Existing threads keep their provider.
+
 ## Storage cleanup
 
 Use **Manage worktrees** in **Settings → Storage** to choose a project and checkout, then create a
