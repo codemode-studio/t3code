@@ -34,6 +34,21 @@ export const MODEL_PICKER_JUMP_KEYBINDING_COMMANDS = [
 export type ModelPickerJumpKeybindingCommand =
   (typeof MODEL_PICKER_JUMP_KEYBINDING_COMMANDS)[number];
 
+/** Choose which provider profile's projects the sidebar shows; index 0 shows every profile. */
+export const PROFILE_SCOPE_KEYBINDING_COMMANDS = [
+  "profile.showAll",
+  "profile.select.1",
+  "profile.select.2",
+  "profile.select.3",
+  "profile.select.4",
+  "profile.select.5",
+  "profile.select.6",
+  "profile.select.7",
+  "profile.select.8",
+  "profile.select.9",
+] as const;
+export type ProfileScopeKeybindingCommand = (typeof PROFILE_SCOPE_KEYBINDING_COMMANDS)[number];
+
 const THREAD_KEYBINDING_COMMANDS = [
   "thread.stop",
   "thread.steerQueuedMessage",
@@ -101,6 +116,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
+  ...PROFILE_SCOPE_KEYBINDING_COMMANDS,
 ] as const;
 
 export const SCRIPT_RUN_COMMAND_PATTERN = Schema.TemplateLiteral([

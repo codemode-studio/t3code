@@ -125,6 +125,20 @@ On web and desktop, right-click a pull request link in a thread and choose
 same link to return to the branch PR, if one exists.
 The linked pull request participates in automatic settlement.
 
+## Work across companies
+
+Once you have [provider profiles](./project-settings.md#provider-profiles), web and desktop show a
+profile switcher at the top of the sidebar. Pick a profile to show only its projects' threads and
+drafts, or **All profiles** to see everything. A number beside a profile counts its threads waiting
+on you: approvals, questions, failures, and finished work you have not read. A dot on the switcher
+means another profile has something waiting. `Cmd+Option+0` on macOS or `Ctrl+Alt+0` on Windows
+and Linux shows all profiles, and `1` to `9` pick one in menu order; change them in
+[Keybindings](./keybindings.md). **Unassigned** appears when some projects have no profile.
+
+The sidebar follows the thread you open. Opening a thread from another profile, from a
+notification, search, or link, switches to that profile, and so does picking another project for a
+new thread. Choosing a profile yourself while a thread is open keeps your choice.
+
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads

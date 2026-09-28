@@ -38,6 +38,7 @@ import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
+import { ProfileAwareSidebar } from "../profileScope/ProfileAwareSidebar";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -316,16 +317,18 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             onResize: setSidebarWidth,
           }}
         >
-          {isOnSettings ? (
-            <>
-              <SidebarChromeHeader isElectron={isElectron} />
-              <SettingsSidebarNav pathname={pathname} />
-            </>
-          ) : legacySidebarEnabled ? (
-            <LegacyThreadSidebar />
-          ) : (
-            <ThreadSidebar />
-          )}
+          <ProfileAwareSidebar>
+            {isOnSettings ? (
+              <>
+                <SidebarChromeHeader isElectron={isElectron} />
+                <SettingsSidebarNav pathname={pathname} />
+              </>
+            ) : legacySidebarEnabled ? (
+              <LegacyThreadSidebar />
+            ) : (
+              <ThreadSidebar />
+            )}
+          </ProfileAwareSidebar>
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}

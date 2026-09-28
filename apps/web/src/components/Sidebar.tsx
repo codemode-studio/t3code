@@ -138,6 +138,9 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
+import { intersectProjectKeys } from "@t3tools/client-runtime/state/profile-scope";
+import { ProfileSwitcher } from "../profileScope/ProfileSwitcher";
+import { useProfileScopedProjectKeys } from "../profileScope/useProfileScope";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
@@ -2350,9 +2353,23 @@ export default function Sidebar() {
       sidebarProjectSortOrder,
     ],
   );
-  const projectGroups = useMemo(
+  const allProjectGroups = useMemo(
     () => sortLogicalProjectsForSidebar(unsortedProjectGroups, threads, sidebarProjectSortOrder),
     [sidebarProjectSortOrder, threads, unsortedProjectGroups],
+  );
+  // Fork (profiles): the active provider profile narrows everything below to its projects;
+  // null shows all.
+  const profileProjectKeys = useProfileScopedProjectKeys();
+  const projectGroups = useMemo(
+    () =>
+      profileProjectKeys === null
+        ? allProjectGroups
+        : allProjectGroups.filter((group) =>
+            group.memberProjectRefs.some((ref) =>
+              profileProjectKeys.has(`${ref.environmentId}:${ref.projectId}`),
+            ),
+          ),
+    [allProjectGroups, profileProjectKeys],
   );
   const projectGroupsRef = useRef(projectGroups);
   projectGroupsRef.current = projectGroups;
@@ -2461,14 +2478,19 @@ export default function Sidebar() {
   );
   const scopedProjectKeys = useMemo(
     () =>
-      scopedProjectGroup === null
-        ? null
-        : new Set(
-            scopedProjectGroup.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+      // Fork (profiles): a project group can span environments whose members use different
+      // profiles, so a chosen project only keeps its members in the active profile.
+      intersectProjectKeys(
+        scopedProjectGroup === null
+          ? null
+          : new Set(
+              scopedProjectGroup.memberProjectRefs.map(
+                (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+              ),
             ),
-          ),
-    [scopedProjectGroup],
+        profileProjectKeys,
+      ),
+    [profileProjectKeys, scopedProjectGroup],
   );
   // A persisted scope whose project is gone falls back to all projects, but
   // only after every catalog environment has a live project snapshot. Cached
@@ -4451,6 +4473,8 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
+            {/* Fork (profiles) */}
+            <ProfileSwitcher />
             <SidebarNotesLink />
             <SidebarAutomationsLink />
             <SidebarThreadHeader

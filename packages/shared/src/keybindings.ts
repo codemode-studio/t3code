@@ -5,6 +5,7 @@ import {
   MAX_KEYBINDINGS_COUNT,
   MAX_WHEN_EXPRESSION_DEPTH,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
+  PROFILE_SCOPE_KEYBINDING_COMMANDS,
   type ResolvedKeybindingRule,
   type ResolvedKeybindingsConfig,
   THREAD_JUMP_KEYBINDING_COMMANDS,
@@ -83,6 +84,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+2", command: "usage.period.week", when: "usagePageOpen" },
   { key: "mod+shift+3", command: "usage.period.month", when: "usagePageOpen" },
   { key: "mod+shift+4", command: "usage.period.quarter", when: "usagePageOpen" },
+  ...PROFILE_SCOPE_KEYBINDING_COMMANDS.map((command, index) => ({
+    key: `mod+alt+${index}`,
+    command,
+  })),
 ];
 
 function normalizeKeyToken(token: string): string {
