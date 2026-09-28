@@ -12,6 +12,7 @@ import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { CollapsedThreadSidebar } from "./CollapsedThreadSidebar";
 import { ProfileScopeShortcuts } from "./ProfileSwitcher";
+import { SidebarContentSlot } from "./SidebarContentSlot";
 import { useProfileScopeState } from "./useProfileScope";
 import "./profileSidebar.css";
 
@@ -54,8 +55,8 @@ function ProfileFollowsActiveProject() {
 }
 
 /**
- * The app sidebar's content: the expanded sidebar it wraps, or the icon rail while collapsed on
- * desktop. Mobile keeps its sheet, which only ever shows the expanded sidebar.
+ * The app sidebar's content: the expanded sidebar it wraps, and the icon rail in its place while
+ * collapsed on desktop. Mobile keeps its sheet, which only ever shows the expanded sidebar.
  */
 export function ProfileAwareSidebar({ children }: { children: ReactNode }) {
   const { state, isMobile } = useSidebar();
@@ -63,7 +64,12 @@ export function ProfileAwareSidebar({ children }: { children: ReactNode }) {
     <>
       <ProfileScopeShortcuts />
       <ProfileFollowsActiveProject />
-      {state === "collapsed" && !isMobile ? <CollapsedThreadSidebar /> : children}
+      <SidebarContentSlot
+        showRail={state === "collapsed" && !isMobile}
+        rail={<CollapsedThreadSidebar />}
+      >
+        {children}
+      </SidebarContentSlot>
     </>
   );
 }

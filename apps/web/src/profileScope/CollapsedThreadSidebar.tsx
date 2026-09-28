@@ -1,6 +1,5 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ChartNoAxesColumnIcon,
@@ -11,23 +10,19 @@ import {
   SquarePenIcon,
   ZapIcon,
 } from "lucide-react";
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { ProjectFavicon } from "../components/ProjectFavicon";
-import {
-  resolveThreadStatusPill,
-  sortPinnedThreadsForSidebar,
-  sortThreadsForSidebar,
-} from "../components/Sidebar.logic";
+import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { useNowMinute } from "../hooks/useNowMinute";
 import { cn } from "../lib/utils";
 import { useProjects, useThreadShells } from "../state/entities";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { useUiStateStore } from "../uiStateStore";
 import { profileScopeProjectKey as projectScopeKey } from "@t3tools/client-runtime/state/profile-scope";
+import { partitionRailThreads } from "./collapsedThreadSidebar.logic";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useProfileScopedProjectKeys, useProfileScopeState } from "./useProfileScope";
 
@@ -132,6 +127,9 @@ const RailThreadButton = memo(function RailThreadButton({
           />
         ) : null}
       </span>
+      {/* The menu button truncates (and so clips) its last span; keeping the title last spares
+          the icon wrapper, whose status dot sits outside its box. */}
+      <span className="sr-only">{thread.title}</span>
     </RailButton>
   );
 });
@@ -156,27 +154,20 @@ export function CollapsedThreadSidebar() {
     () => new Map(profiles.map((profile) => [profile.id, profile.color] as const)),
     [profiles],
   );
-  const nowMinute = useNowMinute();
-
-  const { pinned, active } = useMemo(() => {
-    const pinnedThreads: EnvironmentThreadShell[] = [];
-    const activeThreads: EnvironmentThreadShell[] = [];
-    for (const thread of threads) {
-      if (thread.archivedAt !== null || thread.settledOverride === "settled") continue;
-      if (effectiveSnoozed(thread, { now: nowMinute })) continue;
-      if (
-        scopedProjectKeys !== null &&
-        !scopedProjectKeys.has(projectScopeKey(thread.environmentId, thread.projectId))
-      ) {
-        continue;
-      }
-      (thread.pinnedAt != null ? pinnedThreads : activeThreads).push(thread);
-    }
-    return {
-      pinned: sortPinnedThreadsForSidebar(pinnedThreads),
-      active: sortThreadsForSidebar(activeThreads),
-    };
-  }, [nowMinute, scopedProjectKeys, threads]);
+  // Snooze wakes are second-precise, so like the expanded sidebar the rail re-reads the clock
+  // exactly when the earliest snooze ends rather than on a minute tick.
+  const [now, setNow] = useState(() => new Date());
+  const { pinned, active, nextWakeAtMs } = useMemo(
+    () => partitionRailThreads({ threads, scopedProjectKeys, now }),
+    [now, scopedProjectKeys, threads],
+  );
+  useEffect(() => {
+    if (nextWakeAtMs === null) return;
+    // setTimeout delays are signed 32-bit; clamp so a far-future wake re-arms instead of firing.
+    const delayMs = Math.min(Math.max(0, nextWakeAtMs - Date.now()) + 50, 2_147_483_647);
+    const id = window.setTimeout(() => setNow(new Date()), delayMs);
+    return () => window.clearTimeout(id);
+  }, [nextWakeAtMs]);
 
   const renderThreads = (list: ReadonlyArray<EnvironmentThreadShell>) =>
     list.map((thread) => {
