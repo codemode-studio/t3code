@@ -255,6 +255,39 @@ jobs:
           sha256sum t3-*.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
+      # The updater shows each release's notes, so each covers only the changes
+      # since the build before it. Merged PRs come from GitHub's generator;
+      # a direct push to main has none, so list the commit subjects instead.
+      - name: Write release notes
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          previous="$(
+            {
+              gh release list --limit 200 --json tagName \
+                --jq '.[].tagName | select(test("-nightly\\."))' | grep -vxF "$TAG" || true
+              echo "$TAG"
+            } | sort -V | grep -B1 -xF "$TAG" | grep -vxF "$TAG" || true
+          )"
+          echo "Previous release: ${previous:-none}"
+
+          args=(-f tag_name="$TAG" -f target_commitish="$GITHUB_SHA")
+          [[ -n "$previous" ]] && args+=(-f previous_tag_name="$previous")
+          gh api "repos/$GH_REPO/releases/generate-notes" "${args[@]}" --jq .body > release-notes.md
+
+          if [[ -n "$previous" ]] && ! grep -q '^\* ' release-notes.md; then
+            {
+              echo "## What's Changed"
+              gh api "repos/$GH_REPO/compare/$previous...$GITHUB_SHA" \
+                --jq '.commits[] | select((.parents | length) == 1) | .commit.message | split("\n")[0] | "* " + .' \
+                | tail -n 50
+              echo
+              echo "**Full Changelog**: https://github.com/$GH_REPO/compare/$previous...$TAG"
+            } > release-notes.md
+          fi
+          cat release-notes.md
+
       # A re-run replaces the release its failed attempt may have left behind.
       - name: Create release
         run: |
@@ -262,7 +295,7 @@ jobs:
           gh release create "${{ needs.version.outputs.tag }}" assets/* \
             --target "$GITHUB_SHA" \
             --title "${{ needs.version.outputs.name }}" \
-            --notes "Fork build of ${GITHUB_SHA::12}." \
+            --notes-file release-notes.md \
             --prerelease
 
       - name: Prune old builds
