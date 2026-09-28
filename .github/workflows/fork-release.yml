@@ -53,7 +53,12 @@ jobs:
           set -euo pipefail
           git init .
           git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          for attempt in 1 2 3; do
+            git fetch --no-tags --depth=1 origin "$GITHUB_SHA" && break
+            [[ "$attempt" -lt 3 ]] || exit 1
+            echo "::warning::git fetch attempt $attempt failed; retrying."
+            sleep $((attempt * 15))
+          done
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
 
@@ -92,7 +97,12 @@ jobs:
           set -euo pipefail
           git init .
           git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          for attempt in 1 2 3; do
+            git fetch --no-tags --depth=1 origin "$GITHUB_SHA" && break
+            [[ "$attempt" -lt 3 ]] || exit 1
+            echo "::warning::git fetch attempt $attempt failed; retrying."
+            sleep $((attempt * 15))
+          done
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
 
@@ -117,8 +127,15 @@ jobs:
         run: vp run build:desktop
 
       # GITHUB_REPOSITORY gives the AppImage an update feed on this repo.
+      # Native module rebuilds download Electron headers, so a dropped
+      # connection gets one more attempt.
       - name: Build AppImage
-        run: vp run dist:desktop:artifact --platform linux --target AppImage --arch x64 --build-version "$VERSION" --skip-build --verbose
+        run: |
+          for attempt in 1 2; do
+            vp run dist:desktop:artifact --platform linux --target AppImage --arch x64 --build-version "$VERSION" --skip-build --verbose && exit 0
+            echo "::warning::AppImage build attempt $attempt failed."
+          done
+          exit 1
 
       - name: Build CLI archive
         shell: bash
@@ -169,7 +186,12 @@ jobs:
           find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
           git init .
           git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          for attempt in 1 2 3; do
+            git fetch --no-tags --depth=1 origin "$GITHUB_SHA" && break
+            [[ "$attempt" -lt 3 ]] || exit 1
+            echo "::warning::git fetch attempt $attempt failed; retrying."
+            sleep $((attempt * 15))
+          done
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
 
@@ -192,9 +214,15 @@ jobs:
         run: vp run build:desktop
 
       # No GITHUB_REPOSITORY: an ad-hoc signed app cannot apply updates, so it
-      # gets no feed and this job installs each build instead.
+      # gets no feed and this job installs each build instead. Retried like
+      # the AppImage build.
       - name: Build app
-        run: env -u GITHUB_REPOSITORY vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 --build-version "$VERSION" --skip-build --verbose
+        run: |
+          for attempt in 1 2; do
+            env -u GITHUB_REPOSITORY vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 --build-version "$VERSION" --skip-build --verbose && exit 0
+            echo "::warning::App build attempt $attempt failed."
+          done
+          exit 1
 
       - name: Build CLI archive
         shell: bash
