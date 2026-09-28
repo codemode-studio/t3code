@@ -504,6 +504,14 @@ function AutomationEditor({
 }) {
   const navigate = useNavigate();
   const [draft, setDraft] = useState(initial);
+  // The saved version the draft started from. When another client changes the automation,
+  // adopt it unless this editor has unsaved edits of its own.
+  const [base, setBase] = useState(initial);
+  const saved = existing ? draftFromAutomation(existing) : null;
+  if (saved && JSON.stringify(saved) !== JSON.stringify(base)) {
+    setBase(saved);
+    if (JSON.stringify(draft) === JSON.stringify(base)) setDraft(saved);
+  }
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const create = useAtomCommand(createAutomation);
@@ -525,8 +533,7 @@ function AutomationEditor({
     setDraft((current) => ({ ...current, ...next }));
   const result = configFromDraft({ ...draft, environmentId });
   const moving = existing !== null && environmentId !== existing.environmentId;
-  const dirty =
-    existing === null || JSON.stringify(draft) !== JSON.stringify(draftFromAutomation(existing));
+  const dirty = saved === null || JSON.stringify(draft) !== JSON.stringify(saved);
 
   const save = async () => {
     if ("error" in result) return;
