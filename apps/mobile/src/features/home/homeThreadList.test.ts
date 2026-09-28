@@ -5,7 +5,11 @@ import type {
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildHomeProjectScopes, sortHomeProjectScopes } from "./homeThreadList";
+import {
+  buildHomeProjectScopes,
+  resolveHomeListProjectRefs,
+  sortHomeProjectScopes,
+} from "./homeThreadList";
 
 function makeProject(
   input: Partial<EnvironmentProject> & Pick<EnvironmentProject, "environmentId" | "id" | "title">,
@@ -48,6 +52,76 @@ function makeThread(
 }
 
 describe("home project scopes", () => {
+  it("keeps only the profile's projects, even inside a shared repository group", () => {
+    const localEnvironmentId = EnvironmentId.make("environment-local");
+    const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+    const repositoryIdentity = {
+      canonicalKey: "github.com/acme/app",
+      locator: {
+        source: "git-remote" as const,
+        remoteName: "origin",
+        remoteUrl: "git@github.com:acme/app.git",
+      },
+    };
+    const projects = [
+      makeProject({
+        environmentId: localEnvironmentId,
+        id: ProjectId.make("app-local"),
+        title: "app",
+        repositoryIdentity,
+      }),
+      makeProject({
+        environmentId: remoteEnvironmentId,
+        id: ProjectId.make("app-remote"),
+        title: "app",
+        repositoryIdentity,
+      }),
+      makeProject({
+        environmentId: localEnvironmentId,
+        id: ProjectId.make("website"),
+        title: "website",
+      }),
+    ];
+    const profileProjectKeys = new Set([
+      "environment-remote:app-remote",
+      "environment-local:website",
+    ]);
+
+    const scopes = buildHomeProjectScopes({
+      projects,
+      environmentId: null,
+      profileProjectKeys,
+      projectGroupingMode: "repository",
+    });
+    expect(scopes.map((scope) => scope.projectRefs.map((ref) => ref.projectId))).toEqual(
+      expect.arrayContaining([[ProjectId.make("app-remote")], [ProjectId.make("website")]]),
+    );
+    expect(scopes).toHaveLength(2);
+
+    // Composes with the environment filter.
+    expect(
+      buildHomeProjectScopes({
+        projects,
+        environmentId: localEnvironmentId,
+        profileProjectKeys,
+        projectGroupingMode: "repository",
+      }).map((scope) => scope.title),
+    ).toEqual(["website"]);
+
+    const website = scopes.find((scope) => scope.title === "website") ?? null;
+    expect(
+      resolveHomeListProjectRefs({ selectedScope: website, scopes, profileProjectKeys }),
+    ).toEqual([{ environmentId: localEnvironmentId, projectId: ProjectId.make("website") }]);
+    expect(
+      resolveHomeListProjectRefs({ selectedScope: null, scopes, profileProjectKeys })?.map(
+        (ref) => ref.projectId,
+      ),
+    ).toEqual(expect.arrayContaining([ProjectId.make("app-remote"), ProjectId.make("website")]));
+    expect(
+      resolveHomeListProjectRefs({ selectedScope: null, scopes, profileProjectKeys: null }),
+    ).toBeNull();
+  });
+
   it("builds one v2 scope for the same repository across environments", () => {
     const localEnvironmentId = EnvironmentId.make("environment-local");
     const remoteEnvironmentId = EnvironmentId.make("environment-remote");

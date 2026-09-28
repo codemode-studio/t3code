@@ -141,7 +141,8 @@ new thread. Choosing a profile yourself while a thread is open keeps your choice
 
 Collapsing the sidebar leaves a strip of icons: the profile, new thread, search, notes,
 automations, and one icon per pinned or active thread, marked with its status. Hover an icon for the
-thread's title. With **All profiles**, a colored edge shows each thread's profile.
+thread's title. With **All profiles**, a colored edge shows each thread's profile. On mobile, filter
+the thread list by profile from the filter menu.
 
 ## Find and reference work
 

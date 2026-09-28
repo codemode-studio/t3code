@@ -20,6 +20,8 @@ function MenuIcon(props: {
   readonly name: AppSymbolName;
   readonly destructive?: boolean;
   readonly disabled?: boolean;
+  /** A MenuAction `imageColor`, e.g. a provider profile's color dot. */
+  readonly color?: string;
 }) {
   const { iconSize } = useAndroidControlSizing();
   return (
@@ -32,13 +34,15 @@ function MenuIcon(props: {
           name={props.name}
           size={iconSize}
           type="monochrome"
-          tintColorClassName={
-            props.disabled
-              ? "accent-icon-subtle"
-              : props.destructive
-                ? "accent-danger-foreground"
-                : "accent-foreground"
-          }
+          {...(props.color !== undefined && !props.disabled
+            ? { tintColor: props.color }
+            : {
+                tintColorClassName: props.disabled
+                  ? "accent-icon-subtle"
+                  : props.destructive
+                    ? "accent-danger-foreground"
+                    : "accent-foreground",
+              })}
         />
       </View>
     </RNHostView>
@@ -88,6 +92,7 @@ export function MaterialMenuPopup(props: MaterialMenuPopupProps) {
             <DropdownMenuItem.LeadingIcon>
               <MenuIcon
                 name={action.image}
+                color={typeof action.imageColor === "string" ? action.imageColor : undefined}
                 destructive={action.attributes?.destructive}
                 disabled={action.attributes?.disabled}
               />

@@ -19,6 +19,7 @@ import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
 import { useHomeThreadSelection } from "./home-thread-navigation";
 import { buildHomeProjectScopes } from "./homeThreadList";
+import { useHomeProfileScope } from "./use-home-profile-scope";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { getConnectionAwareBrandHeaderOptions } from "./WorkspaceConnectionTitle";
@@ -80,18 +81,23 @@ export function HomeRouteScreen() {
   const { options: listOptions, setSelectedEnvironmentId } =
     useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
+  const profileScope = useHomeProfileScope(projects);
+  const profileProjectKeys = profileScope.scopedProjectKeys;
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  // Project choices stay inside the chosen profile; the effect below drops a
+  // selection the profile or environment no longer contains.
   const projectFilterOptions = useMemo(
     () =>
       buildHomeProjectScopes({
         projects,
         environmentId: selectedEnvironmentId,
+        profileProjectKeys,
         projectGroupingMode: listOptions.projectGroupingMode,
       }).map((scope) => ({
         key: scope.key,
         label: scope.title,
       })),
-    [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
+    [listOptions.projectGroupingMode, profileProjectKeys, projects, selectedEnvironmentId],
   );
   useEffect(() => {
     if (
@@ -169,11 +175,14 @@ export function HomeRouteScreen() {
         <HomeHeader
           environments={environments}
           projects={projectFilterOptions}
+          profiles={profileScope.options}
           searchQuery={searchQuery}
           selectedEnvironmentId={selectedEnvironmentId}
           selectedProjectKey={selectedProjectKey}
+          selectedProfileScope={profileScope.scope}
           onEnvironmentChange={setSelectedEnvironmentId}
           onProjectChange={setSelectedProjectKey}
+          onProfileScopeChange={profileScope.setScope}
           onOpenEnvironments={() =>
             navigation.navigate("SettingsSheet", {
               screen: "SettingsContent",
@@ -250,6 +259,9 @@ export function HomeRouteScreen() {
           projectGroupingMode={listOptions.projectGroupingMode}
           projects={projects}
           projectSortOrder={listOptions.projectSortOrder}
+          profileProjectKeys={profileProjectKeys}
+          selectedProfileLabel={profileScope.selectedLabel}
+          selectedProfileScope={profileScope.scope}
           savedConnectionsById={savedConnectionsById}
           searchQuery={searchQuery}
           selectedEnvironmentId={selectedEnvironmentId}

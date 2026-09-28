@@ -1,3 +1,4 @@
+import { profileScopeProjectKey } from "@t3tools/client-runtime/state/profile-scope";
 import { buildProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import type {
   EnvironmentProject,
@@ -43,10 +44,16 @@ function getProjectSortTimestamp(
 export function buildHomeProjectScopes(input: {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly environmentId: EnvironmentId | null;
+  /** Project keys the profile filter shows, or null for every project. */
+  readonly profileProjectKeys?: ReadonlySet<string> | null;
   readonly projectGroupingMode: SidebarProjectGroupingMode;
 }): ReadonlyArray<HomeProjectScope> {
+  const profileProjectKeys = input.profileProjectKeys ?? null;
   const projects = input.projects.filter(
-    (project) => input.environmentId === null || project.environmentId === input.environmentId,
+    (project) =>
+      (input.environmentId === null || project.environmentId === input.environmentId) &&
+      (profileProjectKeys === null ||
+        profileProjectKeys.has(profileScopeProjectKey(project.environmentId, project.id))),
   );
   return buildProjectGroups({
     projects,
@@ -63,6 +70,21 @@ export function buildHomeProjectScopes(input: {
       projectRefs: group.memberProjectRefs,
     };
   });
+}
+
+/**
+ * The projects whose threads the list shows: the selected project scope's, else every
+ * scope's while a profile filters the list, else null for no project filter. Scopes must
+ * come from `buildHomeProjectScopes` with the same profile keys.
+ */
+export function resolveHomeListProjectRefs(input: {
+  readonly selectedScope: HomeProjectScope | null;
+  readonly scopes: ReadonlyArray<HomeProjectScope>;
+  readonly profileProjectKeys: ReadonlySet<string> | null;
+}): ReadonlyArray<ScopedProjectRef> | null {
+  if (input.selectedScope !== null) return input.selectedScope.projectRefs;
+  if (input.profileProjectKeys === null) return null;
+  return input.scopes.flatMap((scope) => scope.projectRefs);
 }
 
 export function sortHomeProjectScopes(input: {

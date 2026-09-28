@@ -20,7 +20,9 @@ export function HomeHeader(props: HomeHeaderProps) {
   // the filter menu only carries the filters and the "customized" icon state
   // keys off those alone.
   const hasCustomListOptions =
-    props.selectedEnvironmentId !== null || props.selectedProjectKey !== null;
+    props.selectedEnvironmentId !== null ||
+    props.selectedProjectKey !== null ||
+    props.selectedProfileScope !== "all";
   const focusSearch = useCallback(() => {
     searchBarRef.current?.focus();
     return searchBarRef.current !== null;
@@ -106,6 +108,28 @@ export function HomeHeader(props: HomeHeaderProps) {
             title="Thread list options"
             separateBackground
           >
+            {props.profiles.length > 0 ? (
+              <NativeHeaderToolbar.Menu title="Profile">
+                <NativeHeaderToolbar.Label>Profile</NativeHeaderToolbar.Label>
+                <NativeHeaderToolbar.MenuAction
+                  isOn={props.selectedProfileScope === "all"}
+                  onPress={() => props.onProfileScopeChange("all")}
+                  subtitle="Show threads from every profile"
+                >
+                  <NativeHeaderToolbar.Label>All profiles</NativeHeaderToolbar.Label>
+                </NativeHeaderToolbar.MenuAction>
+                {props.profiles.map((profile) => (
+                  <NativeHeaderToolbar.MenuAction
+                    key={profile.scope}
+                    isOn={props.selectedProfileScope === profile.scope}
+                    onPress={() => props.onProfileScopeChange(profile.scope)}
+                  >
+                    <NativeHeaderToolbar.Label>{profile.label}</NativeHeaderToolbar.Label>
+                  </NativeHeaderToolbar.MenuAction>
+                ))}
+              </NativeHeaderToolbar.Menu>
+            ) : null}
+
             <NativeHeaderToolbar.Menu title="Environment">
               <NativeHeaderToolbar.Label>Environment</NativeHeaderToolbar.Label>
               <NativeHeaderToolbar.MenuAction
