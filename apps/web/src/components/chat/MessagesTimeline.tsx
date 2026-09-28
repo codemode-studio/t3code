@@ -2302,14 +2302,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               />
             )}
             {!row.message.streaming && ctx.onSaveNote && (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Save message as note"
-                onClick={() => ctx.onSaveNote?.(row.message.id, row.message.text)}
-              >
-                <FileTextIcon />
-              </Button>
+              <SaveNoteButton onClick={() => ctx.onSaveNote?.(row.message.id, row.message.text)} />
             )}
           </div>
         </div>
@@ -2529,14 +2522,7 @@ function AssistantMessageMeta({
         streaming={copyStreaming}
       />
       {!message.streaming && ctx.onSaveNote && (
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Save message as note"
-          onClick={() => ctx.onSaveNote?.(message.id, message.text)}
-        >
-          <FileTextIcon />
-        </Button>
+        <SaveNoteButton onClick={() => ctx.onSaveNote?.(message.id, message.text)} />
       )}
       {!message.streaming && (
         <Tooltip>
@@ -2549,6 +2535,28 @@ function AssistantMessageMeta({
         </Tooltip>
       )}
     </div>
+  );
+}
+
+function SaveNoteButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Save message as note"
+            onClick={onClick}
+          />
+        }
+      >
+        <FileTextIcon />
+      </TooltipTrigger>
+      <TooltipPopup>
+        <p>Save as note</p>
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
