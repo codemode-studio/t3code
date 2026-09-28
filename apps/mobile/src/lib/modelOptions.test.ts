@@ -408,4 +408,31 @@ describe("mobile model options", () => {
       }),
     ).toBeNull();
   });
+
+  it("offers only the provider profile's instances plus an outside current pick", () => {
+    const provider = (instanceId: string) => ({
+      instanceId,
+      driver: "claudeAgent",
+      displayName: instanceId,
+      enabled: true,
+      installed: true,
+      auth: { status: "authenticated" },
+      models: [{ slug: "opus", name: "Opus", isCustom: false, capabilities: null }],
+    });
+    const config = {
+      providers: [provider("cc-a"), provider("cc-b")],
+    } as unknown as ServerConfig;
+    const profile = { instanceIdSet: new Set(["cc-a"]) };
+
+    expect(buildModelOptions(config, null, profile).map((option) => option.key)).toEqual([
+      "cc-a:opus",
+    ]);
+    expect(
+      buildModelOptions(
+        config,
+        { instanceId: ProviderInstanceId.make("cc-b"), model: "opus" },
+        profile,
+      ).map((option) => option.key),
+    ).toEqual(["cc-a:opus", "cc-b:opus"]);
+  });
 });

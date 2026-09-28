@@ -3,6 +3,7 @@ import type {
   EnvironmentId,
   ModelSelection,
   ProjectId,
+  ProviderInstanceId,
   ScopedProjectRef,
 } from "@t3tools/contracts";
 import type { ComposerThreadDraftState, DraftThreadEnvMode } from "../composerDraftStore";
@@ -44,16 +45,25 @@ export function resolveNewDraftStartFromOrigin(input: {
   return input.envMode === "worktree" && input.newWorktreesStartFromOrigin;
 }
 
+/**
+ * The model a new draft starts on: the project default, else the selection
+ * carried from the thread being viewed. A carried selection outside the
+ * destination project's provider profile is dropped, so switching projects
+ * never moves work onto another profile's account implicitly.
+ */
 export function resolveNewThreadModelSelectionOverride(input: {
   readonly projectDefaultSelection: ModelSelection | null;
   readonly carrySelection: ModelSelection | null;
   readonly carrySourceDraftId: string | null;
   readonly destinationDraftId: string;
+  readonly providerProfile?: { readonly instanceIdSet: ReadonlySet<ProviderInstanceId> } | null;
 }): ModelSelection | null {
-  return (
-    input.projectDefaultSelection ??
-    (input.carrySourceDraftId === input.destinationDraftId ? null : input.carrySelection)
-  );
+  if (input.projectDefaultSelection) return input.projectDefaultSelection;
+  if (input.carrySourceDraftId === input.destinationDraftId || !input.carrySelection) return null;
+  return input.providerProfile &&
+    !input.providerProfile.instanceIdSet.has(input.carrySelection.instanceId)
+    ? null
+    : input.carrySelection;
 }
 
 export function hasExplicitComposerModelSelection(

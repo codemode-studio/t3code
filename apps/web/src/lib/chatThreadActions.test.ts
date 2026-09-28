@@ -76,6 +76,35 @@ describe("chatThreadActions", () => {
     ).toEqual(CARRIED_SELECTION);
   });
 
+  it("drops a carried outside provider when a new thread starts in a profiled project", () => {
+    // The viewed thread in another project runs on an instance the target
+    // project's profile does not include.
+    const outsideSelection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("cc_b"),
+      model: "opus",
+    };
+    const providerProfile = { instanceIdSet: new Set([ProviderInstanceId.make("cc_a")]) };
+    expect(
+      resolveNewThreadModelSelectionOverride({
+        projectDefaultSelection: null,
+        carrySelection: outsideSelection,
+        carrySourceDraftId: "draft-other-project",
+        destinationDraftId: "draft-b",
+        providerProfile,
+      }),
+    ).toBeNull();
+    const insideSelection = { ...outsideSelection, instanceId: ProviderInstanceId.make("cc_a") };
+    expect(
+      resolveNewThreadModelSelectionOverride({
+        projectDefaultSelection: null,
+        carrySelection: insideSelection,
+        carrySourceDraftId: "draft-other-project",
+        destinationDraftId: "draft-b",
+        providerProfile,
+      }),
+    ).toEqual(insideSelection);
+  });
+
   it("keeps the project default above any carried selection", () => {
     expect(
       resolveNewThreadModelSelectionOverride({

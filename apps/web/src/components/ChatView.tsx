@@ -75,7 +75,7 @@ import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
@@ -259,6 +259,7 @@ import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
+  leadWithProviderProfile,
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
@@ -2277,6 +2278,10 @@ export default function ChatView(props: ChatViewProps) {
     runProjectCloneAction,
   ]);
   const activeProjectDefaultModelSelection = activeProjectSettings.settings.defaultModelSelection;
+  const activeProviderProfile = useMemo(
+    () => resolveProviderProfile(activeProjectSettings.settings),
+    [activeProjectSettings.settings],
+  );
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
@@ -2871,10 +2876,13 @@ export default function ChatView(props: ChatViewProps) {
   ]);
   const providerInstanceEntries = useMemo(
     () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+      leadWithProviderProfile(
+        sortProviderInstanceEntries(
+          applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        ),
+        activeProviderProfile,
       ),
-    [providerStatuses, settings],
+    [activeProviderProfile, providerStatuses, settings],
   );
   const { selectedProviderEntry, requestedDriverKind } = useMemo(
     () =>
@@ -10098,6 +10106,7 @@ export default function ChatView(props: ChatViewProps) {
                             providerStatuses={providerStatuses as ServerProvider[]}
                             providerCatalogKnown={serverConfig !== null}
                             activeProjectDefaultModelSelection={activeProjectDefaultModelSelection}
+                            activeProviderProfile={activeProviderProfile}
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeContextWindow={activeContextWindow}
                             compactThreadUnavailable={compactThreadUnavailable}

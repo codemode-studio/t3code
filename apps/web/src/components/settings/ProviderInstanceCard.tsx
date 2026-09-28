@@ -46,6 +46,7 @@ import type { DriverOption } from "./providerDriverMeta";
 import { ProviderSettingsForm } from "./ProviderSettingsForm";
 import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/ProviderInstanceIcon";
+import { ProviderProfileChip } from "../ProviderProfileChip";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -370,6 +371,10 @@ interface ProviderInstanceCardProps {
   readonly selected?: boolean | undefined;
   readonly onSelect?: (() => void) | undefined;
   readonly readOnly?: boolean | undefined;
+  /** Profiles that include this instance; omitted when the environment has none. */
+  readonly profiles?:
+    | ReadonlyArray<{ readonly id: string; readonly name: string; readonly color?: string }>
+    | undefined;
   readonly onUpdate: (nextInstance: ProviderInstanceConfig) => void;
   /**
    * Pass `undefined` to hide the delete footer entirely. Built-in default
@@ -426,6 +431,7 @@ export function ProviderInstanceCard({
   selected = false,
   onSelect,
   readOnly = false,
+  profiles,
   onUpdate,
   onDelete,
   headerAction,
@@ -903,6 +909,27 @@ export function ProviderInstanceCard({
             </div>
           }
         />
+        {profiles ? (
+          <SettingsRow
+            title="Profiles"
+            description="Projects on these profiles offer this provider."
+            control={
+              profiles.length === 0 ? (
+                <span className="text-xs text-muted-foreground">None</span>
+              ) : (
+                <div className="flex flex-wrap justify-end gap-1">
+                  {profiles.map((profile) => (
+                    <ProviderProfileChip
+                      key={profile.id}
+                      name={profile.name}
+                      color={profile.color}
+                    />
+                  ))}
+                </div>
+              )
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       {setup ? <SettingsSection title="Setup">{setup}</SettingsSection> : null}

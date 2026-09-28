@@ -2415,6 +2415,20 @@ describe("composerDraftStore sticky composer settings", () => {
     });
   });
 
+  it("only seeds sticky selections inside the target project's provider profile", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("draft-profile-sticky-seed");
+
+    store.setStickyModelSelection(modelSelection(CODEX_DRIVER, "gpt-5.5"));
+    store.setStickyModelSelection(modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6"));
+    // The last app-wide pick was Claude, which this project's profile excludes.
+    store.applyStickyState(draftId, { instanceIdSet: new Set([CODEX_INSTANCE]) });
+
+    const draft = draftByKey(draftId);
+    expect(draft?.activeProvider).toBeNull();
+    expect(Object.keys(draft?.modelSelectionByProvider ?? {})).toEqual([CODEX_INSTANCE]);
+  });
+
   it("clears a non-explicit stale model when there is no sticky state", () => {
     const store = useComposerDraftStore.getState();
     const draftId = DraftId.make("draft-stale-without-sticky");

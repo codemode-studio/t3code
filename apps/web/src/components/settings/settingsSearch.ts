@@ -168,6 +168,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["name icon emoji image checkout remove delete"],
   },
   {
+    id: "provider-profile",
+    title: "Provider profile",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["providers company client account model picker new thread"],
+  },
+  {
     id: "default-model",
     title: "Default model",
     to: "/settings/general",
@@ -613,6 +620,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "usage sources CLIProxyAPI CLI proxy hub quota subscription limits management key add remove",
     ],
+    providerSettingsOnly: true,
+  },
+  {
+    id: "provider-profiles",
+    title: "Provider profiles",
+    to: "/settings/providers",
+    searchTerms: ["group providers company client account project default model new profile"],
     providerSettingsOnly: true,
   },
   {

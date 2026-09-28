@@ -2,15 +2,23 @@ import {
   DEFAULT_SERVER_SETTINGS,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   ProjectId,
+  type ProjectSettingsOverrides,
+  ProviderDriverKind,
   ProviderInstanceId,
+  ProviderProfileId,
+  type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
 import {
   clearProjectSettingsOverrides,
+  commonProviderProfiles,
   hasProjectSettingsOverrides,
   resolveProjectFileBackedSetting,
   resolveProjectSettings,
+  resolveProviderProfile,
+  resolveProviderProfileFallbackModelSelection,
   resolveWorktreeCleanup,
   withProjectSettingsOverrides,
 } from "./projectSettings.ts";
@@ -364,5 +372,147 @@ describe("resolveWorktreeCleanup", () => {
       resolveWorktreeCleanup(applyServerSettingsPatch(edited, { worktreeCleanup: null }), null)
         .worktreeAfterDays,
     ).toBe(8);
+  });
+});
+
+describe("provider profiles", () => {
+  const ccA = ProviderInstanceId.make("cc-a");
+  const codexA = ProviderInstanceId.make("codex-a");
+  const ccB = ProviderInstanceId.make("cc-b");
+  const acme = ProviderProfileId.make("acme");
+  const base: ServerSettings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    providerInstances: {
+      [ccA]: { driver: ProviderDriverKind.make("claudeAgent") },
+      [codexA]: { driver: ProviderDriverKind.make("codex") },
+      [ccB]: { driver: ProviderDriverKind.make("claudeAgent") },
+    },
+    defaultModelSelection: createModelSelection(ccB, "sonnet"),
+    providerProfiles: {
+      [acme]: {
+        name: "Acme",
+        instanceIds: [ccA, codexA],
+        defaultModelSelection: createModelSelection(ccA, "opus"),
+      },
+    },
+  };
+  const withProjectProfile = (overrides: ProjectSettingsOverrides): ServerSettings => ({
+    ...base,
+    projectSettingsOverrides: { [projectId]: overrides },
+  });
+
+  it("starts new threads on the project profile's default model", () => {
+    const resolved = resolveProjectSettings(
+      withProjectProfile({ providerProfileId: acme }),
+      projectId,
+    );
+    expect(resolved.settings.defaultModelSelection).toEqual(createModelSelection(ccA, "opus"));
+    expect(resolveProviderProfile(resolved.settings)?.instanceIdSet.has(codexA)).toBe(true);
+    expect(
+      resolveProjectSettings(withProjectProfile({ providerProfileId: acme }), otherProjectId)
+        .settings.defaultModelSelection,
+    ).toEqual(createModelSelection(ccB, "sonnet"));
+  });
+
+  it("drops an inherited default outside the profile when the profile has none", () => {
+    const settings = {
+      ...withProjectProfile({ providerProfileId: acme }),
+      providerProfiles: {
+        [acme]: { name: "Acme", instanceIds: [ccA], defaultModelSelection: null },
+      },
+    };
+    expect(resolveProjectSettings(settings, projectId).settings.defaultModelSelection).toBeNull();
+  });
+
+  it("keeps a project's explicit model even outside its profile", () => {
+    const explicit = createModelSelection(ccB, "haiku");
+    const resolved = resolveProjectSettings(
+      withProjectProfile({ providerProfileId: acme, defaultModelSelection: explicit }),
+      projectId,
+    );
+    expect(resolved.settings.defaultModelSelection).toEqual(explicit);
+  });
+
+  it("applies the environment profile and lets a project opt out with null", () => {
+    const settings = { ...base, providerProfileId: acme };
+    expect(resolveProjectSettings(settings, projectId).settings.defaultModelSelection).toEqual(
+      createModelSelection(ccA, "opus"),
+    );
+    const optedOut = resolveProjectSettings(
+      { ...settings, projectSettingsOverrides: { [projectId]: { providerProfileId: null } } },
+      projectId,
+    );
+    expect(resolveProviderProfile(optedOut.settings)).toBeNull();
+    expect(optedOut.settings.defaultModelSelection).toEqual(createModelSelection(ccB, "sonnet"));
+  });
+
+  it("treats a deleted profile as no profile", () => {
+    const settings = withProjectProfile({ providerProfileId: ProviderProfileId.make("gone") });
+    const resolved = resolveProjectSettings(settings, projectId);
+    expect(resolveProviderProfile(resolved.settings)).toBeNull();
+    expect(resolved.settings.defaultModelSelection).toEqual(createModelSelection(ccB, "sonnet"));
+  });
+
+  it("falls back to a ready profile instance, never one outside the profile", () => {
+    const provider = (
+      instanceId: ProviderInstanceId,
+      status: ServerProvider["status"],
+      enabled = true,
+    ) =>
+      ({
+        instanceId,
+        enabled,
+        status,
+        models: [
+          { slug: "custom", isCustom: true },
+          { slug: "haiku", isCustom: false },
+          { slug: "opus", isCustom: false, isDefault: true },
+        ],
+      }) as unknown as ServerProvider;
+    const profile = { instanceIds: [ccA, codexA] };
+
+    expect(
+      resolveProviderProfileFallbackModelSelection(profile, [
+        provider(ccB, "ready"),
+        provider(ccA, "warning"),
+        provider(codexA, "ready"),
+      ]),
+    ).toEqual(createModelSelection(codexA, "opus"));
+    expect(
+      resolveProviderProfileFallbackModelSelection(profile, [
+        provider(ccB, "ready"),
+        provider(ccA, "error"),
+        provider(codexA, "ready", false),
+      ]),
+    ).toBeNull();
+  });
+
+  it("only offers profiles every selected environment defines", () => {
+    const globex = ProviderProfileId.make("globex");
+    const onlyAcme = { providerProfiles: base.providerProfiles };
+    const both = {
+      providerProfiles: {
+        ...base.providerProfiles,
+        [globex]: { name: "Globex", instanceIds: [ccB], defaultModelSelection: null },
+      },
+    };
+    expect(commonProviderProfiles([both, onlyAcme]).map(([id]) => id)).toEqual([acme]);
+    expect(commonProviderProfiles([both]).map(([id]) => id)).toEqual([acme, globex]);
+    expect(commonProviderProfiles([both, { providerProfiles: {} }])).toEqual([]);
+  });
+
+  it("upserts and removes profiles per entry", () => {
+    const globex = ProviderProfileId.make("globex");
+    const added = applyServerSettingsPatch(base, {
+      providerProfiles: {
+        [globex]: { name: "Globex", instanceIds: [ccB], defaultModelSelection: null },
+      },
+    });
+    expect(Object.keys(added.providerProfiles)).toEqual([acme, globex]);
+    const removed = applyServerSettingsPatch(added, { providerProfiles: { [acme]: null } });
+    expect(Object.keys(removed.providerProfiles)).toEqual([globex]);
+    expect(applyServerSettingsPatch(removed, { providerProfileId: globex }).providerProfileId).toBe(
+      globex,
+    );
   });
 });

@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   PROJECT_FILE_BACKED_SETTINGS,
   type ProjectFileBackedSettingKey,
+  type ProviderProfileId,
   resolveEnvironmentMachineKind,
   type ServerSettings,
   type WorktreeSubmodules,
@@ -34,8 +35,16 @@ const WRITING_STYLE_LABELS: Record<string, string> = {
   custom: "Custom instructions",
 };
 
-/** Human labels for the values the chain can show; falls back to a type summary. */
-function formatValue(key: keyof ServerSettings, value: unknown): string {
+/**
+ * Human labels for the values the chain can show; falls back to a type
+ * summary. `settings` is the environment the value lives on, to name its
+ * profiles.
+ */
+function formatValue(
+  key: keyof ServerSettings,
+  value: unknown,
+  settings?: Pick<ServerSettings, "providerProfiles">,
+): string {
   if (value === null || value === undefined) {
     return key === "pullRequestMergeMethod"
       ? "Last selected"
@@ -45,11 +54,13 @@ function formatValue(key: keyof ServerSettings, value: unknown): string {
           ? "Never"
           : key === "defaultModelSelection"
             ? "Automatic"
-            : key === "sourceControlWriterModelSelection"
-              ? "Text generation model"
-              : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
-                ? "Inherit"
-                : "Not set";
+            : key === "providerProfileId"
+              ? "No profile"
+              : key === "sourceControlWriterModelSelection"
+                ? "Text generation model"
+                : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
+                  ? "Inherit"
+                  : "Not set";
   }
   if (typeof value === "boolean") return value ? "On" : "Off";
   if (typeof value === "number") {
@@ -63,6 +74,10 @@ function formatValue(key: keyof ServerSettings, value: unknown): string {
     }
     if (key === "worktreeSubmodules" && value in WORKTREE_SUBMODULES_LABELS) {
       return WORKTREE_SUBMODULES_LABELS[value as WorktreeSubmodules];
+    }
+    if (key === "providerProfileId") {
+      // A deleted profile resolves to no profile.
+      return settings?.providerProfiles[value as ProviderProfileId]?.name ?? "No profile";
     }
     if (key === "pullRequestMergeMethod" && value in PULL_REQUEST_MERGE_METHOD_LABELS) {
       return PULL_REQUEST_MERGE_METHOD_LABELS[
@@ -102,7 +117,10 @@ export function settingInheritanceLayers(
     layers.push({
       key: "project",
       label: "Project",
-      value: source === "project" ? formatValue(key, target.settings[key]) : "Inherits",
+      value:
+        source === "project"
+          ? formatValue(key, target.settings[key], environmentSettings)
+          : "Inherits",
       effective: source === "project",
       set: source === "project",
     });
@@ -110,7 +128,7 @@ export function settingInheritanceLayers(
   layers.push({
     key: "environment",
     label: target.label,
-    value: environmentSet ? formatValue(key, environmentValue) : "Inherits",
+    value: environmentSet ? formatValue(key, environmentValue, environmentSettings) : "Inherits",
     effective: source === "environment" && environmentSet,
     set: environmentSet,
   });
@@ -301,7 +319,11 @@ export function SettingInheritance({
                           </InlineButton>
                           <span className="max-w-32 truncate text-muted-foreground tabular-nums">
                             {isProjectScopedSettingKey(key)
-                              ? formatValue(key, overrides[project.projectId]?.[key])
+                              ? formatValue(
+                                  key,
+                                  overrides[project.projectId]?.[key],
+                                  environment.serverConfig.settings,
+                                )
                               : null}
                           </span>
                         </li>

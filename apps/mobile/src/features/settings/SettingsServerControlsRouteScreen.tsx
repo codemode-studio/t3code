@@ -11,7 +11,9 @@ import {
   type WorktreeSubmodules,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   type ProjectScopedServerSettingKey,
+  type ProviderProfileId,
 } from "@t3tools/contracts";
+import { commonProviderProfiles } from "@t3tools/shared/projectSettings";
 import { useRef, useState, type ComponentProps } from "react";
 import { Alert, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,7 +48,12 @@ const PAGE_TITLES: Record<SettingsPage, string> = {
 };
 
 const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettingKey[]> = {
-  "new-threads": ["defaultThreadEnvMode", "worktreeSubmodules", "defaultRuntimeMode"],
+  "new-threads": [
+    "providerProfileId",
+    "defaultThreadEnvMode",
+    "worktreeSubmodules",
+    "defaultRuntimeMode",
+  ],
   "source-control": ["defaultAutoPull", "newWorktreesStartFromOrigin"],
   "agent-behavior": ["responseStreamingMode", "enableAgentBrowserAccess"],
   maintenance: ["continueThreadsAfterServerUpdate"],
@@ -208,6 +215,12 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
+  // Profiles are per environment: offer only those every write target
+  // defines, so one choice never saves an id some environment lacks.
+  const profileChoices = commonProviderProfiles(targets.map((target) => target.settings));
+  const anyTargetHasProfiles = targets.some(
+    (target) => Object.keys(target.settings.providerProfiles).length > 0,
+  );
   const disabledFor = (key: string) =>
     disabled ||
     (projectSelected &&
@@ -250,6 +263,45 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               ) : null}
               {props.page === "new-threads" ? (
                 <>
+                  {anyTargetHasProfiles ? (
+                    <SettingsSection
+                      title="Provider profile"
+                      trailing={
+                        pendingWrites === 0 && isMixed("providerProfileId") ? (
+                          <MixedValuesLabel projectSelected={projectSelected} />
+                        ) : null
+                      }
+                    >
+                      {[
+                        ...profileChoices.map(([id, profile]) => ({
+                          id: id as ProviderProfileId | null,
+                          label: profile.name,
+                          description: `${profile.instanceIds.length} provider${profile.instanceIds.length === 1 ? "" : "s"}`,
+                        })),
+                        {
+                          id: null,
+                          label: "No profile",
+                          description:
+                            profileChoices.length === 0
+                              ? "The selected environments share no profile. Filter to one environment to pick one of its profiles."
+                              : "Offer every provider in the model picker.",
+                        },
+                      ].map((choice, index) => (
+                        <ChoiceRow
+                          key={choice.id === null ? "no-profile" : `profile:${choice.id}`}
+                          label={choice.label}
+                          description={choice.description}
+                          selected={
+                            !isMixed("providerProfileId") &&
+                            reference.settings.providerProfileId === choice.id
+                          }
+                          separated={index > 0}
+                          disabled={disabledFor("providerProfileId")}
+                          onPress={() => write({ providerProfileId: choice.id })}
+                        />
+                      ))}
+                    </SettingsSection>
+                  ) : null}
                   <SettingsSection
                     title="Default workspace"
                     trailing={

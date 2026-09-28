@@ -98,6 +98,8 @@ vi.mock("@t3tools/contracts", () => ({
   DEFAULT_SERVER_SETTINGS: {},
 }));
 vi.mock("@t3tools/shared/projectSettings", () => ({
+  // These tests configure no provider profiles.
+  resolveProviderProfile: () => null,
   // Environment settings pass through; the tests set project fields on the
   // project record, which the hook still honors until the server folds them.
   // With a file argument the env mode resolves like the real chain.

@@ -1,7 +1,11 @@
 import {
   type AutomationConfig,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
+  ProviderProfileId,
+  type ServerProvider,
+  type ServerSettings,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
@@ -21,6 +25,7 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "../orchestration/Services/ThreadDeletionReactor.ts";
 import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { GitHubCli } from "../sourceControl/GitHubCli.ts";
 import * as AutomationService from "./AutomationService.ts";
@@ -54,6 +59,8 @@ const makeLayer = (input: {
   readonly stateDir: string;
   readonly commands: Ref.Ref<ReadonlyArray<OrchestrationCommand>>;
   readonly project: OrchestrationProjectShell | null;
+  readonly settings?: Parameters<typeof ServerSettingsService.layerTest>[0];
+  readonly providers?: ReadonlyArray<ServerProvider>;
 }) =>
   AutomationService.layer.pipe(
     Layer.provide(
@@ -72,7 +79,8 @@ const makeLayer = (input: {
         Layer.mock(GitWorkflowService)({}),
         Layer.mock(ProjectSetupScriptRunner)({}),
         Layer.mock(GitHubCli)({}),
-        ServerSettingsService.layerTest(),
+        Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed(input.providers ?? []) }),
+        ServerSettingsService.layerTest(input.settings),
         ServerConfig.layerTest(process.cwd(), input.stateDir),
       ),
     ),
@@ -88,13 +96,14 @@ const withService = <A, E>(
       readonly commands: Ref.Ref<ReadonlyArray<OrchestrationCommand>>;
     },
   ) => Effect.Effect<A, E>,
+  environment: Pick<Parameters<typeof makeLayer>[0], "settings" | "providers"> = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-automations-" });
     const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
     const service = yield* AutomationService.AutomationService.pipe(
-      Effect.provide(makeLayer({ stateDir, commands, project })),
+      Effect.provide(makeLayer({ stateDir, commands, project, ...environment })),
     );
     return yield* body(service, { stateDir, commands });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
@@ -168,5 +177,53 @@ describe("AutomationService", () => {
         assert.deepStrictEqual(yield* Ref.get(commands), []);
       }),
     ),
+  );
+
+  it.effect(
+    "an automation on a profiled project runs inside the profile, not on the environment default",
+    () => {
+      const acmeClaude = ProviderInstanceId.make("cc_a");
+      const otherClaude = ProviderInstanceId.make("cc_b");
+      const acme = ProviderProfileId.make("acme");
+      const provider = (instanceId: ProviderInstanceId) =>
+        ({
+          instanceId,
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          models: [{ slug: "opus", name: "Opus", isCustom: false, isDefault: true }],
+        }) as unknown as ServerProvider;
+      const settings: Partial<ServerSettings> = {
+        providerInstances: {
+          [acmeClaude]: { driver: ProviderDriverKind.make("claudeAgent") },
+          [otherClaude]: { driver: ProviderDriverKind.make("claudeAgent") },
+        },
+        // The environment default belongs to another profile's account.
+        defaultModelSelection: { instanceId: otherClaude, model: "opus" },
+        providerProfiles: {
+          [acme]: { name: "Acme", instanceIds: [acmeClaude], defaultModelSelection: null },
+        },
+        projectSettingsOverrides: { [PROJECT_ID]: { providerProfileId: acme } },
+      };
+      return withService(
+        PROJECT,
+        (service, { commands }) =>
+          Effect.gen(function* () {
+            const created = yield* service.create({ ...CONFIG, modelSelection: null });
+            const run = yield* service.runNow(created.id);
+            assert.strictEqual(run.error, null);
+            const turn = (yield* Ref.get(commands)).find(
+              (command) => command.type === "thread.turn.start",
+            );
+            assert.deepStrictEqual(turn?.type === "thread.turn.start" && turn.modelSelection, {
+              instanceId: acmeClaude,
+              model: "opus",
+            });
+          }),
+        { settings, providers: [provider(otherClaude), provider(acmeClaude)] },
+      );
+    },
   );
 });

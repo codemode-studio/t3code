@@ -15,6 +15,11 @@ import {
   isValidAutomationCronExpression,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
+import {
+  resolveProjectSettings,
+  resolveProviderProfile,
+  resolveProviderProfileFallbackModelSelection,
+} from "@t3tools/shared/projectSettings";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
@@ -48,6 +53,7 @@ import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
+  leadWithProviderProfile,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import {
@@ -710,6 +716,7 @@ function AutomationEditor({
         {environmentId ? (
           <AutomationInstructions
             environmentId={environmentId}
+            projectId={draft.projectId}
             cwd={
               projects.find(
                 (project) =>
@@ -1245,6 +1252,7 @@ function ProjectPicker({
 /** Instructions and the model that runs them, which also decides the skills "$" offers. */
 function AutomationInstructions({
   environmentId,
+  projectId,
   cwd,
   prompt,
   onPromptChange,
@@ -1252,6 +1260,7 @@ function AutomationInstructions({
   onModelSelectionChange,
 }: {
   environmentId: EnvironmentId;
+  projectId: ProjectId | null;
   cwd: string | null;
   prompt: string;
   onPromptChange: (prompt: string) => void;
@@ -1261,13 +1270,34 @@ function AutomationInstructions({
   const environment = useEnvironment(environmentId);
   const settings = useEnvironmentSettings(environmentId);
   const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
-  // Until the user picks one, `modelSelection` stays null and runs follow the default model.
-  const selection = resolveDefaultProviderModelSelection(
-    providers,
-    modelSelection ?? settings.defaultModelSelection,
-  );
-  const entries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+  // Runs resolve the project's default model the same way on the server.
+  const projectSettings = resolveProjectSettings(settings, projectId).settings;
+  const providerProfile = resolveProviderProfile(projectSettings);
+  // Until the user picks one, `modelSelection` stays null and runs follow the
+  // default model, resolved inside the project's profile like the server does.
+  const selection =
+    modelSelection === null && providerProfile
+      ? projectSettings.defaultModelSelection
+        ? resolveDefaultProviderModelSelection(
+            // A project may pin a model outside its profile; an unavailable
+            // default still only falls back inside the profile.
+            providers.filter(
+              (provider) =>
+                providerProfile.instanceIdSet.has(provider.instanceId) ||
+                provider.instanceId === projectSettings.defaultModelSelection?.instanceId,
+            ),
+            projectSettings.defaultModelSelection,
+          )
+        : resolveProviderProfileFallbackModelSelection(providerProfile, providers)
+      : resolveDefaultProviderModelSelection(
+          providers,
+          modelSelection ?? projectSettings.defaultModelSelection,
+        );
+  const entries = leadWithProviderProfile(
+    sortProviderInstanceEntries(
+      applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+    ),
+    providerProfile,
   );
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
@@ -1295,6 +1325,7 @@ function AutomationInstructions({
               model={selection.model}
               lockedProvider={null}
               instanceEntries={entries}
+              providerProfile={providerProfile}
               modelOptionsByInstance={modelOptions}
               onInstanceModelChange={(instanceId, model) =>
                 onModelSelectionChange(createModelSelection(instanceId, model))

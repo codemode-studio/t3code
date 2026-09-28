@@ -594,7 +594,15 @@ interface ComposerDraftStoreState {
       | null
       | undefined,
   ) => void;
-  applyStickyState: (threadRef: ComposerThreadTarget) => void;
+  /**
+   * Seed a draft from the last app-wide pick. With a provider profile, only
+   * sticky selections on its instances carry over, so a project never
+   * inherits another profile's account implicitly.
+   */
+  applyStickyState: (
+    threadRef: ComposerThreadTarget,
+    providerProfile?: { readonly instanceIdSet: ReadonlySet<ProviderInstanceId> } | null,
+  ) => void;
   setProviderModelOptions: (
     threadRef: ComposerThreadTarget,
     provider: ProviderDriverKind,
@@ -2947,14 +2955,25 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             };
           });
         },
-        applyStickyState: (threadRef) => {
+        applyStickyState: (threadRef, providerProfile) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
             return;
           }
           set((state) => {
-            const stickyMap = state.stickyModelSelectionByProvider;
-            const stickyActiveProvider = state.stickyActiveProvider;
+            const inProfile = (instanceId: ProviderInstanceId) =>
+              !providerProfile || providerProfile.instanceIdSet.has(instanceId);
+            const stickyMap = providerProfile
+              ? Object.fromEntries(
+                  Object.entries(state.stickyModelSelectionByProvider).filter(([instanceId]) =>
+                    inProfile(instanceId as ProviderInstanceId),
+                  ),
+                )
+              : state.stickyModelSelectionByProvider;
+            const stickyActiveProvider =
+              state.stickyActiveProvider && inProfile(state.stickyActiveProvider)
+                ? state.stickyActiveProvider
+                : null;
             const existing = state.draftsByThreadKey[threadKey];
             const base = existing ?? createEmptyThreadDraft();
             const nextMap = compactModelSelectionByProvider(stickyMap);

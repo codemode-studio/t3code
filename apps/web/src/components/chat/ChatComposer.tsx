@@ -52,6 +52,7 @@ import {
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import type { ResolvedProviderProfile } from "@t3tools/shared/projectSettings";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
@@ -951,6 +952,7 @@ import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
+  leadWithProviderProfile,
   sortProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
@@ -1403,6 +1405,8 @@ export interface ChatComposerProps {
   /** False until the environment's server config has arrived at least once. */
   providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
+  /** The active project's provider profile; the model picker leads with it. */
+  activeProviderProfile: ResolvedProviderProfile | null;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
   // Context window
@@ -1532,6 +1536,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     providerStatuses,
     providerCatalogKnown,
     activeProjectDefaultModelSelection,
+    activeProviderProfile,
     activeThreadModelSelection,
     activeContextWindow,
     compactThreadUnavailable,
@@ -1872,10 +1877,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // sorted default-first per driver kind for a stable picker order.
   const providerInstanceEntries = useMemo<ReadonlyArray<ProviderInstanceEntry>>(
     () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+      leadWithProviderProfile(
+        sortProviderInstanceEntries(
+          applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        ),
+        activeProviderProfile,
       ),
-    [providerStatuses, settings],
+    [activeProviderProfile, providerStatuses, settings],
   );
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
   const {
@@ -5116,6 +5124,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         lockedProvider={lockedProvider}
         lockedContinuationGroupKey={lockedContinuationGroupKey}
         instanceEntries={providerInstanceEntries}
+        providerProfile={activeProviderProfile}
         keybindings={keybindings}
         modelOptionsByInstance={modelOptionsByInstance}
         size={composerControlsInStrip ? "xs" : "sm"}

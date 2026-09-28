@@ -9,7 +9,11 @@ import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
-import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
+import {
+  ModelPickerContent,
+  type ModelPickerProviderProfile,
+  resolveModelPickerSelectedModel,
+} from "./ModelPickerContent";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   ModelEsque,
@@ -55,6 +59,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
+  /** The project's provider profile; the picker leads with its instances. */
+  providerProfile?: ModelPickerProviderProfile | null;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
@@ -92,6 +98,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     : triggerTitle;
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
+  const outsideProfile =
+    props.providerProfile != null &&
+    activeEntry !== null &&
+    !props.providerProfile.instanceIdSet.has(activeEntry.instanceId);
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -272,6 +282,19 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             <Badge variant="outline" size="sm">
               Unavailable
             </Badge>
+          ) : outsideProfile && !selectedEntries && props.triggerLabel === undefined ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="warning" size="sm">
+                    Outside profile
+                  </Badge>
+                }
+              />
+              <TooltipPopup side="top">
+                {`${activeEntry?.displayName} is not in the ${props.providerProfile?.name} profile`}
+              </TooltipPopup>
+            </Tooltip>
           ) : null}
         </span>
         <span aria-hidden="true" className="flex items-center">
@@ -307,6 +330,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             ? { getModelDisabledReason: props.getModelDisabledReason }
             : {})}
           onInstanceModelChange={handleInstanceModelChange}
+          {...(props.providerProfile ? { providerProfile: props.providerProfile } : {})}
         />
       </PopoverPopup>
     </Popover>

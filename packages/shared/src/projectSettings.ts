@@ -1,4 +1,5 @@
 import {
+  isProviderAvailable,
   type ModelSelection,
   PROJECT_FILE_BACKED_SETTINGS,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
@@ -6,7 +7,11 @@ import {
   type ProjectId,
   type ProjectScopedServerSettingKey,
   type ProjectSettingsOverrides,
+  type ProviderInstanceId,
+  type ProviderProfile,
+  type ProviderProfileId,
   type ResolvedServerSettings,
+  type ServerProvider,
   type ServerSettings,
   type T3ProjectFile,
   type ThreadEnvMode,
@@ -95,7 +100,9 @@ export function resolveProjectSettings(
   project?: LegacyProjectSettingsFields | null,
   projectFile?: T3ProjectFile | null,
 ): ResolvedProjectSettings {
-  const resolved = resolveProjectOverrides(settings, projectId, project);
+  const resolved = applyProviderProfileDefaultModel(
+    resolveProjectOverrides(settings, projectId, project),
+  );
   return projectFile === undefined ? resolved : applyProjectFile(resolved, projectFile);
 }
 
@@ -186,6 +193,92 @@ function resolveProjectOverrides(
     sources[key] = "project";
   }
   return { settings: effective as ServerSettings, sources, overrides };
+}
+
+export interface ResolvedProviderProfile extends ProviderProfile {
+  readonly id: ProviderProfileId;
+  /** The profile's instance ids as a set, for membership checks in pickers. */
+  readonly instanceIdSet: ReadonlySet<ProviderInstanceId>;
+}
+
+/**
+ * The profile selected by already-resolved settings (see
+ * `resolveProjectSettings`), or null when every provider is offered. A
+ * dangling id, left behind by a deleted profile, also means no profile.
+ */
+export function resolveProviderProfile(
+  settings: Pick<ServerSettings, "providerProfileId" | "providerProfiles">,
+): ResolvedProviderProfile | null {
+  const id = settings.providerProfileId;
+  const profile = id === null ? undefined : settings.providerProfiles[id];
+  if (id === null || profile === undefined) return null;
+  return { ...profile, id, instanceIdSet: new Set(profile.instanceIds) };
+}
+
+/**
+ * Profiles a multi-target settings edit can assign: those every target
+ * defines under the same id. Profiles are per environment, so writing an id
+ * a target lacks would silently mean "no profile" there. Names come from the
+ * first target.
+ */
+export function commonProviderProfiles(
+  targets: ReadonlyArray<Pick<ServerSettings, "providerProfiles">>,
+): ReadonlyArray<readonly [ProviderProfileId, ProviderProfile]> {
+  const [first, ...rest] = targets;
+  if (!first) return [];
+  return (
+    Object.entries(first.providerProfiles) as Array<[ProviderProfileId, ProviderProfile]>
+  ).filter(([id]) => rest.every((target) => target.providerProfiles[id] !== undefined));
+}
+
+/**
+ * The model to use when a profile applies but nothing picked one: the default
+ * model of the profile's first ready instance, else its first one that is not
+ * failing. Never a provider outside the profile, so a run cannot fall back to
+ * another account. Null when no profile instance can start.
+ */
+export function resolveProviderProfileFallbackModelSelection(
+  profile: Pick<ProviderProfile, "instanceIds">,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection | null {
+  const candidates = profile.instanceIds.flatMap((instanceId) => {
+    const provider = providers.find((candidate) => candidate.instanceId === instanceId);
+    return provider?.enabled && isProviderAvailable(provider) ? [provider] : [];
+  });
+  const provider =
+    candidates.find((candidate) => candidate.status === "ready") ??
+    candidates.find((candidate) => candidate.status !== "error");
+  const model =
+    provider?.models.find((candidate) => candidate.isDefault && !candidate.isCustom) ??
+    provider?.models.find((candidate) => !candidate.isCustom) ??
+    provider?.models[0];
+  return provider && model ? { instanceId: provider.instanceId, model: model.slug } : null;
+}
+
+/**
+ * A profile replaces the inherited new-thread model: its own default when it
+ * has one, otherwise the environment default only if the profile includes
+ * that provider. A project's explicit model override always wins.
+ */
+function applyProviderProfileDefaultModel(
+  resolved: ResolvedProjectSettings,
+): ResolvedProjectSettings {
+  if (resolved.sources.defaultModelSelection === "project") return resolved;
+  const profile = resolveProviderProfile(resolved.settings);
+  if (profile === null) return resolved;
+  const inherited = resolved.settings.defaultModelSelection;
+  const profileDefault = profile.defaultModelSelection;
+  const next =
+    profileDefault !== null &&
+    profile.instanceIdSet.has(profileDefault.instanceId) &&
+    isModelSelectionProviderEnabled(resolved.settings, profileDefault)
+      ? profileDefault
+      : inherited !== null && profile.instanceIdSet.has(inherited.instanceId)
+        ? inherited
+        : null;
+  return next === inherited
+    ? resolved
+    : { ...resolved, settings: { ...resolved.settings, defaultModelSelection: next } };
 }
 
 /** Replace the project's entry, dropping it entirely when nothing is overridden. */

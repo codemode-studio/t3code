@@ -1,7 +1,7 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { SparklesIcon, StarIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, SparklesIcon, StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -64,6 +64,17 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
    * instances are never flagged — the user just made them).
    */
   newBadgeInstanceIds?: ReadonlySet<ProviderInstanceId>;
+  /**
+   * The project's provider profile. Entries outside it render dimmed after a
+   * toggle that reveals or hides them; callers drop hidden entries from
+   * `instanceEntries` themselves.
+   */
+  profile?: {
+    readonly name: string;
+    readonly outsideInstanceIds: ReadonlySet<ProviderInstanceId>;
+    readonly showingOthers: boolean;
+    readonly onToggleOthers: () => void;
+  };
 }) {
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
@@ -148,7 +159,13 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           ) : null}
 
           {/* Instance buttons (one per configured instance — built-in + custom) */}
-          {props.instanceEntries.map((entry) => {
+          {props.instanceEntries.map((entry, index) => {
+            const profile = props.profile;
+            const isOutsideProfile = profile?.outsideInstanceIds.has(entry.instanceId) ?? false;
+            const startsOutsideGroup =
+              isOutsideProfile &&
+              (index === 0 ||
+                !profile?.outsideInstanceIds.has(props.instanceEntries[index - 1]!.instanceId));
             const isUnavailable = !isProviderInstancePickerReady(entry);
             const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
             const unavailableSelectionIsReachable =
@@ -164,15 +181,18 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               ? describeUnavailableInstance(entry)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-                : showNewBadge
-                  ? `${entry.displayName} — New`
-                  : entry.displayName;
+                : isOutsideProfile
+                  ? `${entry.displayName} — Not in ${props.profile?.name}`
+                  : showNewBadge
+                    ? `${entry.displayName} — New`
+                    : entry.displayName;
 
             const button = (
               <Toolbar.Button
                 className={cn(
                   "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
                   isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                  isOutsideProfile && !isDisabled && "opacity-60 hover:opacity-100",
                 )}
                 data-provider-accent-color={entry.accentColor}
                 onClick={() => !isDisabled && handleSelect(entry.instanceId)}
@@ -226,7 +246,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               button
             );
 
-            return (
+            const item = (
               <div
                 key={entry.instanceId}
                 className="relative w-full"
@@ -244,9 +264,58 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 </Tooltip>
               </div>
             );
+            return startsOutsideGroup ? (
+              <div key={`outside:${entry.instanceId}`} className="contents">
+                <div className="border-b border-border/70" aria-hidden="true" />
+                {item}
+              </div>
+            ) : (
+              item
+            );
           })}
+          {props.profile && props.profile.outsideInstanceIds.size > 0 ? (
+            <OtherProfilesToggle profile={props.profile} />
+          ) : null}
         </div>
       </div>
     </Toolbar.Root>
   );
 });
+
+function OtherProfilesToggle(props: {
+  profile: NonNullable<Parameters<typeof ModelPickerSidebar>[0]["profile"]>;
+}) {
+  const label = props.profile.showingOthers
+    ? `Hide providers outside ${props.profile.name}`
+    : `Show providers outside ${props.profile.name}`;
+  return (
+    <div className="relative mt-auto w-full">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toolbar.Button
+              className="relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none"
+              onClick={props.profile.onToggleOthers}
+              type="button"
+              aria-label={label}
+              aria-pressed={props.profile.showingOthers}
+            >
+              {props.profile.showingOthers ? (
+                <EyeOffIcon className="size-4" aria-hidden />
+              ) : (
+                <EyeIcon className="size-4" aria-hidden />
+              )}
+            </Toolbar.Button>
+          }
+        />
+        <TooltipPopup
+          side={PICKER_TOOLTIP_SIDE}
+          sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+          align="center"
+        >
+          {label}
+        </TooltipPopup>
+      </Tooltip>
+    </div>
+  );
+}
