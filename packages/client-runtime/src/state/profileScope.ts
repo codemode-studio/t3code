@@ -45,7 +45,7 @@ export function profileScopeProjectKey(environmentId: EnvironmentId, projectId: 
  * The profile a project uses on its own environment: its override, including an explicit
  * "no profile", else the environment default.
  */
-function resolveProjectProviderProfileId(
+export function resolveProjectProviderProfileId(
   settings: Pick<ServerSettings, "providerProfileId" | "projectSettingsOverrides">,
   projectId: ProjectId,
 ): ProviderProfileId | null {

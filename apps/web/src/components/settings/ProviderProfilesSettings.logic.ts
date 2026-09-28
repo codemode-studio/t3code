@@ -1,6 +1,7 @@
 import {
   type ProjectId,
   type ProjectSettingsOverrides,
+  type ProviderProfile,
   ProviderProfileId,
   type ServerSettings,
   type ServerSettingsPatch,
@@ -62,16 +63,54 @@ export function buildDeleteProviderProfilePatch(
   };
 }
 
-/** The profile a project uses: its own override, including an explicit "no profile", else the environment's. */
-export function resolveProjectProviderProfileId(
+/**
+ * Makes a project use `target` (a profile, or `null` for every provider) with the smallest
+ * override: none when the environment default already gives it, else an explicit one. Other
+ * overrides on the project are kept.
+ */
+export function buildProjectProfilePatch(
   settings: Pick<ServerSettings, "providerProfileId" | "projectSettingsOverrides">,
   projectId: ProjectId,
-): ProviderProfileId | null {
-  const entry = settings.projectSettingsOverrides[projectId];
-  return entry !== undefined && Object.hasOwn(entry, "providerProfileId")
-    ? (entry.providerProfileId ?? null)
-    : settings.providerProfileId;
+  target: ProviderProfileId | null,
+): ServerSettingsPatch {
+  const next =
+    target === settings.providerProfileId
+      ? clearProjectSettingsOverrides(settings, projectId, ["providerProfileId"])
+      : { ...settings.projectSettingsOverrides[projectId], providerProfileId: target };
+  return { projectSettingsOverrides: { [projectId]: next } };
 }
+
+/**
+ * Saves a new profile in one write, with the projects picked for it and, optionally, as the
+ * profile projects without their own use.
+ */
+export function buildCreateProviderProfilePatch(
+  settings: Pick<ServerSettings, "providerProfileId" | "projectSettingsOverrides">,
+  input: {
+    readonly id: ProviderProfileId;
+    readonly profile: ProviderProfile;
+    readonly projectIds: ReadonlyArray<ProjectId>;
+    readonly makeDefault: boolean;
+  },
+): ServerSettingsPatch {
+  const next = input.makeDefault ? { ...settings, providerProfileId: input.id } : settings;
+  const overrides: Record<ProjectId, ProjectSettingsOverrides | null> = {};
+  for (const projectId of input.projectIds) {
+    Object.assign(
+      overrides,
+      buildProjectProfilePatch(next, projectId, input.id).projectSettingsOverrides,
+    );
+  }
+  return {
+    providerProfiles: { [input.id]: input.profile },
+    ...(input.makeDefault ? { providerProfileId: input.id } : {}),
+    ...(Object.keys(overrides).length > 0 ? { projectSettingsOverrides: overrides } : {}),
+  };
+}
+
+// Kept importable from here for the settings screens; the shared client runtime owns it so web
+// and mobile resolve a project's profile identically.
+export { resolveProjectProviderProfileId } from "@t3tools/client-runtime/state/profile-scope";
 
 /**
  * Select values for the profile picker. Profile ids are user-derived slugs

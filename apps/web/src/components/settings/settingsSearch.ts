@@ -17,6 +17,7 @@ export type SettingsPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/snap-shot"
+  | "/settings/profiles"
   | "/settings/providers"
   | "/settings/skills"
   | "/settings/integrations"
@@ -89,6 +90,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
+  "/settings/profiles": "Profiles",
   "/settings/providers": "Providers",
   "/settings/skills": "Skills",
   "/settings/integrations": "Integrations",
@@ -624,8 +626,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "provider-profiles",
-    title: "Provider profiles",
-    to: "/settings/providers",
+    title: "Profiles",
+    to: "/settings/profiles",
     searchTerms: ["group providers company client account project default model new profile"],
     providerSettingsOnly: true,
   },
@@ -921,6 +923,8 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   // Keybindings fan out to the selection; Providers shows the representative
   // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
+  // Like Providers, profiles show the representative environment at any selection.
+  "/settings/profiles": null,
   "/settings/providers": null,
   "/settings/skills": null,
   "/settings/integrations": null,
