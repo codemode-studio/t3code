@@ -8,7 +8,9 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildCreateProviderProfilePatch,
   buildDeleteProviderProfilePatch,
+  buildProjectProfilePatch,
   decodeProviderProfileValue,
   encodeProviderProfileValue,
   NO_PROVIDER_PROFILE_VALUE,
@@ -90,5 +92,65 @@ describe("provider profile select values", () => {
     const lookalike = providerProfileIdFromName("No profile", {});
     expect(decodeProviderProfileValue(encodeProviderProfileValue(lookalike))).toBe(lookalike);
     expect(decodeProviderProfileValue("none")).toBeUndefined();
+  });
+});
+
+describe("buildProjectProfilePatch", () => {
+  const resolve = (patch: ReturnType<typeof buildProjectProfilePatch>, projectId: ProjectId) =>
+    resolveProjectProviderProfileId(applyServerSettingsPatch(settings, patch), projectId);
+
+  it("drops the override when the environment default already gives the target", () => {
+    const next = applyServerSettingsPatch(
+      settings,
+      buildProjectProfilePatch(settings, other, acme),
+    );
+    expect(next.projectSettingsOverrides).not.toHaveProperty(other);
+    expect(resolveProjectProviderProfileId(next, other)).toBe(acme);
+  });
+
+  it("writes an explicit override otherwise, keeping the project's other overrides", () => {
+    const patch = buildProjectProfilePatch(settings, optedIn, globex);
+    expect(applyServerSettingsPatch(settings, patch).projectSettingsOverrides[optedIn]).toEqual({
+      providerProfileId: globex,
+      defaultRuntimeMode: "approval-required",
+    });
+  });
+
+  it("removes a project from the default profile with an explicit opt-out", () => {
+    expect(resolve(buildProjectProfilePatch(settings, inheriting, null), inheriting)).toBeNull();
+  });
+});
+
+describe("buildCreateProviderProfilePatch", () => {
+  const initech = ProviderProfileId.make("initech");
+  const profile = { name: "Initech", instanceIds: [], defaultModelSelection: null };
+
+  it("creates the profile with its projects and can make it the default", () => {
+    const next = applyServerSettingsPatch(
+      settings,
+      buildCreateProviderProfilePatch(settings, {
+        id: initech,
+        profile,
+        projectIds: [other, inheriting],
+        makeDefault: true,
+      }),
+    );
+    expect(next.providerProfiles[initech]).toEqual(profile);
+    expect(next.providerProfileId).toBe(initech);
+    expect(resolveProjectProviderProfileId(next, other)).toBe(initech);
+    expect(resolveProjectProviderProfileId(next, inheriting)).toBe(initech);
+    // Projects left out keep what they had; the opt-out stays an opt-out.
+    expect(resolveProjectProviderProfileId(next, optedOut)).toBeNull();
+  });
+
+  it("leaves the environment default alone unless asked", () => {
+    const patch = buildCreateProviderProfilePatch(settings, {
+      id: initech,
+      profile,
+      projectIds: [],
+      makeDefault: false,
+    });
+    expect(patch).not.toHaveProperty("providerProfileId");
+    expect(patch).not.toHaveProperty("projectSettingsOverrides");
   });
 });

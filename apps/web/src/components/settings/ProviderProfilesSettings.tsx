@@ -1,6 +1,7 @@
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
-  type EnvironmentId,
   type ModelSelection,
+  type ProjectId,
   type ProviderInstanceId,
   type ProviderProfile,
   type ProviderProfileId,
@@ -8,10 +9,9 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { PencilIcon, PipetteIcon, PlusIcon } from "lucide-react";
+import { PipetteIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
@@ -21,10 +21,9 @@ import {
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
-import { useProjects } from "../../state/entities";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { ProjectFavicon } from "../ProjectFavicon";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import { ProviderProfileChip } from "../ProviderProfileChip";
 import { Button, InlineButton } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import {
@@ -38,19 +37,13 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-import {
-  buildDeleteProviderProfilePatch,
-  PROVIDER_PROFILE_COLORS,
-  providerProfileIdFromName,
-  resolveProjectProviderProfileId,
-} from "./ProviderProfilesSettings.logic";
+import { PROVIDER_PROFILE_COLORS } from "./ProviderProfilesSettings.logic";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ProviderCustomColorPanel } from "./ProviderAccentColorPicker";
-import { searchableSetting } from "./settingsSearch";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
 
 /** Provider instance entries for an environment, in settings order. */
-function useProviderInstanceEntries(
+export function useProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
   settings: Pick<UnifiedSettings, "providerInstances" | "providers">,
 ): ReadonlyArray<ProviderInstanceEntry> {
@@ -93,7 +86,7 @@ export function ProviderProfileInstances({
   );
 }
 
-function describeProfileModel(
+export function describeProfileModel(
   selection: ModelSelection | null,
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): string {
@@ -104,135 +97,19 @@ function describeProfileModel(
   return `${entry.displayName} · ${model?.name ?? selection.model}`;
 }
 
-interface EditingProfile {
-  readonly id: ProviderProfileId | null;
-  readonly profile: ProviderProfile;
+export interface AssignableProject {
+  readonly project: EnvironmentProject;
+  readonly currentProfileName: string | null;
 }
 
-/**
- * Profiles group this environment's provider instances, usually one per
- * company or client. Projects pick a profile in their settings.
- */
-export function ProviderProfilesSettings({
-  environmentId,
-  settings,
-  providers,
-  readOnly,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly settings: UnifiedSettings;
-  readonly providers: ReadonlyArray<ServerProvider>;
-  readonly readOnly: boolean;
-}) {
-  const updateSettings = useUpdateEnvironmentSettings(environmentId);
-  const entries = useProviderInstanceEntries(providers, settings);
-  const allProjects = useProjects();
-  const [editing, setEditing] = useState<EditingProfile | null>(null);
-  const profiles = Object.entries(settings.providerProfiles) as [
-    ProviderProfileId,
-    ProviderProfile,
-  ][];
-  const projectsByProfile = useMemo(() => {
-    const byProfile = new Map<ProviderProfileId, string[]>();
-    for (const project of allProjects) {
-      if (project.environmentId !== environmentId) continue;
-      const id = resolveProjectProviderProfileId(settings, project.id);
-      if (id !== null) byProfile.set(id, [...(byProfile.get(id) ?? []), project.title]);
-    }
-    return byProfile;
-  }, [allProjects, environmentId, settings]);
+export interface NewProfileExtras {
+  readonly projectIds: ReadonlyArray<ProjectId>;
+  readonly makeDefault: boolean;
+}
 
-  const startNew = () =>
-    setEditing({
-      id: null,
-      profile: {
-        name: "",
-        color:
-          PROVIDER_PROFILE_COLORS[profiles.length % PROVIDER_PROFILE_COLORS.length] ??
-          PROVIDER_PROFILE_COLORS[0],
-        instanceIds: [],
-        defaultModelSelection: null,
-      },
-    });
-
-  return (
-    <>
-      <SettingsSection
-        {...searchableSetting("provider-profiles")}
-        headerAction={
-          readOnly ? null : (
-            <Button size="xs" variant="outline" onClick={startNew}>
-              <PlusIcon aria-hidden />
-              New profile
-            </Button>
-          )
-        }
-      >
-        {profiles.length === 0 ? (
-          <SettingsRow
-            title="No profiles"
-            description="Group providers into a profile, such as one per client, so a project only offers those providers and starts new threads on the profile's model."
-          />
-        ) : (
-          profiles.map(([id, profile]) => {
-            const projects = projectsByProfile.get(id) ?? [];
-            return (
-              <SettingsRow
-                key={id}
-                title={
-                  <span className="flex min-w-0 items-center gap-2">
-                    <ProviderProfileChip name={profile.name} color={profile.color} />
-                    <span className="min-w-0 truncate text-xs font-normal text-muted-foreground">
-                      {projects.length === 0
-                        ? "No projects"
-                        : `${projects.length} ${projects.length === 1 ? "project" : "projects"}: ${projects.join(", ")}`}
-                    </span>
-                  </span>
-                }
-                description={`Default model: ${describeProfileModel(profile.defaultModelSelection, entries)}`}
-                status={
-                  <ProviderProfileInstances instanceIds={profile.instanceIds} entries={entries} />
-                }
-                control={
-                  readOnly ? null : (
-                    <Button size="xs" variant="outline" onClick={() => setEditing({ id, profile })}>
-                      <PencilIcon aria-hidden />
-                      Edit
-                    </Button>
-                  )
-                }
-              />
-            );
-          })
-        )}
-      </SettingsSection>
-      {editing && !readOnly ? (
-        <ProviderProfileEditorDialog
-          initial={editing}
-          entries={entries}
-          settings={settings}
-          providers={providers}
-          usedBy={editing.id ? (projectsByProfile.get(editing.id)?.length ?? 0) : 0}
-          onClose={() => setEditing(null)}
-          onSave={(profile) => {
-            const id =
-              editing.id ?? providerProfileIdFromName(profile.name, settings.providerProfiles);
-            updateSettings({ providerProfiles: { [id]: profile } });
-            setEditing(null);
-          }}
-          onDelete={
-            editing.id
-              ? () => {
-                  if (editing.id)
-                    updateSettings(buildDeleteProviderProfilePatch(settings, editing.id));
-                  setEditing(null);
-                }
-              : undefined
-          }
-        />
-      ) : null}
-    </>
-  );
+export interface EditingProfile {
+  readonly id: ProviderProfileId | null;
+  readonly profile: ProviderProfile;
 }
 
 /** The last swatch in the profile color row: shows a custom color once picked, and edits it. */
@@ -277,12 +154,14 @@ function ProviderProfileCustomColor({
   );
 }
 
-function ProviderProfileEditorDialog({
+export function ProviderProfileEditorDialog({
   initial,
   entries,
   settings,
   providers,
   usedBy,
+  assignableProjects,
+  defaultOptionChecked = false,
   onClose,
   onSave,
   onDelete,
@@ -292,12 +171,27 @@ function ProviderProfileEditorDialog({
   readonly settings: UnifiedSettings;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly usedBy: number;
+  /** Creating only: projects the new profile can start with, and what each uses today. */
+  readonly assignableProjects?: ReadonlyArray<AssignableProject>;
+  /**
+   * Creating with `assignableProjects` also offers to make the profile the one projects without
+   * their own use; this is whether that starts checked.
+   */
+  readonly defaultOptionChecked?: boolean;
   readonly onClose: () => void;
-  readonly onSave: (profile: ProviderProfile) => void;
+  readonly onSave: (profile: ProviderProfile, extras: NewProfileExtras) => void;
   readonly onDelete: (() => void) | undefined;
 }) {
   const [draft, setDraft] = useState(initial.profile);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [projectIds, setProjectIds] = useState<ReadonlySet<ProjectId>>(() => new Set());
+  const [makeDefault, setMakeDefault] = useState(defaultOptionChecked);
+  const creating = initial.id === null;
+  const save = () =>
+    onSave(
+      { ...draft, name },
+      { projectIds: [...projectIds], makeDefault: creating && makeDefault },
+    );
   const chosen = new Set(draft.instanceIds);
   const chosenEntries = entries.filter((entry) => chosen.has(entry.instanceId));
   const selection = resolveDefaultProviderModelSelection(
@@ -347,7 +241,7 @@ function ProviderProfileEditorDialog({
             className="grid gap-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (name && draft.instanceIds.length > 0) onSave({ ...draft, name });
+              if (name && draft.instanceIds.length > 0) save();
             }}
           >
             <div className="grid gap-1.5">
@@ -468,6 +362,52 @@ function ProviderProfileEditorDialog({
                 own.
               </span>
             </div>
+
+            {creating && assignableProjects && assignableProjects.length > 0 ? (
+              <div className="grid gap-1.5">
+                <span className="text-sm font-medium">Projects</span>
+                <div className="flex max-h-48 flex-col overflow-y-auto rounded-lg border border-border">
+                  {assignableProjects.map(({ project, currentProfileName }) => (
+                    <label
+                      key={project.id}
+                      className="flex cursor-pointer items-center gap-3 border-b border-border/60 px-3 py-2 last:border-b-0"
+                    >
+                      <Checkbox
+                        checked={projectIds.has(project.id)}
+                        onCheckedChange={(checked) =>
+                          setProjectIds((current) => {
+                            const next = new Set(current);
+                            if (checked) next.add(project.id);
+                            else next.delete(project.id);
+                            return next;
+                          })
+                        }
+                      />
+                      <ProjectFavicon project={project} className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-sm">{project.title}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {currentProfileName ?? "No profile"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {creating && assignableProjects ? (
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox
+                  checked={makeDefault}
+                  onCheckedChange={(checked) => setMakeDefault(checked)}
+                />
+                <span className="grid gap-0.5">
+                  <span className="text-sm">Use for projects without a profile</span>
+                  <span className="text-xs text-muted-foreground">
+                    New projects and any you leave unassigned get this profile.
+                  </span>
+                </span>
+              </label>
+            ) : null}
           </form>
         </DialogPanel>
         <DialogFooter variant="bare">
@@ -496,10 +436,7 @@ function ProviderProfileEditorDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            disabled={!name || draft.instanceIds.length === 0}
-            onClick={() => onSave({ ...draft, name })}
-          >
+          <Button disabled={!name || draft.instanceIds.length === 0} onClick={save}>
             Save profile
           </Button>
         </DialogFooter>

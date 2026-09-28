@@ -64,19 +64,31 @@ applies when the project and environment are both on **Inherit**.
 
 ## Provider profiles
 
-If you keep separate provider instances per company or client, such as a Claude and a Codex
-instance for each with their own accounts and MCP servers, group them into profiles in
-**Settings → Providers**. Each profile names its instances and can set a default model.
+If you work for several companies or clients, give each a profile in **Settings → Profiles**. A
+profile names the provider instances its projects may use, such as a Claude and a Codex instance
+signed in to that company's accounts, and can set a default model. On web and desktop the sidebar
+can then show one profile's work at a time; see [Work across companies](./thread-sidebar.md#work-across-companies).
 
-Pick a profile with **Provider profile** in **Settings → General**, with a project selected to
-assign it to that project, or with no project to set the environment default. That project's
-model picker then lists only the profile's instances, and new threads start on the profile's
-default model unless the project sets its own. **No profile** offers every instance. On mobile, the
-same choice is on the **New threads** server settings page.
+Create a profile with **New profile**, choose its providers, and tick the projects that belong to
+it. **Use for projects without a profile** makes it the fallback: new projects and any project you
+leave unassigned use it. It starts checked for your first profile. Each card lists its projects;
+use **Add project** to move one in and **Remove** to take one out. **Make default** and **Unset
+default** change the fallback later. Projects that use a profile only because it is the default
+are marked **By default**. Until you create a profile, nothing about providers or the sidebar
+changes.
 
-The eye button at the bottom of the picker's provider rail reveals instances outside the profile.
-Models picked from them are marked **Outside profile** because they run with that instance's
-credentials and MCP servers. Existing threads keep their provider.
+A project with a profile offers only that profile's instances in the model picker, and new threads
+start on the profile's default model unless the project sets its own. **No profile** offers every
+instance. Every other setting resolves as usual, from the project, then the environment. The eye
+button at the bottom of the picker's provider rail reveals instances outside the profile. Models
+picked from them are marked **Outside profile** because they run with that instance's credentials
+and MCP servers. Existing threads keep their provider.
+
+Profiles belong to an environment, like its providers, so the page edits the environment chosen at
+the top. Create the profile on each machine you use, with the same name when you first create it:
+the sidebar then treats them as one company, even if you rename one later. You can also choose a
+project's profile with **Provider profile** in **Settings → General** with the project selected.
+On mobile, the same choice is on the **New threads** server settings page.
 
 ## Storage cleanup
 

@@ -185,7 +185,7 @@ function ProfileScopeMenuPopup({
         </MenuRadioGroup>
       </MenuGroup>
       <MenuSeparator />
-      <MenuItem onClick={() => void navigate({ to: "/settings/providers" })}>
+      <MenuItem onClick={() => void navigate({ to: "/settings/profiles" })}>
         <PlusIcon />
         <span>Add profile</span>
       </MenuItem>
