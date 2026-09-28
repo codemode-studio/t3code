@@ -13,11 +13,12 @@ import { cn } from "../../lib/utils";
 
 const FALLBACK_ACCENT_COLOR = "#2563eb";
 
-function ProviderCustomColorPanel(props: {
+export function ProviderCustomColorPanel(props: {
   readonly value: string;
   readonly onCommit: (value: string) => void;
+  readonly label?: string;
 }) {
-  const { onCommit } = props;
+  const { label = "Accent color", onCommit } = props;
   const [hsv, setHsv] = useState(() => hexToHsv(props.value));
   const currentColor = hsvToHex(hsv.h, hsv.s, hsv.v);
   const [hexDraft, setHexDraft] = useState<string | null>(null);
@@ -32,15 +33,10 @@ function ProviderCustomColorPanel(props: {
 
   return (
     <div className="w-56 bg-popover">
-      <ColorSaturationValuePlane
-        label="Accent color"
-        value={hsv}
-        onChange={commitHsv}
-        variant="edge"
-      />
+      <ColorSaturationValuePlane label={label} value={hsv} onChange={commitHsv} variant="edge" />
       <div className="grid gap-3 p-3">
         <ColorHueSlider
-          label="Accent color hue"
+          label={`${label} hue`}
           value={hsv.h}
           onChange={(h) => commitHsv({ ...hsv, h })}
         />
@@ -57,7 +53,7 @@ function ProviderCustomColorPanel(props: {
           }}
           onBlur={() => setHexDraft(null)}
           font="mono"
-          aria-label="Custom hex accent color"
+          aria-label={`Custom hex ${label.toLowerCase()}`}
           spellCheck={false}
         />
       </div>

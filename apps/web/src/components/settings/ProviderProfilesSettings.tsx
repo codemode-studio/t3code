@@ -8,7 +8,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { PencilIcon, PlusIcon } from "lucide-react";
+import { PencilIcon, PipetteIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
@@ -44,6 +44,8 @@ import {
   providerProfileIdFromName,
   resolveProjectProviderProfileId,
 } from "./ProviderProfilesSettings.logic";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ProviderCustomColorPanel } from "./ProviderAccentColorPicker";
 import { searchableSetting } from "./settingsSearch";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow, SettingsSection } from "./settingsLayout";
 
@@ -233,6 +235,48 @@ export function ProviderProfilesSettings({
   );
 }
 
+/** The last swatch in the profile color row: shows a custom color once picked, and edits it. */
+function ProviderProfileCustomColor({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (color: string) => void;
+}) {
+  const custom =
+    value && !(PROVIDER_PROFILE_COLORS as readonly string[]).includes(value) ? value : undefined;
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            role="radio"
+            aria-checked={custom !== undefined}
+            aria-label="Custom color"
+            className={cn(
+              "flex size-5 cursor-pointer items-center justify-center rounded-full ring-offset-2 ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              custom
+                ? "ring-2 ring-foreground/60"
+                : "border border-dashed border-muted-foreground/60",
+            )}
+            style={custom ? { background: custom } : undefined}
+          >
+            {custom ? null : <PipetteIcon className="size-3 text-muted-foreground" aria-hidden />}
+          </button>
+        }
+      />
+      <PopoverPopup side="bottom" align="end" sideOffset={6} padding="none">
+        <ProviderCustomColorPanel
+          label="Profile color"
+          value={custom ?? value ?? PROVIDER_PROFILE_COLORS[0]}
+          onCommit={onChange}
+        />
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
 function ProviderProfileEditorDialog({
   initial,
   entries,
@@ -337,6 +381,10 @@ function ProviderProfileEditorDialog({
                       style={{ background: color }}
                     />
                   ))}
+                  <ProviderProfileCustomColor
+                    value={draft.color}
+                    onChange={(color) => setDraft({ ...draft, color })}
+                  />
                 </div>
               </div>
             </div>
