@@ -88,7 +88,8 @@ Profiles belong to an environment, like its providers, so the page edits the env
 the top. Create the profile on each machine you use, with the same name when you first create it:
 the sidebar then treats them as one company, even if you rename one later. You can also choose a
 project's profile with **Provider profile** in **Settings → General** with the project selected.
-On mobile, the same choice is on the **New threads** server settings page.
+On mobile, the same choice is on the **New threads** server settings page, and the thread list can
+be filtered by profile.
 
 ## Storage cleanup
 

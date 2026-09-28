@@ -232,6 +232,16 @@ describe("mobile connection storage", () => {
     expect(fallback.updatedAt).toEqual(expect.any(Number));
   });
 
+  it("persists the thread list profile filter and drops invalid values", async () => {
+    await expect(savePreferencesPatch({ threadListProfileScope: "acme" })).resolves.toEqual({
+      threadListProfileScope: "acme",
+    });
+    await expect(loadPreferences()).resolves.toEqual({ threadListProfileScope: "acme" });
+
+    mocks.setPreferencesJson(JSON.stringify({ baseFontSize: 17, threadListProfileScope: 3 }), 10);
+    await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
+  });
+
   it("persists thread list shelf expansion preferences", async () => {
     await expect(
       savePreferencesPatch({

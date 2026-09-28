@@ -41,8 +41,13 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { useHomeListOptions } from "../home/home-list-options";
-import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
-import { buildHomeProjectScopes } from "../home/homeThreadList";
+import {
+  buildHomeListFilterMenu,
+  buildHomeProfileMenuAction,
+  resolveHomeProfileMenuEvent,
+} from "../home/home-list-filter-menu";
+import { buildHomeProjectScopes, resolveHomeListProjectRefs } from "../home/homeThreadList";
+import { useHomeProfileScope } from "../home/use-home-profile-scope";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
@@ -206,15 +211,18 @@ function ThreadNavigationSidebarPane(
     () => new Set(threadSearch.matches.map(threadSearchMatchKey)),
     [threadSearch.matches],
   );
+  const profileScope = useHomeProfileScope(projects);
+  const profileProjectKeys = profileScope.scopedProjectKeys;
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
         projects,
         environmentId: options.selectedEnvironmentId,
+        profileProjectKeys,
         projectGroupingMode: options.projectGroupingMode,
       }),
-    [options.projectGroupingMode, options.selectedEnvironmentId, projects],
+    [options.projectGroupingMode, options.selectedEnvironmentId, profileProjectKeys, projects],
   );
   const projectFilterOptions = useMemo(
     () =>
@@ -254,16 +262,25 @@ function ThreadNavigationSidebarPane(
       setSelectedProjectKey(null);
     }
   }, [projectFilterOptions, selectedProjectKey]);
+  const listProjectRefs = useMemo(
+    () =>
+      resolveHomeListProjectRefs({
+        selectedScope: selectedProjectScope,
+        scopes: projectScopes,
+        profileProjectKeys,
+      }),
+    [profileProjectKeys, projectScopes, selectedProjectScope],
+  );
   const selectedProjectRefs = useMemo(
     () =>
-      selectedProjectScope === null
+      listProjectRefs === null
         ? null
         : new Set(
-            selectedProjectScope.projectRefs.map((projectRef) =>
+            listProjectRefs.map((projectRef) =>
               scopedProjectKey(projectRef.environmentId, projectRef.projectId),
             ),
           ),
-    [selectedProjectScope],
+    [listProjectRefs],
   );
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
@@ -280,7 +297,7 @@ function ThreadNavigationSidebarPane(
   const [settledVisibleCount, setSettledVisibleCount] = useState(
     THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   );
-  const settledResetKey = `${options.selectedEnvironmentId ?? "all"}:${selectedProjectKey ?? "all"}:${props.searchQuery.trim()}`;
+  const settledResetKey = `${options.selectedEnvironmentId ?? "all"}:${selectedProjectKey ?? "all"}:${profileScope.scope}:${props.searchQuery.trim()}`;
   const lastSettledResetKeyRef = useRef(settledResetKey);
   if (lastSettledResetKeyRef.current !== settledResetKey) {
     lastSettledResetKeyRef.current = settledResetKey;
@@ -433,7 +450,7 @@ function ThreadNavigationSidebarPane(
       pendingOrder,
       threads: threads.filter((thread) => thread.archivedAt === null),
       environmentId: options.selectedEnvironmentId,
-      projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
+      projectRefs: listProjectRefs,
       searchQuery: props.searchQuery,
       matchedThreadKeys,
       settlementEnvironmentIds,
@@ -460,7 +477,7 @@ function ThreadNavigationSidebarPane(
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
     threads,
-    selectedProjectScope,
+    listProjectRefs,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
@@ -531,8 +548,13 @@ function ThreadNavigationSidebarPane(
     snoozeEnvironmentIds,
     threadListV2Layout,
   ]);
+  const profileMenuAction = useMemo(
+    () => buildHomeProfileMenuAction(profileScope.options, profileScope.scope),
+    [profileScope.options, profileScope.scope],
+  );
   const listMenuActions = useMemo<MenuAction[]>(
     () => [
+      ...(profileMenuAction === null ? [] : [profileMenuAction]),
       {
         id: "environment",
         title: "Environment",
@@ -575,11 +597,16 @@ function ThreadNavigationSidebarPane(
             },
           ] satisfies MenuAction[])),
     ],
-    [environments, options, projectFilterOptions, selectedProjectKey],
+    [environments, options, profileMenuAction, projectFilterOptions, selectedProjectKey],
   );
   const handleListMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       const event = nativeEvent.event;
+      const nextProfileScope = resolveHomeProfileMenuEvent(event, profileScope.options);
+      if (nextProfileScope !== null) {
+        profileScope.setScope(nextProfileScope);
+        return;
+      }
       if (event === "environment:all") {
         setSelectedEnvironmentId(null);
         return;
@@ -603,7 +630,13 @@ function ThreadNavigationSidebarPane(
         return;
       }
     },
-    [environments, projectFilterOptions, setSelectedEnvironmentId],
+    [
+      environments,
+      profileScope.options,
+      profileScope.setScope,
+      projectFilterOptions,
+      setSelectedEnvironmentId,
+    ],
   );
 
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number | null>(null);
@@ -873,9 +906,12 @@ function ThreadNavigationSidebarPane(
       unsnoozeThread,
     ],
   );
-  // The list ignores sort/group options, so only the environment and project
-  // filters can light the "customized" state.
-  const filterCustomized = options.selectedEnvironmentId !== null || selectedProjectKey !== null;
+  // The list ignores sort/group options, so only the profile, environment and
+  // project filters can light the "customized" state.
+  const filterCustomized =
+    options.selectedEnvironmentId !== null ||
+    selectedProjectKey !== null ||
+    profileScope.scope !== "all";
   const filterIcon = filterCustomized
     ? "line.3.horizontal.decrease.circle.fill"
     : "line.3.horizontal.decrease.circle";
@@ -884,12 +920,24 @@ function ThreadNavigationSidebarPane(
       buildHomeListFilterMenu({
         environments,
         projects: projectFilterOptions,
+        profiles: profileScope.options,
         selectedEnvironmentId: options.selectedEnvironmentId,
         selectedProjectKey,
+        selectedProfileScope: profileScope.scope,
         onEnvironmentChange: setSelectedEnvironmentId,
         onProjectChange: setSelectedProjectKey,
+        onProfileScopeChange: profileScope.setScope,
       }),
-    [environments, options, projectFilterOptions, selectedProjectKey, setSelectedEnvironmentId],
+    [
+      environments,
+      options,
+      profileScope.options,
+      profileScope.scope,
+      profileScope.setScope,
+      projectFilterOptions,
+      selectedProjectKey,
+      setSelectedEnvironmentId,
+    ],
   );
   const nativeHeaderItems = useMemo(
     () =>
@@ -921,7 +969,9 @@ function ThreadNavigationSidebarPane(
               : "No matching threads"
             : selectedProjectScope !== null
               ? `No threads in ${selectedProjectScope.title}`
-              : "No threads yet"}
+              : profileScope.selectedLabel !== null
+                ? `No threads in ${profileScope.selectedLabel}`
+                : "No threads yet"}
     </Text>
   );
 

@@ -1,6 +1,7 @@
 import type { MenuAction } from "@react-native-menu/menu";
 import { useCallback, useMemo } from "react";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { buildHomeProfileMenuAction, resolveHomeProfileMenuEvent } from "./home-list-filter-menu";
 import { MaterialThreadListToolbar } from "./MaterialThreadListToolbar";
 import type { HomeHeaderProps } from "./HomeHeader.types";
 
@@ -15,9 +16,16 @@ export function HomeHeader(props: HomeHeaderProps) {
   // the filter menu only carries the filters and the "customized" icon state
   // keys off those alone.
   const hasCustomListOptions =
-    props.selectedEnvironmentId !== null || props.selectedProjectKey !== null;
+    props.selectedEnvironmentId !== null ||
+    props.selectedProjectKey !== null ||
+    props.selectedProfileScope !== "all";
+  const profileMenuAction = useMemo(
+    () => buildHomeProfileMenuAction(props.profiles, props.selectedProfileScope),
+    [props.profiles, props.selectedProfileScope],
+  );
   const menuActions = useMemo<MenuAction[]>(
     () => [
+      ...(profileMenuAction === null ? [] : [profileMenuAction]),
       {
         id: "environment",
         title: "Environment",
@@ -55,11 +63,23 @@ export function HomeHeader(props: HomeHeaderProps) {
             },
           ] satisfies MenuAction[])),
     ],
-    [props.environments, props.projects, props.selectedEnvironmentId, props.selectedProjectKey],
+    [
+      profileMenuAction,
+      props.environments,
+      props.projects,
+      props.selectedEnvironmentId,
+      props.selectedProjectKey,
+    ],
   );
   const handleMenuAction = useCallback(
     (event: { nativeEvent: { event: string } }) => {
       const id = event.nativeEvent.event;
+      const profileScope = resolveHomeProfileMenuEvent(id, props.profiles);
+      if (profileScope !== null) {
+        props.onProfileScopeChange(profileScope);
+        return;
+      }
+
       if (id === "environment:all") {
         props.onEnvironmentChange(null);
         return;

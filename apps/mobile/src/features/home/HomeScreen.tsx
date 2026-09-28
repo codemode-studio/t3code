@@ -63,6 +63,7 @@ import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-s
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
+  resolveHomeListProjectRefs,
   sortHomeProjectScopes,
   type HomeProjectSortOrder,
 } from "./homeThreadList";
@@ -84,6 +85,12 @@ interface HomeScreenProps {
   readonly searchQuery: string;
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly selectedProjectKey: string | null;
+  /** Project keys the profile filter shows, or null for every project. */
+  readonly profileProjectKeys: ReadonlySet<string> | null;
+  /** The chosen profile's name (or "Unassigned"), null when showing every profile. */
+  readonly selectedProfileLabel: string | null;
+  /** The chosen profile scope; keys list resets, since names can repeat. */
+  readonly selectedProfileScope: string;
   readonly projectSortOrder: HomeProjectSortOrder;
   readonly projectGroupingMode: SidebarProjectGroupingMode;
   readonly onSearchQueryChange: (query: string) => void;
@@ -325,9 +332,15 @@ export function HomeScreen(props: HomeScreenProps) {
       buildHomeProjectScopes({
         projects: props.projects,
         environmentId: props.selectedEnvironmentId,
+        profileProjectKeys: props.profileProjectKeys,
         projectGroupingMode: props.projectGroupingMode,
       }),
-    [props.projectGroupingMode, props.projects, props.selectedEnvironmentId],
+    [
+      props.profileProjectKeys,
+      props.projectGroupingMode,
+      props.projects,
+      props.selectedEnvironmentId,
+    ],
   );
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = useMemo(() => {
@@ -386,16 +399,25 @@ export function HomeScreen(props: HomeScreenProps) {
       ),
     [v2ScopeProjects],
   );
+  const v2ProjectRefs = useMemo(
+    () =>
+      resolveHomeListProjectRefs({
+        selectedScope: v2ScopedProjectGroup,
+        scopes: projectScopes,
+        profileProjectKeys: props.profileProjectKeys,
+      }),
+    [projectScopes, props.profileProjectKeys, v2ScopedProjectGroup],
+  );
   const v2ScopedProjectKeys = useMemo(
     () =>
-      v2ScopedProjectGroup === null
+      v2ProjectRefs === null
         ? null
         : new Set(
-            v2ScopedProjectGroup.projectRefs.map((projectRef) =>
+            v2ProjectRefs.map((projectRef) =>
               scopedProjectKey(projectRef.environmentId, projectRef.projectId),
             ),
           ),
-    [v2ScopedProjectGroup],
+    [v2ProjectRefs],
   );
   // Thread List v2 (beta): one flat list in creation order, no grouping.
   // Settled threads collapse into a recency tail below the card block.
@@ -456,7 +478,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const [settledVisibleCount, setSettledVisibleCount] = useState(
     THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   );
-  const settledResetKey = `${props.selectedEnvironmentId ?? "all"}:${v2ProjectScopeKey ?? "all"}:${props.searchQuery.trim()}`;
+  const settledResetKey = `${props.selectedEnvironmentId ?? "all"}:${v2ProjectScopeKey ?? "all"}:${props.selectedProfileScope}:${props.searchQuery.trim()}`;
   const lastSettledResetKeyRef = useRef(settledResetKey);
   if (lastSettledResetKeyRef.current !== settledResetKey) {
     lastSettledResetKeyRef.current = settledResetKey;
@@ -613,7 +635,7 @@ export function HomeScreen(props: HomeScreenProps) {
       pendingOrder,
       threads: props.threads.filter((thread) => thread.archivedAt === null),
       environmentId: props.selectedEnvironmentId,
-      projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
+      projectRefs: v2ProjectRefs,
       searchQuery: props.searchQuery,
       matchedThreadKeys,
       settlementEnvironmentIds,
@@ -639,7 +661,7 @@ export function HomeScreen(props: HomeScreenProps) {
     props.selectedEnvironmentId,
     props.threads,
     matchedThreadKeys,
-    v2ScopedProjectGroup,
+    v2ProjectRefs,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
@@ -964,6 +986,12 @@ export function HomeScreen(props: HomeScreenProps) {
       <EmptyState
         title={`No threads in ${v2ScopedProjectGroup.title}`}
         detail="Choose another project or create a new task."
+        variant={Platform.OS === "android" ? "plain" : undefined}
+      />
+    ) : props.selectedProfileLabel !== null ? (
+      <EmptyState
+        title={`No threads in ${props.selectedProfileLabel}`}
+        detail="Choose another profile or create a new task."
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : selectedEnvironmentLabel ? (
