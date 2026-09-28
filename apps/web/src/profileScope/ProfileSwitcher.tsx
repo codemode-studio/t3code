@@ -193,12 +193,61 @@ function ProfileScopeMenuPopup({
   );
 }
 
-/** Picks the company the sidebar shows: a row above the thread list. */
-export function ProfileSwitcher() {
+/**
+ * Picks the company the sidebar shows. Expanded, it is a full row above the thread list;
+ * collapsed, it is the profile avatar at the top of the icon rail.
+ */
+export function ProfileSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const { options, current, setScope, profiles, attentionElsewhere } = useScopeOptions();
   if (profiles.length === 0) return null;
   const elsewhereLabel =
     attentionElsewhere > 0 ? `${attentionElsewhere} waiting in other profiles` : null;
+
+  if (collapsed) {
+    return (
+      <>
+        <Menu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <MenuTrigger
+                  aria-label={`Profile: ${current.label}`}
+                  // The rail's icon buttons pad to a 16px glyph; the avatar needs the full 32px.
+                  render={
+                    <button
+                      type="button"
+                      className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2"
+                    />
+                  }
+                />
+              }
+            >
+              <span className="relative flex">
+                <ProfileAvatar option={current} size="md" />
+                {attentionElsewhere > 0 ? (
+                  <span
+                    aria-hidden
+                    className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-warning ring-2 ring-sidebar"
+                  />
+                ) : null}
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup side="right">
+              {current.label}
+              {elsewhereLabel ? ` · ${elsewhereLabel}` : ""}
+            </TooltipPopup>
+          </Tooltip>
+          <ProfileScopeMenuPopup
+            options={options}
+            current={current}
+            onSelect={setScope}
+            side="right"
+          />
+        </Menu>
+        <div aria-hidden className="my-0.5 h-px w-6 bg-sidebar-border" />
+      </>
+    );
+  }
 
   return (
     <>

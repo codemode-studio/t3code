@@ -7,10 +7,14 @@ import {
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { useSidebar } from "../components/ui/sidebar";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { resolveThreadRouteTarget } from "../threadRoutes";
+import { CollapsedThreadSidebar } from "./CollapsedThreadSidebar";
 import { ProfileScopeShortcuts } from "./ProfileSwitcher";
+import { SidebarContentSlot } from "./SidebarContentSlot";
 import { useProfileScopeState } from "./useProfileScope";
+import "./profileSidebar.css";
 
 /**
  * The sidebar shows the profile of the thread you open. Opening one from a notification, search
@@ -50,13 +54,22 @@ function ProfileFollowsActiveProject() {
   return null;
 }
 
-/** Wraps the app sidebar's content with the profile shortcuts and the follow-the-project rule. */
+/**
+ * The app sidebar's content: the expanded sidebar it wraps, and the icon rail in its place while
+ * collapsed on desktop. Mobile keeps its sheet, which only ever shows the expanded sidebar.
+ */
 export function ProfileAwareSidebar({ children }: { children: ReactNode }) {
+  const { state, isMobile } = useSidebar();
   return (
     <>
       <ProfileScopeShortcuts />
       <ProfileFollowsActiveProject />
-      {children}
+      <SidebarContentSlot
+        showRail={state === "collapsed" && !isMobile}
+        rail={<CollapsedThreadSidebar />}
+      >
+        {children}
+      </SidebarContentSlot>
     </>
   );
 }

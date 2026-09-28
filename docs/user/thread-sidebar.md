@@ -139,6 +139,10 @@ The sidebar follows the thread you open. Opening a thread from another profile, 
 notification, search, or link, switches to that profile, and so does picking another project for a
 new thread. Choosing a profile yourself while a thread is open keeps your choice.
 
+Collapsing the sidebar leaves a strip of icons: the profile, new thread, search, notes,
+automations, and one icon per pinned or active thread, marked with its status. Hover an icon for the
+thread's title. With **All profiles**, a colored edge shows each thread's profile.
+
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
