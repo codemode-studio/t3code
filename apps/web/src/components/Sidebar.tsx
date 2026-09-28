@@ -138,6 +138,7 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
+import { intersectProjectKeys } from "@t3tools/client-runtime/state/profile-scope";
 import { ProfileSwitcher } from "../profileScope/ProfileSwitcher";
 import { useProfileScopedProjectKeys } from "../profileScope/useProfileScope";
 import { vcsEnvironment } from "../state/vcs";
@@ -2477,13 +2478,18 @@ export default function Sidebar() {
   );
   const scopedProjectKeys = useMemo(
     () =>
-      scopedProjectGroup === null
-        ? profileProjectKeys
-        : new Set(
-            scopedProjectGroup.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+      // Fork (profiles): a project group can span environments whose members use different
+      // profiles, so a chosen project only keeps its members in the active profile.
+      intersectProjectKeys(
+        scopedProjectGroup === null
+          ? null
+          : new Set(
+              scopedProjectGroup.memberProjectRefs.map(
+                (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+              ),
             ),
-          ),
+        profileProjectKeys,
+      ),
     [profileProjectKeys, scopedProjectGroup],
   );
   // A persisted scope whose project is gone falls back to all projects, but

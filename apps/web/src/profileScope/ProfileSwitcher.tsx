@@ -24,6 +24,7 @@ import { cn } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   profileMonogram,
+  profileScopeForId,
   type ProfileScope,
   type ProfileScopeProfile,
 } from "@t3tools/client-runtime/state/profile-scope";
@@ -83,7 +84,7 @@ function useScopeOptions() {
   const options: ScopeOption[] = [
     { scope: "all", label: "All profiles", profile: null, attention: 0 },
     ...state.profiles.map((profile) => ({
-      scope: profile.id,
+      scope: profileScopeForId(profile.id),
       label: profile.name,
       profile,
       attention: attention.get(profile.id) ?? 0,

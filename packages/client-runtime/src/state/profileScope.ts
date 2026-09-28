@@ -5,8 +5,25 @@ import type {
   ServerSettings,
 } from "@t3tools/contracts";
 
-/** What a client's thread list shows: every project, one profile's projects, or those without one. */
-export type ProfileScope = "all" | "unassigned" | ProviderProfileId;
+/**
+ * What a client's thread list shows: every project, one profile's projects, or those without one.
+ * Profile ids are slugs of user-chosen names, so a profile named "All" has the id `all`; tagging
+ * profile values keeps them from ever meaning a special scope.
+ */
+export type ProfileScope = "all" | "unassigned" | `profile:${ProviderProfileId}`;
+
+const PROFILE_SCOPE_PREFIX = "profile:";
+
+export function profileScopeForId(id: ProviderProfileId): `profile:${ProviderProfileId}` {
+  return `${PROFILE_SCOPE_PREFIX}${id}`;
+}
+
+/** The profile a scope selects, or null for "all" and "unassigned". */
+export function profileIdOfScope(scope: ProfileScope): ProviderProfileId | null {
+  return scope.startsWith(PROFILE_SCOPE_PREFIX)
+    ? (scope.slice(PROFILE_SCOPE_PREFIX.length) as ProviderProfileId)
+    : null;
+}
 
 export interface ProfileScopeProfile {
   readonly id: ProviderProfileId;
@@ -89,24 +106,28 @@ export function buildProjectProfileMap(
 }
 
 /**
- * The scope to show for a stored choice. A profile no connected environment defines shows
- * everything, without forgetting the choice, so it returns when that environment reconnects.
+ * The scope to show for a stored choice. A choice that has nothing to show, a profile no
+ * connected environment defines or "unassigned" once every project has a profile, shows
+ * everything without forgetting the choice, so it returns when that changes back.
  */
 export function resolveProfileScope(
   stored: string,
   profiles: ReadonlyArray<ProfileScopeProfile>,
+  hasUnassignedProjects: boolean,
 ): ProfileScope {
   if (profiles.length === 0) return "all";
-  if (stored === "all" || stored === "unassigned") return stored;
-  const profile = profiles.find((candidate) => candidate.id === stored);
-  return profile ? profile.id : "all";
+  if (stored === "unassigned") return hasUnassignedProjects ? "unassigned" : "all";
+  if (!stored.startsWith(PROFILE_SCOPE_PREFIX)) return "all";
+  const id = stored.slice(PROFILE_SCOPE_PREFIX.length);
+  const profile = profiles.find((candidate) => candidate.id === id);
+  return profile ? profileScopeForId(profile.id) : "all";
 }
 
 /** The scope that contains a project: its profile, or the unassigned bucket. */
 export function profileScopeOfProject(
   profileId: ProviderProfileId | null | undefined,
 ): ProfileScope {
-  return profileId ?? "unassigned";
+  return profileId == null ? "unassigned" : profileScopeForId(profileId);
 }
 
 export function projectMatchesScope(
@@ -115,7 +136,7 @@ export function projectMatchesScope(
 ): boolean {
   if (scope === "all") return true;
   if (scope === "unassigned") return profileId == null;
-  return profileId === scope;
+  return profileId === profileIdOfScope(scope);
 }
 
 /** Project keys visible in a scope, or null when nothing is filtered. */
@@ -129,6 +150,55 @@ export function scopedProjectKeysForProfile(
     if (projectMatchesScope(scope, profileId)) keys.add(key);
   }
   return keys;
+}
+
+/**
+ * Keys allowed by both filters, where null allows everything. A project group can span
+ * environments whose members use different profiles, so choosing a project inside a profile keeps
+ * only the members in that profile.
+ */
+export function intersectProjectKeys(
+  left: ReadonlySet<string> | null,
+  right: ReadonlySet<string> | null,
+): ReadonlySet<string> | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return new Set([...left].filter((key) => right.has(key)));
+}
+
+/** Where the user is: the thread or draft the route shows, and the project it belongs to. */
+export interface ProfileNavigation {
+  /** Identifies the thread or draft, so opening another thread of the same project counts. */
+  readonly routeKey: string;
+  readonly projectKey: string;
+}
+
+export type ProfileNavigationOutcome =
+  /** The project's profile is not known yet; ask again when projects load. */
+  | { readonly kind: "pending" }
+  /** Nothing new, or the scope already shows the project. */
+  | { readonly kind: "stay" }
+  | { readonly kind: "switch"; readonly scope: ProfileScope };
+
+/**
+ * Follows navigation, not the scope: opening a thread or draft, or moving a draft to another
+ * project, shows that project's profile. A profile picked by hand holds until the next navigation.
+ */
+export function followNavigation(input: {
+  readonly followed: ProfileNavigation | null;
+  readonly current: ProfileNavigation;
+  readonly scope: ProfileScope;
+  readonly projectProfiles: ReadonlyMap<string, ProviderProfileId | null>;
+}): ProfileNavigationOutcome {
+  const { followed, current } = input;
+  if (followed?.routeKey === current.routeKey && followed.projectKey === current.projectKey) {
+    return { kind: "stay" };
+  }
+  if (!input.projectProfiles.has(current.projectKey)) return { kind: "pending" };
+  const profileId = input.projectProfiles.get(current.projectKey);
+  return projectMatchesScope(input.scope, profileId)
+    ? { kind: "stay" }
+    : { kind: "switch", scope: profileScopeOfProject(profileId) };
 }
 
 /** Two letters for a profile avatar: initials of the first two words, else the first two letters. */

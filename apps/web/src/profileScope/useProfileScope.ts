@@ -12,6 +12,7 @@ import { useUiStateStore } from "../uiStateStore";
 import {
   buildProjectProfileMap,
   collectProfiles,
+  profileIdOfScope,
   resolveProfileScope,
   scopedProjectKeysForProfile,
   type ProfileScope,
@@ -20,7 +21,8 @@ import {
 import { countAttentionByProfile } from "./profileScope.logic";
 
 // Device-local like the project filter: each client picks the company it is looking at.
-const PROFILE_SCOPE_STORAGE_KEY = "t3code:profile-scope:v1";
+// v2 tags profile values (`profile:<id>`); a v1 value could be a profile id equal to a special scope.
+const PROFILE_SCOPE_STORAGE_KEY = "t3code:profile-scope:v2";
 
 /** Profiles, each project's profile, and the scope the sidebar is showing. */
 export function useProfileScopeState() {
@@ -44,14 +46,15 @@ export function useProfileScopeState() {
     "all",
     Schema.String,
   );
-  const scope = resolveProfileScope(storedScope, profiles);
-  const setScope = useCallback((next: ProfileScope) => setStoredScope(next), [setStoredScope]);
   const hasUnassignedProjects = useMemo(
     () => [...projectProfiles.values()].some((profileId) => profileId === null),
     [projectProfiles],
   );
+  const scope = resolveProfileScope(storedScope, profiles, hasUnassignedProjects);
+  const setScope = useCallback((next: ProfileScope) => setStoredScope(next), [setStoredScope]);
+  const activeProfileId = profileIdOfScope(scope);
   const activeProfile: ProfileScopeProfile | null =
-    profiles.find((profile) => profile.id === scope) ?? null;
+    profiles.find((profile) => profile.id === activeProfileId) ?? null;
   return {
     profiles,
     projectProfiles,
