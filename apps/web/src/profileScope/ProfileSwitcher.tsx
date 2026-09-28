@@ -42,7 +42,7 @@ interface ScopeOption {
  * beside it. The small square overhangs its 16px icon slot by 2px per side, so its center lines up
  * with the icons of neighboring rows.
  */
-export function ProfileAvatar({
+function ProfileAvatar({
   option,
   size,
 }: {

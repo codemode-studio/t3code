@@ -18,7 +18,7 @@ import {
   scopedProjectKeysForProfile,
   type ProfileNavigation,
   type ProfileScope,
-} from "./profileScope";
+} from "./profileScope.ts";
 
 const primary = EnvironmentId.make("env-primary");
 const remote = EnvironmentId.make("env-remote");

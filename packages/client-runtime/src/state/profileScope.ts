@@ -45,7 +45,7 @@ export function profileScopeProjectKey(environmentId: EnvironmentId, projectId: 
  * The profile a project uses on its own environment: its override, including an explicit
  * "no profile", else the environment default.
  */
-export function resolveProjectProviderProfileId(
+function resolveProjectProviderProfileId(
   settings: Pick<ServerSettings, "providerProfileId" | "projectSettingsOverrides">,
   projectId: ProjectId,
 ): ProviderProfileId | null {
@@ -124,13 +124,11 @@ export function resolveProfileScope(
 }
 
 /** The scope that contains a project: its profile, or the unassigned bucket. */
-export function profileScopeOfProject(
-  profileId: ProviderProfileId | null | undefined,
-): ProfileScope {
+function profileScopeOfProject(profileId: ProviderProfileId | null | undefined): ProfileScope {
   return profileId == null ? "unassigned" : profileScopeForId(profileId);
 }
 
-export function projectMatchesScope(
+function projectMatchesScope(
   scope: ProfileScope,
   profileId: ProviderProfileId | null | undefined,
 ): boolean {
