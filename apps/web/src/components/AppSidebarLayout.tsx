@@ -303,7 +303,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <ProjectProjectionRetention />
         <Sidebar
           side="left"
-          collapsible="offcanvas"
+          // Fork (profiles): collapses to the icon rail that ProfileAwareSidebar renders.
+          collapsible="icon"
           data-app-sidebar=""
           role="navigation"
           aria-label={isOnSettings ? "Settings" : "Threads"}

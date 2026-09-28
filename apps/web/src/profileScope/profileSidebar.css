@@ -1,0 +1,64 @@
+/*
+ * Collapsed to icons, the rail starts below the titlebar row. That row then spans the whole
+ * window, like the hidden sidebar's: the macOS traffic lights (wider than the rail) and the fixed
+ * sidebar toggle sit on one continuous bar instead of straddling the rail's edge.
+ */
+[data-slot="sidebar"][data-collapsible="icon"] [data-slot="sidebar-container"] {
+  top: var(--workspace-topbar-height);
+  height: calc(100svh - var(--workspace-topbar-height));
+}
+
+/*
+ * Headers inset past the toggle when the sidebar collapses (see workspaceTitlebar.ts), measured
+ * from the window edge. The rail already moved them right by its width, so only the rest of the
+ * window controls and toggle needs clearing.
+ */
+[data-slot="sidebar-wrapper"]:has(> [data-slot="sidebar"][data-collapsible="icon"])
+  > :not([data-slot="sidebar"]) {
+  --workspace-titlebar-content-left: max(
+    var(--workspace-gutter-start),
+    calc(
+      var(--workspace-controls-left) + var(--workspace-titlebar-control-size) +
+        var(--workspace-titlebar-control-gap) - var(--sidebar-width-icon)
+    )
+  );
+}
+
+/*
+ * Expanded sidebar header: traffic lights, the brand, and the sidebar toggle at the far right,
+ * with the lights' own left padding repeated between the lights and the brand and after the
+ * toggle. The macOS app reserves --desktop-window-controls-inset (90px at 100% zoom) for lights
+ * drawn 16px from the edge and 52px wide; the ratios keep that geometry under zoom. Without
+ * lights (web, Windows, Linux, macOS fullscreen) both insets fall back to
+ * --workspace-controls-left.
+ */
+[data-slot="sidebar-wrapper"] {
+  --sidebar-header-edge: min(
+    var(--workspace-controls-left),
+    calc(var(--desktop-window-controls-inset, 90px) * 16 / 90)
+  );
+  --sidebar-header-brand-left: max(
+    var(--sidebar-header-edge),
+    calc(var(--workspace-controls-left) - var(--desktop-window-controls-inset, 90px) * 6 / 90)
+  );
+}
+
+@media (min-width: 48rem) {
+  [data-slot="sidebar-wrapper"] > [data-slot="sidebar"] {
+    --workspace-titlebar-content-left: var(--sidebar-header-brand-left);
+  }
+
+  [data-slot="sidebar-wrapper"][data-sidebar-state="expanded"] > [data-sidebar-control] {
+    /* 2px: the toggle's own ml-px and the sidebar's 1px right border. */
+    left: calc(
+      var(--sidebar-width) - var(--sidebar-header-edge) - var(--workspace-titlebar-control-size) -
+        2px
+    );
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    [data-panel-animations="true"] > [data-sidebar-control] {
+      transition: left var(--panel-animation-duration) ease-out;
+    }
+  }
+}
