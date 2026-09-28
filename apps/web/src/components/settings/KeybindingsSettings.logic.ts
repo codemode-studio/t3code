@@ -15,8 +15,15 @@ import { shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
+// Every `usage.*` command needs a place here: the sorts fall back to labels for the rest, and a
+// usage command ordered by label against ordered ones makes the comparison inconsistent.
 const usageCommandOrder = new Map<KeybindingCommand, number>(
-  [...METRIC_OPTIONS, ...WINDOW_OPTIONS].map((option, index) => [option.command, index]),
+  (
+    [
+      "usage.open",
+      ...[...METRIC_OPTIONS, ...WINDOW_OPTIONS].map((option) => option.command),
+    ] as const
+  ).map((command, index) => [command, index]),
 );
 
 function compareUsageCommands(left: KeybindingCommand, right: KeybindingCommand): number | null {
