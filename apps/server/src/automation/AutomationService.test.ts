@@ -1,4 +1,5 @@
 import {
+  type Automation,
   type AutomationConfig,
   ProjectId,
   ProviderDriverKind,
@@ -12,12 +13,14 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import { ServerConfig } from "../config.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
@@ -61,6 +64,8 @@ const makeLayer = (input: {
   readonly project: OrchestrationProjectShell | null;
   readonly settings?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
+  /** Runs after a command is recorded, e.g. to hold one up. */
+  readonly afterRecord?: (command: OrchestrationCommand) => Effect.Effect<void>;
 }) =>
   AutomationService.layer.pipe(
     Layer.provide(
@@ -68,6 +73,7 @@ const makeLayer = (input: {
         Layer.mock(OrchestrationEngineService)({
           dispatch: (command) =>
             Ref.update(input.commands, (commands) => [...commands, command]).pipe(
+              Effect.andThen(input.afterRecord?.(command) ?? Effect.void),
               Effect.as({ sequence: 1 }),
             ),
         }),
@@ -96,7 +102,7 @@ const withService = <A, E>(
       readonly commands: Ref.Ref<ReadonlyArray<OrchestrationCommand>>;
     },
   ) => Effect.Effect<A, E>,
-  environment: Pick<Parameters<typeof makeLayer>[0], "settings" | "providers"> = {},
+  environment: Pick<Parameters<typeof makeLayer>[0], "settings" | "providers" | "afterRecord"> = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -138,6 +144,93 @@ describe("AutomationService", () => {
         Option.some([created.id]),
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("an edit replaces the saved config and reaches subscribers", () =>
+    withService(PROJECT, (service) =>
+      Effect.gen(function* () {
+        const created = yield* service.create(CONFIG);
+        const updated = yield* service.update(created.id, {
+          ...CONFIG,
+          name: "Weekly review",
+          prompt: "Review last week's commits.",
+        });
+        assert.strictEqual(updated.id, created.id);
+        assert.strictEqual(updated.prompt, "Review last week's commits.");
+
+        const snapshot = yield* service.changes.pipe(Stream.runHead);
+        assert.deepStrictEqual(
+          Option.map(snapshot, (value) => value.automations.map((entry) => entry.name)),
+          Option.some(["Weekly review"]),
+        );
+      }),
+    ),
+  );
+
+  it.effect("idle scheduler ticks stay silent and a due time starts one run", () =>
+    withService(PROJECT, (service, { stateDir }) =>
+      Effect.gen(function* () {
+        // Created at the test clock's epoch; the next run is due five minutes later.
+        yield* service.create({
+          ...CONFIG,
+          triggers: [{ type: "cron", expression: "*/5 * * * *" }],
+        });
+        const published = yield* service.changes.pipe(
+          Stream.takeUntil((snapshot) => snapshot.automations[0]?.runs.length === 1),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* service.start();
+        yield* TestClock.adjust("5 minutes");
+
+        // Ten idle ticks came first; subscribers only heard the initial list and the run.
+        const snapshots = yield* Fiber.join(published);
+        assert.deepStrictEqual(
+          snapshots.map((snapshot) => snapshot.automations[0]?.runs.length),
+          [0, 1],
+        );
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.pipe(
+          Effect.provide(ServerConfig.layerTest(process.cwd(), stateDir)),
+        );
+        const onDisk = yield* fs.readFileString(path.join(config.stateDir, "automations.json"));
+        assert.include(onDisk, '"scheduleCursor": "1970-01-01T00:05:00.000Z"');
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ),
+  );
+
+  it.effect("a run that is slow to start holds up only its own automation", () =>
+    withService(
+      PROJECT,
+      (service, { commands }) =>
+        Effect.gen(function* () {
+          const everyMinute = [{ type: "cron" as const, expression: "* * * * *" }];
+          yield* service.create({ ...CONFIG, name: "Slow", triggers: everyMinute });
+          yield* service.create({ ...CONFIG, name: "Quick", triggers: everyMinute });
+          const quickRuns = (snapshot: { automations: ReadonlyArray<Automation> }) =>
+            snapshot.automations.find((entry) => entry.name === "Quick")?.runs.length ?? 0;
+          yield* service.start();
+          // A minute at a time, waiting for each of Quick's runs to be recorded.
+          for (const runs of [1, 2, 3]) {
+            yield* TestClock.adjust("1 minute");
+            yield* service.changes.pipe(
+              Stream.filter((snapshot) => quickRuns(snapshot) === runs),
+              Stream.runHead,
+            );
+          }
+
+          // Still creating its first thread, so the later due times did not start it again.
+          const slowStarts = (yield* Ref.get(commands)).filter(
+            (command) => command.type === "thread.create" && command.title === "Slow",
+          );
+          assert.strictEqual(slowStarts.length, 1);
+        }).pipe(Effect.scoped),
+      {
+        afterRecord: (command) =>
+          command.type === "thread.create" && command.title === "Slow" ? Effect.never : Effect.void,
+      },
+    ),
   );
 
   it.effect("a local run creates a thread and starts a turn with the instructions", () =>
