@@ -25,6 +25,7 @@ import { useDebouncedValue } from "../../state/queries";
 import { usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { isElectron } from "../../env";
+import { ensureLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import ChatMarkdown from "../ChatMarkdown";
 import { Button } from "../ui/button";
@@ -190,7 +191,12 @@ export function NotesPage({
     }
   };
   const deleteSelected = async () => {
-    if (!selected || !window.confirm(`Delete "${selected.title}"?`)) return;
+    if (!selected) return;
+    const confirmed = await ensureLocalApi().dialogs.confirm(
+      [`Delete note "${selected.title}"?`, "This permanently deletes this note."].join("\n"),
+      { variant: "destructive" },
+    );
+    if (!confirmed) return;
     const result = await remove({
       environmentId: selected.environmentId,
       input: { id: selected.id },
