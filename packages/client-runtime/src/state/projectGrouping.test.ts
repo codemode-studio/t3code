@@ -136,6 +136,27 @@ describe("buildProjectGroups", () => {
     }
   });
 
+  it("groups one checkout across environments whose gh default repositories differ", () => {
+    const fork = {
+      ...repositoryIdentity,
+      canonicalKey: "github.com/julius/t3code",
+      groupKey: "github.com/t3tools/t3code",
+    };
+    const projects = [
+      makeProject("linux", "/home/julius/t3code"),
+      makeProject("mac", "/Users/julius/t3code", {
+        environmentId: EnvironmentId.make("environment-mac"),
+        repositoryIdentity: fork,
+      }),
+    ];
+
+    const groups = buildProjectGroups({ projects, settings: settings("repository") });
+
+    expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
+      ["linux", "mac"],
+    ]);
+  });
+
   it("uses a shared custom title as the repository group's label", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "Custom project" }),

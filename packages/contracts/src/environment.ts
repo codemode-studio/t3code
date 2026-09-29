@@ -208,6 +208,12 @@ export type RepositoryIdentityLocator = typeof RepositoryIdentityLocator.Type;
 
 export const RepositoryIdentity = Schema.Struct({
   canonicalKey: TrimmedNonEmptyString,
+  /**
+   * Key for matching the same checkout across environments. Unlike `canonicalKey`
+   * it ignores `gh repo set-default`, which is per-machine config. Older servers
+   * omit it; fall back to `canonicalKey`.
+   */
+  groupKey: Schema.optionalKey(TrimmedNonEmptyString),
   locator: RepositoryIdentityLocator,
   /** Repository browser URL resolved from the server's configured hosting account. */
   webUrl: Schema.optionalKey(TrimmedNonEmptyString),

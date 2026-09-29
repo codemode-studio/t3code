@@ -310,6 +310,8 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
 
       expect(identity?.locator.remoteName).toBe("origin");
       expect(identity?.canonicalKey).toBe("github.com/julius/t3code");
+      // Grouping ignores the per-machine gh default.
+      expect(identity?.groupKey).toBe("github.com/t3tools/t3code");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

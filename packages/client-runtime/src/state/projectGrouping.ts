@@ -96,27 +96,35 @@ export function resolveProjectGroupingMode(
   );
 }
 
+/** Key that identifies the same repository across environments, or null when unknown. */
+export function deriveRepositoryGroupKey(
+  project: Pick<EnvironmentProject, "repositoryIdentity"> | null | undefined,
+): string | null {
+  const identity = project?.repositoryIdentity;
+  return identity?.groupKey ?? identity?.canonicalKey ?? null;
+}
+
 function deriveRepositoryScopedKey(
   project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
   groupingMode: SidebarProjectGroupingMode,
 ): string | null {
-  const canonicalKey = project.repositoryIdentity?.canonicalKey;
-  if (!canonicalKey) {
+  const repositoryKey = deriveRepositoryGroupKey(project);
+  if (!repositoryKey) {
     return null;
   }
 
   if (groupingMode === "repository") {
-    return canonicalKey;
+    return repositoryKey;
   }
 
   const relativeProjectPath = deriveRepositoryRelativeProjectPath(project);
   if (relativeProjectPath === null) {
-    return canonicalKey;
+    return repositoryKey;
   }
 
   return relativeProjectPath.length === 0
-    ? canonicalKey
-    : `${canonicalKey}::${relativeProjectPath}`;
+    ? repositoryKey
+    : `${repositoryKey}::${relativeProjectPath}`;
 }
 
 export function deriveLogicalProjectKey(

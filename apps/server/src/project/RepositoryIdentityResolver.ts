@@ -105,9 +105,11 @@ function pickPrimaryRemote(
 function buildRepositoryIdentity(input: {
   readonly remoteName: string;
   readonly remoteUrl: string;
+  readonly groupRemoteUrl: string;
   readonly rootPath: string;
 }): RepositoryIdentity {
   const canonicalKey = normalizeGitRemoteUrl(input.remoteUrl);
+  const groupKey = normalizeGitRemoteUrl(input.groupRemoteUrl);
   const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
   const repositoryPath = canonicalKey.split("/").slice(1).join("/");
   const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
@@ -116,6 +118,7 @@ function buildRepositoryIdentity(input: {
 
   return {
     canonicalKey,
+    groupKey,
     locator: {
       source: "git-remote",
       remoteName: input.remoteName,
@@ -173,8 +176,18 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     ghDefaultResult._tag === "Some" && ghDefaultResult.value.code === 0
       ? parseGhDefaultRemote(ghDefaultResult.value.stdout)
       : null;
-  const remote = pickPrimaryRemote(parseRemoteFetchUrls(remoteResult.value.stdout), ghDefault);
-  return remote ? buildRepositoryIdentity({ ...remote, rootPath: cacheKey }) : null;
+  const remotes = parseRemoteFetchUrls(remoteResult.value.stdout);
+  const remote = pickPrimaryRemote(remotes, ghDefault);
+  // The gh default is per-machine config, so grouping across environments
+  // skips it; otherwise one checkout splits in two when machines disagree.
+  const groupRemote = pickPrimaryRemote(remotes, null);
+  return remote && groupRemote
+    ? buildRepositoryIdentity({
+        ...remote,
+        groupRemoteUrl: groupRemote.remoteUrl,
+        rootPath: cacheKey,
+      })
+    : null;
 });
 
 export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (

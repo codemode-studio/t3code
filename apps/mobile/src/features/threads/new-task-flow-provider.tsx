@@ -79,6 +79,7 @@ import {
   setPendingConnectionError,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
+import { deriveRepositoryGroupKey } from "@t3tools/client-runtime/state/project-grouping";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
 import {
@@ -341,7 +342,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // whatever unrelated project happens to be first on the other machine. Repository
   // identity is the primary signal; projects that haven't reported one yet (still
   // indexing) fall back to workspace basename / title so a valid host isn't hidden.
-  const selectedRepositoryKey = selectedProject?.repositoryIdentity?.canonicalKey ?? null;
+  const selectedRepositoryKey = deriveRepositoryGroupKey(selectedProject);
   // `|| null` (not `??`): a pending-task placeholder project can have an empty
   // workspaceRoot, and an "" basename would reject every real host below.
   const selectedWorkspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
@@ -356,7 +357,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (selectedRepositoryKey === null && selectedWorkspaceBasename === null) {
         return true;
       }
-      const projectKey = project.repositoryIdentity?.canonicalKey ?? null;
+      const projectKey = deriveRepositoryGroupKey(project);
       if (selectedRepositoryKey !== null && projectKey !== null) {
         return projectKey === selectedRepositoryKey;
       }

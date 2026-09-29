@@ -21,6 +21,7 @@ import {
   resolveProviderProfileFallbackModelSelection,
 } from "@t3tools/shared/projectSettings";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { deriveRepositoryGroupKey } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   AUTOMATION_GITHUB_EVENT_LABELS,
@@ -1170,10 +1171,10 @@ function matchProjectOn(
 ): ProjectId | null {
   if (!from) return null;
   const candidates = projects.filter((project) => project.environmentId === environmentId);
-  const repository = from.repositoryIdentity?.canonicalKey;
+  const repository = deriveRepositoryGroupKey(from);
   const match =
     (repository
-      ? candidates.find((project) => project.repositoryIdentity?.canonicalKey === repository)
+      ? candidates.find((project) => deriveRepositoryGroupKey(project) === repository)
       : undefined) ??
     candidates.find((project) => project.workspaceRoot === from.workspaceRoot) ??
     candidates.find((project) => project.title === from.title);
