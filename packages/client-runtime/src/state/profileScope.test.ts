@@ -90,6 +90,11 @@ describe("collectProfiles", () => {
     expect(profiles.map((profile) => profile.name)).toEqual(["Acme", "Globex", "Initech"]);
     expect(profiles[0]?.color).toBe("#2563eb");
     expect(profiles[1]?.color).toBeNull();
+    expect(profiles.map((profile) => profile.environmentIds)).toEqual([
+      [primary, remote],
+      [primary],
+      [remote],
+    ]);
   });
 });
 

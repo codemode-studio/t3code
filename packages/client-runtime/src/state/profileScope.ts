@@ -29,6 +29,8 @@ export interface ProfileScopeProfile {
   readonly id: ProviderProfileId;
   readonly name: string;
   readonly color: string | null;
+  /** Environments that define the profile, the primary first. */
+  readonly environmentIds: ReadonlyArray<EnvironmentId>;
 }
 
 type ProfileSettings = Pick<
@@ -78,12 +80,23 @@ export function collectProfiles(
     ([left], [right]) =>
       Number(right === primaryEnvironmentId) - Number(left === primaryEnvironmentId),
   );
-  const byId = new Map<ProviderProfileId, ProfileScopeProfile>();
-  for (const [, settings] of ordered) {
+  const byId = new Map<
+    ProviderProfileId,
+    ProfileScopeProfile & { environmentIds: EnvironmentId[] }
+  >();
+  for (const [environmentId, settings] of ordered) {
     for (const [id, profile] of Object.entries(settings.providerProfiles) as Array<
       [ProviderProfileId, ServerSettings["providerProfiles"][ProviderProfileId]]
     >) {
-      if (!byId.has(id)) byId.set(id, { id, name: profile.name, color: profile.color ?? null });
+      const existing = byId.get(id);
+      if (existing) existing.environmentIds.push(environmentId);
+      else
+        byId.set(id, {
+          id,
+          name: profile.name,
+          color: profile.color ?? null,
+          environmentIds: [environmentId],
+        });
     }
   }
   return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name));
