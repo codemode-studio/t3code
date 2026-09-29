@@ -49,8 +49,12 @@ jobs:
     name: Check if a release is due
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       due: ${{ steps.check.outputs.due }}
+      date: ${{ steps.check.outputs.date }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -60,9 +64,10 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const { shouldReleaseNightly } = require('./.github/scripts/check-nightly-release.cjs');
-            const due = context.eventName !== 'schedule' || (await shouldReleaseNightly({ github, context, core }));
+            const { resolveForkRelease } = require('./.github/scripts/fork-release.cjs');
+            const { due, date } = await resolveForkRelease({ github, context, core });
             core.setOutput('due', due);
+            if (date) core.setOutput('date', date);
 
   version:
     name: Resolve version
@@ -102,10 +107,12 @@ jobs:
 
       - id: resolve
         shell: bash
+        env:
+          RELEASE_DATE: ${{ needs.due.outputs.date }}
         run: |
           set -euo pipefail
           node scripts/resolve-nightly-release.ts \
-            --date "$(date -u -d "${{ github.run_started_at }}" +%Y%m%d)" \
+            --date "$RELEASE_DATE" \
             --run-number "${{ github.run_number }}" \
             --sha "$GITHUB_SHA" \
             --github-output
