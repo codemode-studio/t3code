@@ -1,6 +1,8 @@
-# Fork-only build train: every push to main becomes one nightly-versioned
-# prerelease on this repository, so a Linux and a macOS install of the same
-# commit share one version and can each fetch the other's t3 runtime over SSH.
+# Fork-only build train: like upstream's nightly, main is checked on a
+# schedule and becomes one nightly-versioned prerelease on this repository at
+# most every six hours, so each release collects every commit since the last.
+# A Linux and a macOS install of the same build share one version and can each
+# fetch the other's t3 runtime over SSH.
 #
 # - Linux (GitHub-hosted) builds the AppImage with an update feed pointing at
 #   this repository, so the installed AppImage updates itself.
@@ -11,23 +13,28 @@
 # - Both desktop builds bake in this repository's release URL, so SSH remotes
 #   download the matching t3 archive from here instead of upstream.
 #
-# Only push and manual dispatch run here: a pull_request trigger would let
+# Manual dispatch builds main right away, skipping the six-hour gap. Only
+# schedule and manual dispatch run here: a pull_request trigger would let
 # untrusted code reach the self-hosted Mac.
 
 name: Fork Release
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    # Same cadence as upstream's nightly; avoid minute zero, when GitHub
+    # scheduled jobs are busiest.
+    - cron: "8,38 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# The newest main wins; a superseded build is not worth finishing.
+# Builds run to completion and publish in order. A scheduled run that waited
+# here rechecks the gap, so it skips once the build ahead of it has published.
 concurrency:
   group: fork-release
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 env:
   T3CODE_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download
@@ -36,8 +43,31 @@ env:
   KEEP_RELEASES: "15"
 
 jobs:
+  # Scheduled runs publish only when the last nightly is six hours old and main
+  # has moved past it; the rule is shared with upstream's release workflow.
+  due:
+    name: Check if a release is due
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      due: ${{ steps.check.outputs.due }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: .github/scripts
+
+      - id: check
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { shouldReleaseNightly } = require('./.github/scripts/check-nightly-release.cjs');
+            const due = context.eventName !== 'schedule' || (await shouldReleaseNightly({ github, context, core }));
+            core.setOutput('due', due);
+
   version:
     name: Resolve version
+    needs: due
+    if: needs.due.outputs.due == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -75,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/resolve-nightly-release.ts \
-            --date "$(date -u -d "${{ github.event.head_commit.timestamp || github.run_started_at }}" +%Y%m%d)" \
+            --date "$(date -u -d "${{ github.run_started_at }}" +%Y%m%d)" \
             --run-number "${{ github.run_number }}" \
             --sha "$GITHUB_SHA" \
             --github-output
