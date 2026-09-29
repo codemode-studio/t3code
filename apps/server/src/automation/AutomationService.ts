@@ -69,7 +69,10 @@ import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 /** What the file keeps beyond the public record: how far each trigger source has been read. */
 const StoredAutomation = Schema.Struct({
   ...Automation.fields,
-  /** Scheduled times at or before this instant have been handled. */
+  /**
+   * When the last scheduled run started or the automation was last saved; only later times can
+   * start a run. It moves only then, so an idle tick never rewrites the file.
+   */
   scheduleCursor: IsoDateTime,
   /** GitHub items created at or before this instant have been handled; null until first poll. */
   githubCursor: Schema.NullOr(IsoDateTime),
@@ -455,6 +458,29 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  /**
+   * Automations with a run starting or a GitHub poll going. That work runs off the tick loop, so
+   * a slow setup script or `gh` call holds up only its own automation, which ticks skip until it
+   * is done. A skipped due time still starts afterwards if it is within the catch-up window.
+   */
+  const busy = new Set<string>();
+  const inBackground = (id: string, work: Effect.Effect<unknown, AutomationError>) =>
+    Effect.suspend(() => {
+      if (busy.has(id)) return Effect.void;
+      busy.add(id);
+      return work.pipe(
+        Effect.catchCause((failure) =>
+          Effect.logWarning("automation background work failed", {
+            automationId: id,
+            cause: Cause.pretty(failure),
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => busy.delete(id))),
+        Effect.forkChild,
+        Effect.asVoid,
+      );
+    });
+
   const scheduleTick = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
     const nowText = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
@@ -469,12 +495,16 @@ const make = Effect.gen(function* () {
         if (at === null) return [];
         return at > cursorMs && nowMs - at <= window ? [trigger] : [];
       });
-      yield* patchAutomation(automation.id, (stored) => ({ ...stored, scheduleCursor: nowText }));
       // Two schedules due in the same tick are one run, not two copies of the same work.
       const [first] = due;
-      if (first) {
-        yield* executeRun(automation, describeTrigger(first), null, null);
-      }
+      if (!first) continue;
+      yield* inBackground(
+        automation.id,
+        // Recorded before the run starts, so a crash mid-run cannot start it again on restart.
+        patchAutomation(automation.id, (stored) => ({ ...stored, scheduleCursor: nowText })).pipe(
+          Effect.andThen(executeRun(automation, describeTrigger(first), null, null)),
+        ),
+      );
     }
   });
 
@@ -543,7 +573,9 @@ const make = Effect.gen(function* () {
           (latest, createdAt) => (Date.parse(createdAt) > Date.parse(latest) ? createdAt : latest),
           since,
         );
-      yield* patchAutomation(automation.id, (stored) => ({ ...stored, githubCursor: newest }));
+      if (newest !== since) {
+        yield* patchAutomation(automation.id, (stored) => ({ ...stored, githubCursor: newest }));
+      }
 
       for (const { item, kind } of fresh.slice(0, MAX_GITHUB_RUNS_PER_POLL)) {
         const label =
@@ -568,17 +600,23 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  let lastGitHubPollAt = 0;
+  /** Per automation, so a poll skipped while its automation was busy stays due for the next tick. */
+  const lastGitHubPollAt = new Map<string, number>();
   const githubTick = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
-    if (now - lastGitHubPollAt < GITHUB_POLL_INTERVAL_MS) return;
-    lastGitHubPollAt = now;
     const file = yield* SubscriptionRef.get(state);
-    yield* Effect.forEach(
-      file.automations.filter((automation) => automation.enabled),
-      pollGitHub,
-      { discard: true },
-    );
+    for (const automation of file.automations) {
+      if (
+        !automation.enabled ||
+        busy.has(automation.id) ||
+        !automation.triggers.some((trigger) => trigger.type === "github") ||
+        now - (lastGitHubPollAt.get(automation.id) ?? -Infinity) < GITHUB_POLL_INTERVAL_MS
+      ) {
+        continue;
+      }
+      lastGitHubPollAt.set(automation.id, now);
+      yield* inBackground(automation.id, pollGitHub(automation));
+    }
   });
 
   const start = Effect.fn("AutomationService.start")(function* () {
@@ -599,7 +637,11 @@ const make = Effect.gen(function* () {
     now: string,
   ): StoredAutomation => ({
     ...config,
-    ...base,
+    // Picked field by field: an update passes the whole stored record, whose old config must not win.
+    id: base.id,
+    createdAt: base.createdAt,
+    runs: base.runs,
+    githubCursor: base.githubCursor,
     updatedAt: now,
     // Editing restarts the schedule from now, so saving never replays a time that already passed.
     scheduleCursor: now,
@@ -607,7 +649,8 @@ const make = Effect.gen(function* () {
 
   return AutomationService.of({
     start,
-    changes: SubscriptionRef.changes(state).pipe(Stream.map(toSnapshot)),
+    // Cursor bookkeeping leaves the public snapshot as it was; clients only hear about real changes.
+    changes: SubscriptionRef.changes(state).pipe(Stream.map(toSnapshot), Stream.changes),
     create: (config) =>
       Effect.gen(function* () {
         const now = yield* nowIso;
