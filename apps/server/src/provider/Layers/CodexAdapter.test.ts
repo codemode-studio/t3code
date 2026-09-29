@@ -499,66 +499,84 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }),
   );
 
-  it.effect("starts app-servers as the checkout's selected GitHub CLI login", () => {
-    const runtimeFactory = makeRuntimeFactory();
-    const mcpThreadId = asThreadId("sess-github-login-mcp");
-    const layer = Layer.effect(
-      CodexAdapter,
-      makeCodexAdapter(decodeCodexSettings({}), {
-        makeRuntime: runtimeFactory.factory,
-        environment: { PATH: "/usr/bin", GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+  for (const setupMode of ["external", "managed"] as const) {
+    it.effect(`starts ${setupMode} app-servers as the checkout's selected GitHub CLI login`, () => {
+      const runtimeFactory = makeRuntimeFactory();
+      const mcpThreadId = asThreadId("sess-github-login-mcp");
+      const layer = Layer.effect(
+        CodexAdapter,
+        makeCodexAdapter(decodeCodexSettings({}), {
+          makeRuntime: runtimeFactory.factory,
+          environment: { PATH: "/usr/bin", GH_TOKEN: "ambient", GITHUB_TOKEN: "ambient" },
+          ...(setupMode === "managed"
+            ? {
+                resolveRuntime: Effect.succeed({
+                  config: decodeCodexSettings({ binaryPath: "/managed/codex" }),
+                  environment: {
+                    PATH: "/usr/bin",
+                    ACCESS_TOKEN: "managed-token",
+                    GH_TOKEN: "ambient",
+                    GITHUB_TOKEN: "ambient",
+                  },
+                  revision: "first",
+                }),
+              }
+            : {}),
+        }).pipe(
+          Effect.provideService(GitHubCliAccountEnvironment, {
+            forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
+          }),
+        ),
+      ).pipe(
+        Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+        Layer.provideMerge(ServerSettingsService.layerTest()),
+        Layer.provideMerge(providerSessionDirectoryTestLayer),
+        Layer.provideMerge(NodeServices.layer),
+      );
+
+      return Effect.gen(function* () {
+        const adapter = yield* CodexAdapter;
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("sess-github-login"),
+          runtimeMode: "full-access",
+        });
+        NodeAssert.deepEqual(runtimeFactory.lastRuntime?.options.environment, {
+          PATH: "/usr/bin",
+          GH_TOKEN: "selected",
+          GITHUB_TOKEN: "selected",
+          ...(setupMode === "managed" ? { ACCESS_TOKEN: "managed-token" } : {}),
+        });
+
+        // The device environment is layered over the selected login, not instead of it.
+        McpProviderSession.setMcpProviderSession({
+          environmentId: EnvironmentId.make("environment-1"),
+          threadId: mcpThreadId,
+          providerSessionId: "provider-session-1",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          endpoint: "http://127.0.0.1:1/mcp",
+          authorizationHeader: "Bearer mcp-token",
+          capabilities: new Set(["device"]),
+          agentDeviceEnvironment: { PATH: "/t3/device/bin", PATH_SEPARATOR: ":" },
+        });
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId: mcpThreadId,
+          runtimeMode: "full-access",
+        });
+        NodeAssert.deepEqual(runtimeFactory.lastRuntime?.options.environment, {
+          PATH: "/t3/device/bin:/usr/bin",
+          GH_TOKEN: "selected",
+          GITHUB_TOKEN: "selected",
+          ...(setupMode === "managed" ? { ACCESS_TOKEN: "managed-token" } : {}),
+          T3_MCP_BEARER_TOKEN: "mcp-token",
+        });
       }).pipe(
-        Effect.provideService(GitHubCliAccountEnvironment, {
-          forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
-        }),
-      ),
-    ).pipe(
-      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
-      Layer.provideMerge(providerSessionDirectoryTestLayer),
-      Layer.provideMerge(NodeServices.layer),
-    );
-
-    return Effect.gen(function* () {
-      const adapter = yield* CodexAdapter;
-      yield* adapter.startSession({
-        provider: ProviderDriverKind.make("codex"),
-        threadId: asThreadId("sess-github-login"),
-        runtimeMode: "full-access",
-      });
-      NodeAssert.deepEqual(runtimeFactory.lastRuntime?.options.environment, {
-        PATH: "/usr/bin",
-        GH_TOKEN: "selected",
-        GITHUB_TOKEN: "selected",
-      });
-
-      // The device environment is layered over the selected login, not instead of it.
-      McpProviderSession.setMcpProviderSession({
-        environmentId: EnvironmentId.make("environment-1"),
-        threadId: mcpThreadId,
-        providerSessionId: "provider-session-1",
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        endpoint: "http://127.0.0.1:1/mcp",
-        authorizationHeader: "Bearer mcp-token",
-        capabilities: new Set(["device"]),
-        agentDeviceEnvironment: { PATH: "/t3/device/bin", PATH_SEPARATOR: ":" },
-      });
-      yield* adapter.startSession({
-        provider: ProviderDriverKind.make("codex"),
-        threadId: mcpThreadId,
-        runtimeMode: "full-access",
-      });
-      NodeAssert.deepEqual(runtimeFactory.lastRuntime?.options.environment, {
-        PATH: "/t3/device/bin:/usr/bin",
-        GH_TOKEN: "selected",
-        GITHUB_TOKEN: "selected",
-        T3_MCP_BEARER_TOKEN: "mcp-token",
-      });
-    }).pipe(
-      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(mcpThreadId))),
-      Effect.provide(layer),
-    );
-  });
+        Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(mcpThreadId))),
+        Effect.provide(layer),
+      );
+    });
+  }
 
   it.effect("passes configured launch args into the session runtime", () => {
     const runtimeFactory = makeRuntimeFactory();
@@ -3147,4 +3165,113 @@ usageLimitLayer("CodexAdapterLive usage limits", (it) => {
       NodeAssert.equal(first.value.payload.class, "provider_error");
     }),
   );
+});
+
+it.effect("managed runtime rotation restarts app-server and resumes the same native thread", () => {
+  const runtimes: FakeCodexRuntime[] = [];
+  let revision = "first";
+  const layer = Layer.effect(
+    CodexAdapter,
+    Effect.gen(function* () {
+      return yield* makeCodexAdapter(decodeCodexSettings({}), {
+        resolveRuntime: Effect.sync(() => ({
+          config: decodeCodexSettings({
+            binaryPath: "/t3/tools/codex/0.155.1/bin/codex",
+            homePath: "/t3/caches/codex/home",
+            launchArgs: "-c 'model_provider=managed'",
+          }),
+          environment: { ACCESS_TOKEN: `dummy-${revision}` },
+          revision,
+        })),
+        makeRuntime: (options) => {
+          const runtime = new FakeCodexRuntime(options);
+          runtime.startImpl.mockImplementation(() =>
+            Promise.resolve({
+              provider: ProviderDriverKind.make("codex"),
+              threadId: options.threadId,
+              runtimeMode: options.runtimeMode,
+              cwd: options.cwd,
+              status: "ready",
+              createdAt: "2026-01-01T00:00:00Z",
+              updatedAt: "2026-01-01T00:00:00Z",
+              resumeCursor: { threadId: "native-managed-thread" },
+            }),
+          );
+          runtimes.push(runtime);
+          return Effect.succeed(runtime);
+        },
+      });
+    }),
+  ).pipe(
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  );
+  return Effect.gen(function* () {
+    const adapter = yield* CodexAdapter;
+    const threadId = asThreadId("managed-token-rotation");
+    yield* adapter.startSession({ threadId, runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "first" });
+    NodeAssert.equal(runtimes.length, 1);
+    revision = "rotated";
+    yield* adapter.sendTurn({ threadId, input: "second" });
+    NodeAssert.equal(runtimes.length, 2);
+    NodeAssert.equal(runtimes[0]?.closeImpl.mock.calls.length, 1);
+    NodeAssert.deepEqual(runtimes[1]?.options.resumeCursor, { threadId: "native-managed-thread" });
+    NodeAssert.equal(runtimes[1]?.options.environment?.ACCESS_TOKEN, "dummy-rotated");
+    NodeAssert.equal(runtimes[1]?.options.binaryPath, "/t3/tools/codex/0.155.1/bin/codex");
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("managed turn failures preserve the sharing-limit code for client notices", () => {
+  const factory = makeRuntimeFactory();
+  const layer = Layer.effect(
+    CodexAdapter,
+    Effect.gen(function* () {
+      return yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+        resolveRuntime: Effect.succeed({
+          config: decodeCodexSettings({}),
+          environment: {},
+          revision: "managed",
+        }),
+      });
+    }),
+  ).pipe(
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  );
+  return Effect.gen(function* () {
+    const adapter = yield* CodexAdapter;
+    yield* adapter.startSession({ threadId: asThreadId("thread-1"), runtimeMode: "full-access" });
+    const eventsFiber = yield* adapter.streamEvents.pipe(
+      Stream.take(2),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    const notification = codexUsageLimitTurnFailed("managed-sharing-limit");
+    yield* factory.lastRuntime!.emit({
+      ...notification,
+      payload: {
+        threadId: "thread-1",
+        turn: {
+          id: "turn-limit",
+          items: [],
+          status: "failed",
+          error: { message: "subscription_sharing_usage_limit_exceeded", codexErrorInfo: "other" },
+        },
+      },
+    });
+    const events = Array.from(yield* Fiber.join(eventsFiber));
+    NodeAssert.equal(events[0]?.type, "runtime.error");
+    if (events[0]?.type === "runtime.error") {
+      NodeAssert.equal(events[0].payload.code, "subscription_sharing_usage_limit_exceeded");
+      NodeAssert.match(events[0].payload.message, /ChatGPT usage limit/);
+    }
+    NodeAssert.equal(events[1]?.type, "turn.completed");
+    if (events[1]?.type === "turn.completed") NodeAssert.equal(events[1].payload.state, "failed");
+  }).pipe(Effect.provide(layer));
 });

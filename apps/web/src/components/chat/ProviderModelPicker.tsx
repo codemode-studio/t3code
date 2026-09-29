@@ -14,6 +14,7 @@ import {
   type ModelPickerProviderProfile,
   resolveModelPickerSelectedModel,
 } from "./ModelPickerContent";
+import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   ModelEsque,
@@ -332,6 +333,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           onInstanceModelChange={handleInstanceModelChange}
           {...(props.providerProfile ? { providerProfile: props.providerProfile } : {})}
         />
+        {props.selectedModels === undefined ? (
+          <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
+        ) : null}
       </PopoverPopup>
     </Popover>
   );
