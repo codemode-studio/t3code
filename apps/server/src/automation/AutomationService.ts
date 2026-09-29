@@ -527,19 +527,21 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  let lastGitHubPollAt = 0;
+  /** Per automation, so a poll skipped while its automation was busy stays due for the next tick. */
+  const lastGitHubPollAt = new Map<string, number>();
   const githubTick = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
-    if (now - lastGitHubPollAt < GITHUB_POLL_INTERVAL_MS) return;
-    lastGitHubPollAt = now;
     const file = yield* SubscriptionRef.get(state);
     for (const automation of file.automations) {
       if (
         !automation.enabled ||
-        !automation.triggers.some((trigger) => trigger.type === "github")
+        busy.has(automation.id) ||
+        !automation.triggers.some((trigger) => trigger.type === "github") ||
+        now - (lastGitHubPollAt.get(automation.id) ?? -Infinity) < GITHUB_POLL_INTERVAL_MS
       ) {
         continue;
       }
+      lastGitHubPollAt.set(automation.id, now);
       yield* inBackground(automation.id, pollGitHub(automation));
     }
   });

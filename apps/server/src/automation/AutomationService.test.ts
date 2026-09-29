@@ -12,6 +12,7 @@ import {
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -19,7 +20,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import * as TestClock from "effect/testing/TestClock";
 
 import { ServerConfig } from "../config.ts";
@@ -34,6 +37,7 @@ import { GitHubCli } from "../sourceControl/GitHubCli.ts";
 import * as AutomationService from "./AutomationService.ts";
 
 const PROJECT_ID = ProjectId.make("automation-project");
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const PROJECT: OrchestrationProjectShell = {
   id: PROJECT_ID,
@@ -66,6 +70,8 @@ const makeLayer = (input: {
   readonly providers?: ReadonlyArray<ServerProvider>;
   /** Runs after a command is recorded, e.g. to hold one up. */
   readonly afterRecord?: (command: OrchestrationCommand) => Effect.Effect<void>;
+  /** What `gh pr list` and `gh issue list` answer at a given time. */
+  readonly githubItems?: (nowMs: number) => ReadonlyArray<object>;
 }) =>
   AutomationService.layer.pipe(
     Layer.provide(
@@ -84,7 +90,18 @@ const makeLayer = (input: {
         Layer.mock(ThreadDeletionReactor)({ drainThrough: () => Effect.void }),
         Layer.mock(GitWorkflowService)({}),
         Layer.mock(ProjectSetupScriptRunner)({}),
-        Layer.mock(GitHubCli)({}),
+        Layer.mock(GitHubCli)({
+          execute: () =>
+            Clock.currentTimeMillis.pipe(
+              Effect.map((nowMs) => ({
+                exitCode: ChildProcessSpawner.ExitCode(0),
+                stdout: encodeJson(input.githubItems?.(nowMs) ?? []),
+                stderr: "",
+                stdoutTruncated: false,
+                stderrTruncated: false,
+              })),
+            ),
+        }),
         Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed(input.providers ?? []) }),
         ServerSettingsService.layerTest(input.settings),
         ServerConfig.layerTest(process.cwd(), input.stateDir),
@@ -231,6 +248,77 @@ describe("AutomationService", () => {
           command.type === "thread.create" && command.title === "Slow" ? Effect.never : Effect.void,
       },
     ),
+  );
+
+  it.effect("a GitHub poll that lands on a scheduled run's tick waits for the next free tick", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-automations-" });
+      const config = yield* ServerConfig.pipe(
+        Effect.provide(ServerConfig.layerTest(process.cwd(), tempDir)),
+      );
+      // Already watching GitHub, and due every minute, so every two-minute poll lands on a tick
+      // where a scheduled run is starting.
+      const epoch = "1970-01-01T00:00:00.000Z";
+      const stored = {
+        ...CONFIG,
+        triggers: [
+          { type: "cron", expression: "* * * * *" },
+          { type: "github", event: "pull_request.opened" },
+        ],
+        id: "mixed",
+        createdAt: epoch,
+        updatedAt: epoch,
+        runs: [],
+        scheduleCursor: epoch,
+        githubCursor: epoch,
+      };
+      yield* fs.makeDirectory(config.stateDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(config.stateDir, "automations.json"),
+        encodeJson({ automations: [stored] }),
+      );
+      const pullRequest = {
+        number: 7,
+        title: "Add a thing",
+        url: "https://github.com/acme/repo/pull/7",
+        createdAt: "1970-01-01T00:01:30.000Z",
+        isDraft: false,
+      };
+      const service = yield* AutomationService.AutomationService.pipe(
+        Effect.provide(
+          makeLayer({
+            stateDir: tempDir,
+            commands: yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]),
+            project: PROJECT,
+            githubItems: (nowMs) =>
+              Date.parse(pullRequest.createdAt) <= nowMs ? [pullRequest] : [],
+          }),
+        ),
+      );
+
+      const causes = (snapshot: { automations: ReadonlyArray<Automation> }) =>
+        snapshot.automations[0]?.runs.map((run) => run.cause).toReversed() ?? [];
+      yield* service.start();
+      for (const [step, runs] of [
+        ["1 minute", 1],
+        ["1 minute", 2],
+        ["30 seconds", 3],
+      ] as const) {
+        yield* TestClock.adjust(step);
+        yield* service.changes.pipe(
+          Stream.filter((snapshot) => causes(snapshot).length === runs),
+          Stream.runHead,
+        );
+      }
+
+      const snapshot = yield* service.changes.pipe(Stream.runHead);
+      assert.deepStrictEqual(
+        Option.map(snapshot, causes),
+        Option.some(["Every minute", "Every minute", "Pull request opened: #7"]),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("a local run creates a thread and starts a turn with the instructions", () =>
