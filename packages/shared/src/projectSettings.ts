@@ -100,8 +100,8 @@ export function resolveProjectSettings(
   project?: LegacyProjectSettingsFields | null,
   projectFile?: T3ProjectFile | null,
 ): ResolvedProjectSettings {
-  const resolved = applyProviderProfileDefaultModel(
-    resolveProjectOverrides(settings, projectId, project),
+  const resolved = applyProviderProfileGitHubAccount(
+    applyProviderProfileDefaultModel(resolveProjectOverrides(settings, projectId, project)),
   );
   return projectFile === undefined ? resolved : applyProjectFile(resolved, projectFile);
 }
@@ -279,6 +279,17 @@ function applyProviderProfileDefaultModel(
   return next === inherited
     ? resolved
     : { ...resolved, settings: { ...resolved.settings, defaultModelSelection: next } };
+}
+
+/** The profile's GitHub account sits between a project's own choice and the environment's. */
+function applyProviderProfileGitHubAccount(
+  resolved: ResolvedProjectSettings,
+): ResolvedProjectSettings {
+  if (resolved.sources.githubCliAccount === "project") return resolved;
+  const account = resolveProviderProfile(resolved.settings)?.githubCliAccount;
+  return account === undefined
+    ? resolved
+    : { ...resolved, settings: { ...resolved.settings, githubCliAccount: account } };
 }
 
 /** Replace the project's entry, dropping it entirely when nothing is overridden. */

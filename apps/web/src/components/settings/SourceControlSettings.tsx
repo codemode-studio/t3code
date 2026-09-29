@@ -440,7 +440,7 @@ function GitFetchIntervalSettings() {
 
 const ACTIVE_GITHUB_CLI_ACCOUNT = "active";
 
-function githubCliAccountLabel(account: GitHubCliAccount): string {
+export function githubCliAccountLabel(account: GitHubCliAccount): string {
   return `${account.login} @ ${account.host}`;
 }
 
@@ -475,7 +475,7 @@ function GitHubCliAccountSettings({
       description={
         isProjectScope
           ? "GitHub actions in this project run as this login. The login active in gh, used by terminals and other apps, does not change."
-          : "GitHub actions run as this login. Projects can override it. The login active in gh, used by terminals and other apps, does not change."
+          : "GitHub actions run as this login. Profiles and projects can override it. The login active in gh, used by terminals and other apps, does not change."
       }
       status={
         signedOut ? (

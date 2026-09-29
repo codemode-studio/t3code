@@ -12,6 +12,7 @@ import { useUiStateStore } from "../uiStateStore";
 import {
   buildProjectProfileMap,
   collectProfiles,
+  hasProjectsWithoutProfile,
   profileIdOfScope,
   resolveProfileScope,
   scopedProjectKeysForProfile,
@@ -47,8 +48,8 @@ export function useProfileScopeState() {
     Schema.String,
   );
   const hasUnassignedProjects = useMemo(
-    () => [...projectProfiles.values()].some((profileId) => profileId === null),
-    [projectProfiles],
+    () => hasProjectsWithoutProfile(projects, settingsByEnvironment),
+    [projects, settingsByEnvironment],
   );
   const scope = resolveProfileScope(storedScope, profiles, hasUnassignedProjects);
   const setScope = useCallback((next: ProfileScope) => setStoredScope(next), [setStoredScope]);

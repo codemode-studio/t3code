@@ -19,7 +19,9 @@ gh auth login
 
 When `gh` holds more than one login, choose which one T3 Code uses under **GitHub CLI account**
 in the GitHub entry of **Settings → Source Control**. Select a project to give it a different
-account, for example a work login for company repositories. T3 Code passes that login's token to
+account, for example a work login for company repositories, or set one on a
+[provider profile](./project-settings.md#provider-profiles) to cover all of that profile's
+projects. A project's own choice wins over its profile's. T3 Code passes that login's token to
 its own GitHub commands, to terminals it opens, and to agent sessions it starts, so `gh` there acts
 as the selected login. It never switches the login active in `gh`, so apps outside T3 Code are
 unaffected. A change applies to terminals and agent sessions started afterwards. If the chosen

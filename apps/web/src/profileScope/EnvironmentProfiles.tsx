@@ -32,6 +32,7 @@ import {
 } from "../components/settings/ProviderProfilesSettings.logic";
 import type { ProviderOperateAccess } from "../components/settings/ProviderSettingsPanel.logic";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
+import { githubCliAccountLabel } from "../components/settings/SourceControlSettings";
 import { Badge } from "../components/ui/badge";
 import { Button, InlineButton } from "../components/ui/button";
 import {
@@ -195,6 +196,17 @@ export function EnvironmentProfiles({
                   </span>
                 }
               />
+              {profile.githubCliAccount ? (
+                <SettingsRow
+                  title="GitHub account"
+                  description="GitHub actions in its projects run as this login unless a project picks its own."
+                  control={
+                    <span className="text-sm">
+                      {githubCliAccountLabel(profile.githubCliAccount)}
+                    </span>
+                  }
+                />
+              ) : null}
               {knownEnvironments.length > 1 ? (
                 <SettingsRow
                   title="Environments"
@@ -324,6 +336,7 @@ export function EnvironmentProfiles({
 
       {editing && !readOnly ? (
         <ProviderProfileEditorDialog
+          environmentId={environmentId}
           initial={editing}
           entries={entries}
           settings={settings}
