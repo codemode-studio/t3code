@@ -62,6 +62,7 @@ import {
   JujutsuIcon,
   type Icon,
 } from "../Icons";
+import { BitbucketCredentialsSettings } from "./BitbucketCredentialsSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import {
@@ -241,7 +242,9 @@ function itemSummary({
       );
     }
 
-    if (!item.executable) {
+    // API integrations have no CLI to sign in with; an unverified saved credential falls
+    // through to the "could not verify" detail instead of repeating the setup hint.
+    if (!item.executable && auth.status === "unauthenticated") {
       return <span>Available. {item.installHint}</span>;
     }
 
@@ -286,7 +289,9 @@ function DiscoveryItemRow({
   useEffect(() => {
     if (
       (item.kind === "git" && searchTargetId === searchableSetting("git-fetch-interval").id) ||
-      (item.kind === "github" && searchTargetId === searchableSetting("github-cli-account").id)
+      (item.kind === "github" && searchTargetId === searchableSetting("github-cli-account").id) ||
+      (item.kind === "bitbucket" &&
+        searchTargetId === searchableSetting("bitbucket-credentials").id)
     ) {
       setIsExpanded(true);
     }
@@ -703,6 +708,15 @@ export function SourceControlSettingsPanel() {
                   item.auth.accounts !== undefined &&
                   (item.auth.accounts.length > 1 || githubCliAccount !== null) ? (
                     <GitHubCliAccountSettings accounts={item.auth.accounts} />
+                  ) : item.kind === "bitbucket" ? (
+                    <SettingsSearchTarget id={searchableSetting("bitbucket-credentials").id}>
+                      <BitbucketCredentialsSettings
+                        // Drafts belong to one environment; switching must not carry them over.
+                        key={environmentId}
+                        environmentId={environmentId}
+                        onSaved={handleScan}
+                      />
+                    </SettingsSearchTarget>
                   ) : undefined}
                 </DiscoveryItemRow>
               ))}
