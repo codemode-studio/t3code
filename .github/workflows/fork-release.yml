@@ -64,7 +64,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const { resolveForkRelease } = require('./.github/scripts/fork-release.cjs');
+            const { resolveForkRelease } = require('./.github/scripts/check-fork-release.cjs');
             const { due, date } = await resolveForkRelease({ github, context, core });
             core.setOutput('due', due);
             if (date) core.setOutput('date', date);

@@ -110,7 +110,7 @@ jobs:
         run: node --test .github/scripts/check-nightly-release.test.cjs
 
       - name: Test fork release checks
-        run: node --test .github/scripts/fork-release.test.cjs
+        run: node --test .github/scripts/check-fork-release.test.cjs
 
       - name: Test
         run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test

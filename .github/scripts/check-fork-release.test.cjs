@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { resolveForkRelease } = require("./fork-release.cjs");
+const { resolveForkRelease } = require("./check-fork-release.cjs");
 
 const hour = 60 * 60 * 1000;
 const core = { info() {} };
