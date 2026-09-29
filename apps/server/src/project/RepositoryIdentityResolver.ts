@@ -68,8 +68,6 @@ function pickPrimaryRemote(
   remotes: ReadonlyMap<string, string>,
   ghDefaultRemote: string | null,
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
-  // A fork that set its gh default to origin means it wants PRs resolved there,
-  // not against upstream.
   for (const preferredRemoteName of [ghDefaultRemote, "upstream", "origin"]) {
     if (!preferredRemoteName) continue;
     const remoteUrl = remotes.get(preferredRemoteName);
@@ -143,11 +141,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
       .run({ command: "git", args: ["-C", cacheKey, ...args], timeoutBehavior: "timedOutResult" })
       .pipe(Effect.option);
   const [remoteResult, ghDefaultResult] = yield* Effect.all(
-    [
-      git(["remote", "-v"]),
-      // Exits 1 when no remote is marked, which just means no preference.
-      git(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
-    ],
+    [git(["remote", "-v"]), git(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"])],
     { concurrency: "unbounded" },
   );
   if (remoteResult._tag === "None" || remoteResult.value.code !== 0) {
