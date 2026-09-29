@@ -446,6 +446,26 @@ describe("provider profiles", () => {
     expect(optedOut.settings.defaultModelSelection).toEqual(createModelSelection(ccB, "sonnet"));
   });
 
+  it("runs GitHub commands as the profile's account unless the project picks its own", () => {
+    const personal = { host: "github.com", login: "personal" };
+    const work = { host: "github.com", login: "work" };
+    const settings: ServerSettings = {
+      ...base,
+      githubCliAccount: personal,
+      providerProfiles: { [acme]: { ...base.providerProfiles[acme]!, githubCliAccount: work } },
+    };
+    const account = (overrides: ProjectSettingsOverrides) =>
+      resolveProjectSettings(
+        { ...settings, projectSettingsOverrides: { [projectId]: overrides } },
+        projectId,
+      ).settings.githubCliAccount;
+    expect(account({ providerProfileId: acme })).toEqual(work);
+    expect(account({})).toEqual(personal);
+    // A project's choice wins, including the explicit "active gh login".
+    expect(account({ providerProfileId: acme, githubCliAccount: personal })).toEqual(personal);
+    expect(account({ providerProfileId: acme, githubCliAccount: null })).toBeNull();
+  });
+
   it("treats a deleted profile as no profile", () => {
     const settings = withProjectProfile({ providerProfileId: ProviderProfileId.make("gone") });
     const resolved = resolveProjectSettings(settings, projectId);

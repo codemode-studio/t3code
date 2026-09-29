@@ -1069,6 +1069,11 @@ export const ProviderProfile = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /**
+   * The `gh` login GitHub commands in the profile's projects run as, unless a project picks its
+   * own. Absent uses the environment's choice.
+   */
+  githubCliAccount: Schema.optionalKey(GitHubCliAccount),
 });
 export type ProviderProfile = typeof ProviderProfile.Type;
 

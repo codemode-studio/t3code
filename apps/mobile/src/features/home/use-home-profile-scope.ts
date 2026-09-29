@@ -2,6 +2,7 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   buildProjectProfileMap,
   collectProfiles,
+  hasProjectsWithoutProfile,
   resolveProfileScope,
   scopedProjectKeysForProfile,
   type ProfileScope,
@@ -40,8 +41,8 @@ export function useHomeProfileScope(projects: ReadonlyArray<EnvironmentProject>)
     ? (preferences.value.threadListProfileScope ?? "all")
     : "all";
   const hasUnassignedProjects = useMemo(
-    () => [...projectProfiles.values()].some((profileId) => profileId === null),
-    [projectProfiles],
+    () => hasProjectsWithoutProfile(projects, settingsByEnvironment),
+    [projects, settingsByEnvironment],
   );
   const scope = resolveProfileScope(storedScope, profiles, hasUnassignedProjects);
   const options = useMemo(

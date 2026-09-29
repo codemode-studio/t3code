@@ -62,6 +62,9 @@ export const layer = Layer.effect(
         // Nobody picked an account anywhere: skip the project lookup entirely.
         if (
           settings.githubCliAccount === null &&
+          !Object.values(settings.providerProfiles).some(
+            (profile) => profile.githubCliAccount !== undefined,
+          ) &&
           !Object.values(settings.projectSettingsOverrides).some(
             (overrides) => overrides.githubCliAccount !== undefined,
           )

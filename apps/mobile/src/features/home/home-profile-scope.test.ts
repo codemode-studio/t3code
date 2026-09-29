@@ -7,8 +7,8 @@ import { buildHomeProfileFilterOptions } from "./home-profile-scope";
 const acme = ProviderProfileId.make("acme");
 const globex = ProviderProfileId.make("globex");
 const profiles: ReadonlyArray<ProfileScopeProfile> = [
-  { id: acme, name: "Acme", color: "#ea580c" },
-  { id: globex, name: "Globex", color: null },
+  { id: acme, name: "Acme", color: "#ea580c", environmentIds: [] },
+  { id: globex, name: "Globex", color: null, environmentIds: [] },
 ];
 
 describe("buildHomeProfileFilterOptions", () => {

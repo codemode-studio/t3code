@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   profileScopeForId,
+  profileScopeProjectKey,
   resolveProjectProfileId,
 } from "@t3tools/client-runtime/state/profile-scope";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -13,6 +14,7 @@ import type {
 import { PencilIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { EnvironmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
   describeProfileModel,
@@ -30,6 +32,7 @@ import {
 } from "../components/settings/ProviderProfilesSettings.logic";
 import type { ProviderOperateAccess } from "../components/settings/ProviderSettingsPanel.logic";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
+import { githubCliAccountLabel } from "../components/settings/SourceControlSettings";
 import { Badge } from "../components/ui/badge";
 import { Button, InlineButton } from "../components/ui/button";
 import {
@@ -41,9 +44,11 @@ import {
   MenuTrigger,
 } from "../components/ui/menu";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../hooks/useSettings";
+import { cn } from "../lib/utils";
 import { useProjects } from "../state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
 import { ProfileAvatar } from "./ProfileSwitcher";
+import { useProfileEnvironments, useProfileScopeState } from "./useProfileScope";
 
 interface ProjectProfileEntry {
   readonly project: EnvironmentProject;
@@ -74,6 +79,8 @@ export function EnvironmentProfiles({
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const entries = useProviderInstanceEntries(providers, settings);
   const allProjects = useProjects();
+  const scopeState = useProfileScopeState();
+  const knownEnvironments = useProfileEnvironments();
   const [editing, setEditing] = useState<EditingProfile | null>(null);
   const readOnly = access !== "granted";
 
@@ -189,6 +196,62 @@ export function EnvironmentProfiles({
                   </span>
                 }
               />
+              {profile.githubCliAccount ? (
+                <SettingsRow
+                  title="GitHub account"
+                  description="GitHub actions in its projects run as this login unless a project picks its own."
+                  control={
+                    <span className="text-sm">
+                      {githubCliAccountLabel(profile.githubCliAccount)}
+                    </span>
+                  }
+                />
+              ) : null}
+              {knownEnvironments.length > 1 ? (
+                <SettingsRow
+                  title="Environments"
+                  description="Its projects on each of these share one place in the sidebar."
+                >
+                  <ul className="mt-2 flex flex-col">
+                    {knownEnvironments.map((environment) => {
+                      const hasProfile = (
+                        scopeState.profiles.find((candidate) => candidate.id === id)
+                          ?.environmentIds ?? []
+                      ).includes(environment.environmentId);
+                      const projectCount = allProjects.filter(
+                        (project) =>
+                          project.environmentId === environment.environmentId &&
+                          scopeState.projectProfiles.get(
+                            profileScopeProjectKey(project.environmentId, project.id),
+                          ) === id,
+                      ).length;
+                      return (
+                        <li
+                          key={environment.environmentId}
+                          className={cn(
+                            "flex items-center gap-2 border-t border-border/60 py-1.5 first:border-t-0",
+                            !hasProfile && "text-muted-foreground",
+                          )}
+                        >
+                          <EnvironmentMachineIcon
+                            aria-hidden
+                            kind={environment.machine}
+                            className="size-4 shrink-0 text-muted-foreground"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm">
+                            {environment.label}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {hasProfile
+                              ? `${projectCount} ${projectCount === 1 ? "project" : "projects"}`
+                              : "Not set up"}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </SettingsRow>
+              ) : null}
               <SettingsRow
                 title="Projects"
                 description={
@@ -273,6 +336,7 @@ export function EnvironmentProfiles({
 
       {editing && !readOnly ? (
         <ProviderProfileEditorDialog
+          environmentId={environmentId}
           initial={editing}
           entries={entries}
           settings={settings}

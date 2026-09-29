@@ -1,5 +1,11 @@
 import { assert, it } from "@effect/vitest";
-import { ProjectId, ProviderInstanceId, ThreadId, VcsProcessExitError } from "@t3tools/contracts";
+import {
+  ProjectId,
+  ProviderInstanceId,
+  ProviderProfileId,
+  ThreadId,
+  VcsProcessExitError,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -111,6 +117,38 @@ it.effect("lets a project opt back into the CLI's active login", () =>
             githubCliAccount: personal,
             projectSettingsOverrides: {
               [ProjectId.make("project-work")]: { githubCliAccount: null },
+            },
+          }),
+        ),
+        Layer.provideMerge(persistence),
+      ),
+    ),
+  ),
+);
+
+it.effect("uses the account of the project's profile when nothing else picks one", () =>
+  Effect.gen(function* () {
+    yield* seed;
+    const selection = yield* GitHubCliAccountSelection;
+    assert.deepStrictEqual(yield* selection.forCwd("/worktrees/work-feature"), work);
+    assert.strictEqual(yield* selection.forCwd("/src/personal"), null);
+  }).pipe(
+    Effect.provide(
+      GitHubCliAccountSelectionLayer.layer.pipe(
+        Layer.provide(
+          ServerSettings.layerTest({
+            providerProfiles: {
+              [ProviderProfileId.make("work")]: {
+                name: "Work",
+                instanceIds: [],
+                defaultModelSelection: null,
+                githubCliAccount: work,
+              },
+            },
+            projectSettingsOverrides: {
+              [ProjectId.make("project-work")]: {
+                providerProfileId: ProviderProfileId.make("work"),
+              },
             },
           }),
         ),

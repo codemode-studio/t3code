@@ -1,17 +1,18 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ProviderProfileId } from "@t3tools/contracts";
+import { resolveEnvironmentMachineKind, type ProviderProfileId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useCallback, useMemo } from "react";
 
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useProjects, useThreadShells } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { environmentServerConfigsAtom } from "../state/server";
 import { useUiStateStore } from "../uiStateStore";
 import {
   buildProjectProfileMap,
   collectProfiles,
+  hasProjectsWithoutProfile,
   profileIdOfScope,
   resolveProfileScope,
   scopedProjectKeysForProfile,
@@ -47,8 +48,8 @@ export function useProfileScopeState() {
     Schema.String,
   );
   const hasUnassignedProjects = useMemo(
-    () => [...projectProfiles.values()].some((profileId) => profileId === null),
-    [projectProfiles],
+    () => hasProjectsWithoutProfile(projects, settingsByEnvironment),
+    [projects, settingsByEnvironment],
   );
   const scope = resolveProfileScope(storedScope, profiles, hasUnassignedProjects);
   const setScope = useCallback((next: ProfileScope) => setStoredScope(next), [setStoredScope]);
@@ -89,5 +90,38 @@ export function useProfileAttentionCounts(
         threadKey: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       }),
     [lastVisitedAtByThreadKey, projectProfiles, threads],
+  );
+}
+
+/**
+ * Environments whose settings this client knows, so whose profiles it can list: the primary
+ * first, then by name. More than one means a profile can live on several machines.
+ */
+export function useProfileEnvironments() {
+  const { environments } = useEnvironments();
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  return useMemo(
+    () =>
+      environments
+        .flatMap((environment) => {
+          const config = serverConfigs.get(environment.environmentId);
+          return config
+            ? [
+                {
+                  environmentId: environment.environmentId,
+                  label: environment.label,
+                  machine: resolveEnvironmentMachineKind(config),
+                },
+              ]
+            : [];
+        })
+        .toSorted(
+          (left, right) =>
+            Number(right.environmentId === primaryEnvironmentId) -
+              Number(left.environmentId === primaryEnvironmentId) ||
+            left.label.localeCompare(right.label),
+        ),
+    [environments, primaryEnvironmentId, serverConfigs],
   );
 }

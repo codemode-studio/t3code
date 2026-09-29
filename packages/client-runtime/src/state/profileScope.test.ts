@@ -10,6 +10,7 @@ import {
   buildProjectProfileMap,
   collectProfiles,
   followNavigation,
+  hasProjectsWithoutProfile,
   intersectProjectKeys,
   profileMonogram,
   profileScopeForId,
@@ -68,8 +69,15 @@ describe("resolveProjectProfileId", () => {
 });
 
 describe("collectProfiles", () => {
-  it("merges profiles by id, named by the primary environment, sorted by name", () => {
-    const renamed = settings();
+  it("merges profiles by id, named and ordered by the primary environment", () => {
+    const base = settings();
+    // Settings order, as the Profiles page lists them, not alphabetical.
+    const renamed = settings({
+      providerProfiles: {
+        [globex]: base.providerProfiles[globex]!,
+        [acme]: base.providerProfiles[acme]!,
+      },
+    });
     const remoteSettings: Pick<ServerSettings, "providerProfiles"> = {
       providerProfiles: {
         [acme]: { name: "Acme (old name)", instanceIds: [], defaultModelSelection: null },
@@ -87,9 +95,42 @@ describe("collectProfiles", () => {
       ],
       primary,
     );
-    expect(profiles.map((profile) => profile.name)).toEqual(["Acme", "Globex", "Initech"]);
-    expect(profiles[0]?.color).toBe("#2563eb");
-    expect(profiles[1]?.color).toBeNull();
+    expect(profiles.map((profile) => profile.name)).toEqual(["Globex", "Acme", "Initech"]);
+    expect(profiles[0]?.color).toBeNull();
+    expect(profiles[1]?.color).toBe("#2563eb");
+    expect(profiles.map((profile) => profile.environmentIds)).toEqual([
+      [primary],
+      [primary, remote],
+      [remote],
+    ]);
+  });
+});
+
+describe("hasProjectsWithoutProfile", () => {
+  const withoutProfiles = settings({ providerProfiles: {} });
+
+  it("ignores projects on environments that define no profiles", () => {
+    expect(
+      hasProjectsWithoutProfile(
+        [
+          { environmentId: primary, id: api },
+          { environmentId: remote, id: web },
+        ],
+        new Map([
+          [primary, settings({ providerProfileId: acme })],
+          [remote, withoutProfiles],
+        ]),
+      ),
+    ).toBe(false);
+  });
+
+  it("counts a project without a profile where profiles are set up", () => {
+    expect(
+      hasProjectsWithoutProfile(
+        [{ environmentId: primary, id: api }],
+        new Map([[primary, settings()]]),
+      ),
+    ).toBe(true);
   });
 });
 

@@ -2,8 +2,9 @@ import { useAtomValue } from "@effect/atom-react";
 import { PROFILE_SCOPE_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronsUpDownIcon, LayersIcon, PlusIcon } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
+import { EnvironmentPresenceBadge } from "../components/ProjectEnvironmentBadge";
 import { Badge } from "../components/ui/badge";
 import {
   Menu,
@@ -21,6 +22,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/u
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { cn } from "../lib/utils";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   profileMonogram,
@@ -28,7 +30,11 @@ import {
   type ProfileScope,
   type ProfileScopeProfile,
 } from "@t3tools/client-runtime/state/profile-scope";
-import { useProfileAttentionCounts, useProfileScopeState } from "./useProfileScope";
+import {
+  useProfileAttentionCounts,
+  useProfileEnvironments,
+  useProfileScopeState,
+} from "./useProfileScope";
 
 interface ScopeOption {
   readonly scope: ProfileScope;
@@ -46,7 +52,10 @@ export function ProfileAvatar({
   option,
   size,
 }: {
-  option: Pick<ScopeOption, "scope" | "profile" | "label">;
+  option: {
+    readonly scope: ProfileScope;
+    readonly profile: Pick<ProfileScopeProfile, "name" | "color"> | null;
+  };
   size: "sm" | "md";
 }) {
   const boxClass =
@@ -164,6 +173,18 @@ function ProfileScopeMenuPopup({
   side: "bottom" | "right";
 }) {
   const navigate = useNavigate();
+  const environments = useProfileEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const machineById = useMemo(
+    () =>
+      new Map(environments.map((environment) => [environment.environmentId, environment.machine])),
+    [environments],
+  );
+  const labelById = useMemo(
+    () =>
+      new Map(environments.map((environment) => [environment.environmentId, environment.label])),
+    [environments],
+  );
   return (
     <MenuPopup align="start" side={side} sideOffset={side === "right" ? 8 : 4} className="w-64">
       <MenuGroup>
@@ -177,6 +198,17 @@ function ProfileScopeMenuPopup({
               <span className="flex items-center gap-2">
                 <ProfileAvatar option={option} size="sm" />
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                {/* Like project rows: a profile shared with other machines names them. */}
+                {option.profile && environments.length > 1 ? (
+                  <EnvironmentPresenceBadge
+                    environments={option.profile.environmentIds.map((environmentId) => ({
+                      environmentId,
+                      label: labelById.get(environmentId) ?? "Remote",
+                    }))}
+                    primaryEnvironmentId={primaryEnvironmentId}
+                    machineByEnvironmentId={machineById}
+                  />
+                ) : null}
                 <AttentionCount count={option.attention} />
                 <ScopeShortcut index={index} />
               </span>

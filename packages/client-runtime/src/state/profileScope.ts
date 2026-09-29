@@ -29,6 +29,8 @@ export interface ProfileScopeProfile {
   readonly id: ProviderProfileId;
   readonly name: string;
   readonly color: string | null;
+  /** Environments that define the profile, the primary first. */
+  readonly environmentIds: ReadonlyArray<EnvironmentId>;
 }
 
 type ProfileSettings = Pick<
@@ -65,8 +67,9 @@ export function resolveProjectProfileId(
 }
 
 /**
- * Profiles across environments, merged by id and sorted by name. Profiles are stored per
- * environment, so one id is treated as one company everywhere; the primary environment names it.
+ * Profiles across environments, merged by id. Profiles are stored per environment, so one id is
+ * treated as one company everywhere; the primary environment names and orders them like its
+ * Profiles settings page, and profiles only other environments define follow.
  */
 export function collectProfiles(
   settingsByEnvironment: ReadonlyArray<
@@ -78,15 +81,26 @@ export function collectProfiles(
     ([left], [right]) =>
       Number(right === primaryEnvironmentId) - Number(left === primaryEnvironmentId),
   );
-  const byId = new Map<ProviderProfileId, ProfileScopeProfile>();
-  for (const [, settings] of ordered) {
+  const byId = new Map<
+    ProviderProfileId,
+    ProfileScopeProfile & { environmentIds: EnvironmentId[] }
+  >();
+  for (const [environmentId, settings] of ordered) {
     for (const [id, profile] of Object.entries(settings.providerProfiles) as Array<
       [ProviderProfileId, ServerSettings["providerProfiles"][ProviderProfileId]]
     >) {
-      if (!byId.has(id)) byId.set(id, { id, name: profile.name, color: profile.color ?? null });
+      const existing = byId.get(id);
+      if (existing) existing.environmentIds.push(environmentId);
+      else
+        byId.set(id, {
+          id,
+          name: profile.name,
+          color: profile.color ?? null,
+          environmentIds: [environmentId],
+        });
     }
   }
-  return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name));
+  return [...byId.values()];
 }
 
 /** Each project's profile, keyed by `profileScopeProjectKey`. */
@@ -103,6 +117,25 @@ export function buildProjectProfileMap(
     );
   }
   return map;
+}
+
+/**
+ * Whether the Unassigned bucket has anything to show: a project without a profile on an
+ * environment that defines profiles. An environment that never set profiles up has not opted in,
+ * so its projects alone do not make one; they still show under "all".
+ */
+export function hasProjectsWithoutProfile(
+  projects: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly id: ProjectId }>,
+  settingsByEnvironment: ReadonlyMap<EnvironmentId, ProfileSettings>,
+): boolean {
+  return projects.some((project) => {
+    const settings = settingsByEnvironment.get(project.environmentId);
+    return (
+      settings !== undefined &&
+      Object.keys(settings.providerProfiles).length > 0 &&
+      resolveProjectProfileId(settings, project.id) === null
+    );
+  });
 }
 
 /**
