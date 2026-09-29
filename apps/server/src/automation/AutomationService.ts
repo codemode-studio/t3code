@@ -28,6 +28,7 @@ import {
   describeTrigger,
   latestTriggerAt,
 } from "@t3tools/shared/automationSchedule";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import {
   resolveProjectSettings,
@@ -224,16 +225,56 @@ const make = Effect.gen(function* () {
 
   const failWith = (message: string) => Effect.fail(new AutomationError({ message }));
 
+  /**
+   * Checks a pull request out detached in a fresh worktree. The PR's branch is usually still
+   * checked out by the thread that wrote it, and git allows a branch in only one worktree, so a
+   * review works on the head commit instead of leaving behind a branch nobody pushes. `gh`
+   * resolves the same repository `gh pr list` found the PR in, forks included.
+   */
+  const createPullRequestWorktree = Effect.fn("AutomationService.createPullRequestWorktree")(
+    function* (workspaceRoot: string, pullRequestNumber: number) {
+      const created = yield* gitWorkflow.createWorktree({
+        cwd: workspaceRoot,
+        refName: "HEAD",
+        path: path.join(
+          config.worktreesDir,
+          path.basename(workspaceRoot),
+          `pr-${pullRequestNumber}-${NodeCrypto.randomBytes(4).toString("hex")}`,
+        ),
+      });
+      const worktreePath = created.worktree.path;
+      yield* gitHubCli
+        .execute({
+          cwd: worktreePath,
+          args: ["pr", "checkout", String(pullRequestNumber), "--detach"],
+          timeoutMs: 120_000,
+        })
+        .pipe(
+          Effect.onError(() =>
+            gitWorkflow
+              .removeWorktree({ cwd: workspaceRoot, path: worktreePath, force: true })
+              .pipe(Effect.ignoreCause({ log: true })),
+          ),
+        );
+      return worktreePath;
+    },
+  );
+
   /** Creates the thread (and worktree) a fresh run works in. */
   const createRunThread = Effect.fn("AutomationService.createRunThread")(function* (
     automation: StoredAutomation,
     workspaceRoot: string,
     modelSelection: NonNullable<AutomationConfig["modelSelection"]>,
+    pullRequest: GitHubItem | null,
   ) {
     const threadId = ThreadId.make(yield* newId);
     let branch: string | null = null;
     let worktreePath: string | null = null;
-    if (automation.workingCopy === "worktree" && (yield* gitWorkflow.isRepository(workspaceRoot))) {
+    const inWorktree =
+      automation.workingCopy === "worktree" && (yield* gitWorkflow.isRepository(workspaceRoot));
+    if (inWorktree && pullRequest !== null) {
+      worktreePath = yield* createPullRequestWorktree(workspaceRoot, pullRequest.number);
+    } else if (inWorktree) {
       const status = yield* gitWorkflow.localStatus({ cwd: workspaceRoot });
       const baseBranch = status.refName;
       if (baseBranch === null) {
@@ -287,11 +328,19 @@ const make = Effect.gen(function* () {
         );
       }
     }
-    return threadId;
+    return { threadId, detachedAtPullRequest: pullRequest !== null && worktreePath !== null };
   });
 
-  /** Starts one run and records it. Never fails: a failed run is a run with an error. */
-  const executeRun = (automation: StoredAutomation, cause: string, context: string | null) =>
+  /**
+   * Starts one run and records it. Never fails: a failed run is a run with an error.
+   * `pullRequest` is set when a pull request triggered the run; its thread is linked to it.
+   */
+  const executeRun = (
+    automation: StoredAutomation,
+    cause: string,
+    context: string | null,
+    pullRequest: GitHubItem | null,
+  ) =>
     Effect.gen(function* () {
       const project = yield* snapshotQuery
         .getProjectShellById(automation.projectId)
@@ -326,10 +375,33 @@ const make = Effect.gen(function* () {
             .getThreadShellById(previousThreadId)
             .pipe(Effect.map(Option.getOrUndefined))
         : undefined;
-      const threadId =
+      const run =
         previousThread && previousThread.archivedAt === null
-          ? previousThread.id
-          : yield* createRunThread(automation, project.workspaceRoot, modelSelection);
+          ? { threadId: previousThread.id, detachedAtPullRequest: false }
+          : yield* createRunThread(automation, project.workspaceRoot, modelSelection, pullRequest);
+      const threadId = run.threadId;
+
+      const link = pullRequest === null ? null : parseChangeRequestUrl(pullRequest.url);
+      if (pullRequest !== null && link !== null) {
+        yield* engine
+          .dispatch({
+            type: "thread.pull-request.link",
+            commandId: CommandId.make(`server:automation-pr-link:${yield* newId}`),
+            threadId,
+            ...link,
+            url: pullRequest.url,
+            source: "manual",
+          })
+          .pipe(
+            // Already linked (a continued conversation reviewing it again) is the goal state.
+            Effect.catchTags({ OrchestrationCommandInvariantError: () => Effect.void }),
+            Effect.ignoreCause({ log: true }),
+          );
+      }
+      const runContext =
+        pullRequest !== null && run.detachedAtPullRequest
+          ? `${context ?? ""}\nThis worktree is checked out detached at the pull request's head. To review newer commits, run \`gh pr checkout ${pullRequest.number} --detach\`.`
+          : context;
 
       const createdAt = yield* nowIso;
       yield* engine.dispatch({
@@ -339,7 +411,7 @@ const make = Effect.gen(function* () {
         message: {
           messageId: MessageId.make(yield* newId),
           role: "user",
-          text: context ? `${automation.prompt}\n\n---\n${context}` : automation.prompt,
+          text: runContext ? `${automation.prompt}\n\n---\n${runContext}` : automation.prompt,
           attachments: [],
         },
         modelSelection,
@@ -401,7 +473,7 @@ const make = Effect.gen(function* () {
       // Two schedules due in the same tick are one run, not two copies of the same work.
       const [first] = due;
       if (first) {
-        yield* executeRun(automation, describeTrigger(first), null);
+        yield* executeRun(automation, describeTrigger(first), null, null);
       }
     }
   });
@@ -484,6 +556,7 @@ const make = Effect.gen(function* () {
           automation,
           `${label}: #${item.number}`,
           `Triggered by GitHub ${kind.toLowerCase()} #${item.number}: ${item.title}\n${item.url}`,
+          kind === "Pull request" ? item : null,
         );
       }
     }).pipe(
@@ -572,7 +645,7 @@ const make = Effect.gen(function* () {
       ),
     runNow: (id) =>
       findAutomation(id).pipe(
-        Effect.flatMap((automation) => executeRun(automation, "Manual run", null)),
+        Effect.flatMap((automation) => executeRun(automation, "Manual run", null, null)),
       ),
   });
 });

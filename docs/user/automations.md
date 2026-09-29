@@ -35,7 +35,11 @@ every trigger without deleting the automation.
 ## Sessions
 
 **Working copy** chooses between a fresh worktree for each run and the project checkout itself.
-Worktree runs start from the checkout's current branch and run the project's setup script.
+Worktree runs start from the checkout's current branch and run the project's setup script. A run
+triggered by a pull request instead checks out that pull request's latest commit without a branch,
+because the pull request's branch is often already checked out in another worktree. The thread is
+linked to the pull request. To review newer commits, ask the agent to run
+`gh pr checkout <number> --detach`.
 
 **Conversation** chooses between a new thread for each run and continuing the previous run's
 thread.
