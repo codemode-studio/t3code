@@ -7,6 +7,7 @@ import {
   ProviderProfileId,
   type ServerProvider,
   type ServerSettings,
+  type VcsCreateWorktreeInput,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
 } from "@t3tools/contracts";
@@ -21,9 +22,10 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { ChildProcessSpawner } from "effect/unstable/process";
 import * as TestClock from "effect/testing/TestClock";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ServerConfig } from "../config.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
@@ -33,11 +35,11 @@ import { ThreadDeletionReactor } from "../orchestration/Services/ThreadDeletionR
 import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { GitHubCli } from "../sourceControl/GitHubCli.ts";
+import { GitHubCli, GitHubPullRequestNotFoundError } from "../sourceControl/GitHubCli.ts";
 import * as AutomationService from "./AutomationService.ts";
 
 const PROJECT_ID = ProjectId.make("automation-project");
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 const PROJECT: OrchestrationProjectShell = {
   id: PROJECT_ID,
@@ -68,10 +70,10 @@ const makeLayer = (input: {
   readonly project: OrchestrationProjectShell | null;
   readonly settings?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
+  readonly git?: Partial<GitWorkflowService["Service"]>;
+  readonly gitHubCli?: Partial<GitHubCli["Service"]>;
   /** Runs after a command is recorded, e.g. to hold one up. */
   readonly afterRecord?: (command: OrchestrationCommand) => Effect.Effect<void>;
-  /** What `gh pr list` and `gh issue list` answer at a given time. */
-  readonly githubItems?: (nowMs: number) => ReadonlyArray<object>;
 }) =>
   AutomationService.layer.pipe(
     Layer.provide(
@@ -88,20 +90,11 @@ const makeLayer = (input: {
           getThreadShellById: () => Effect.succeed(Option.none()),
         }),
         Layer.mock(ThreadDeletionReactor)({ drainThrough: () => Effect.void }),
-        Layer.mock(GitWorkflowService)({}),
-        Layer.mock(ProjectSetupScriptRunner)({}),
-        Layer.mock(GitHubCli)({
-          execute: () =>
-            Clock.currentTimeMillis.pipe(
-              Effect.map((nowMs) => ({
-                exitCode: ChildProcessSpawner.ExitCode(0),
-                stdout: encodeJson(input.githubItems?.(nowMs) ?? []),
-                stderr: "",
-                stdoutTruncated: false,
-                stderrTruncated: false,
-              })),
-            ),
+        Layer.mock(GitWorkflowService)(input.git ?? {}),
+        Layer.mock(ProjectSetupScriptRunner)({
+          runForThread: () => Effect.succeed({ status: "no-script" }),
         }),
+        Layer.mock(GitHubCli)(input.gitHubCli ?? {}),
         Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed(input.providers ?? []) }),
         ServerSettingsService.layerTest(input.settings),
         ServerConfig.layerTest(process.cwd(), input.stateDir),
@@ -118,12 +111,31 @@ const withService = <A, E>(
       readonly stateDir: string;
       readonly commands: Ref.Ref<ReadonlyArray<OrchestrationCommand>>;
     },
-  ) => Effect.Effect<A, E>,
-  environment: Pick<Parameters<typeof makeLayer>[0], "settings" | "providers" | "afterRecord"> = {},
+  ) => Effect.Effect<A, E, Scope.Scope>,
+  {
+    automationsFile,
+    ...environment
+  }: Pick<
+    Parameters<typeof makeLayer>[0],
+    "settings" | "providers" | "git" | "gitHubCli" | "afterRecord"
+  > & {
+    /** Seeds `automations.json` before the service reads it. */
+    readonly automationsFile?: unknown;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-automations-" });
+    if (automationsFile !== undefined) {
+      const config = yield* ServerConfig.pipe(
+        Effect.provide(ServerConfig.layerTest(process.cwd(), stateDir)),
+      );
+      yield* fs.writeFileString(
+        path.join(config.stateDir, "automations.json"),
+        yield* encodeJson(automationsFile),
+      );
+    }
     const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
     const service = yield* AutomationService.AutomationService.pipe(
       Effect.provide(makeLayer({ stateDir, commands, project, ...environment })),
@@ -213,7 +225,7 @@ describe("AutomationService", () => {
         );
         const onDisk = yield* fs.readFileString(path.join(config.stateDir, "automations.json"));
         assert.include(onDisk, '"scheduleCursor": "1970-01-01T00:05:00.000Z"');
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(NodeServices.layer)),
     ),
   );
 
@@ -242,7 +254,7 @@ describe("AutomationService", () => {
             (command) => command.type === "thread.create" && command.title === "Slow",
           );
           assert.strictEqual(slowStarts.length, 1);
-        }).pipe(Effect.scoped),
+        }),
       {
         afterRecord: (command) =>
           command.type === "thread.create" && command.title === "Slow" ? Effect.never : Effect.void,
@@ -250,35 +262,12 @@ describe("AutomationService", () => {
     ),
   );
 
-  it.effect("a GitHub poll that lands on a scheduled run's tick waits for the next free tick", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-automations-" });
-      const config = yield* ServerConfig.pipe(
-        Effect.provide(ServerConfig.layerTest(process.cwd(), tempDir)),
-      );
+  it.effect(
+    "a GitHub poll that lands on a scheduled run's tick waits for the next free tick",
+    () => {
       // Already watching GitHub, and due every minute, so every two-minute poll lands on a tick
       // where a scheduled run is starting.
       const epoch = "1970-01-01T00:00:00.000Z";
-      const stored = {
-        ...CONFIG,
-        triggers: [
-          { type: "cron", expression: "* * * * *" },
-          { type: "github", event: "pull_request.opened" },
-        ],
-        id: "mixed",
-        createdAt: epoch,
-        updatedAt: epoch,
-        runs: [],
-        scheduleCursor: epoch,
-        githubCursor: epoch,
-      };
-      yield* fs.makeDirectory(config.stateDir, { recursive: true });
-      yield* fs.writeFileString(
-        path.join(config.stateDir, "automations.json"),
-        encodeJson({ automations: [stored] }),
-      );
       const pullRequest = {
         number: 7,
         title: "Add a thing",
@@ -286,39 +275,69 @@ describe("AutomationService", () => {
         createdAt: "1970-01-01T00:01:30.000Z",
         isDraft: false,
       };
-      const service = yield* AutomationService.AutomationService.pipe(
-        Effect.provide(
-          makeLayer({
-            stateDir: tempDir,
-            commands: yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]),
-            project: PROJECT,
-            githubItems: (nowMs) =>
-              Date.parse(pullRequest.createdAt) <= nowMs ? [pullRequest] : [],
-          }),
-        ),
-      );
-
       const causes = (snapshot: { automations: ReadonlyArray<Automation> }) =>
         snapshot.automations[0]?.runs.map((run) => run.cause).toReversed() ?? [];
-      yield* service.start();
-      for (const [step, runs] of [
-        ["1 minute", 1],
-        ["1 minute", 2],
-        ["30 seconds", 3],
-      ] as const) {
-        yield* TestClock.adjust(step);
-        yield* service.changes.pipe(
-          Stream.filter((snapshot) => causes(snapshot).length === runs),
-          Stream.runHead,
-        );
-      }
+      return withService(
+        PROJECT,
+        (service) =>
+          Effect.gen(function* () {
+            yield* service.start();
+            for (const [step, runs] of [
+              ["1 minute", 1],
+              ["1 minute", 2],
+              ["30 seconds", 3],
+            ] as const) {
+              yield* TestClock.adjust(step);
+              yield* service.changes.pipe(
+                Stream.filter((snapshot) => causes(snapshot).length === runs),
+                Stream.runHead,
+              );
+            }
 
-      const snapshot = yield* service.changes.pipe(Stream.runHead);
-      assert.deepStrictEqual(
-        Option.map(snapshot, causes),
-        Option.some(["Every minute", "Every minute", "Pull request opened: #7"]),
+            const snapshot = yield* service.changes.pipe(Stream.runHead);
+            assert.deepStrictEqual(
+              Option.map(snapshot, causes),
+              Option.some(["Every minute", "Every minute", "Pull request opened: #7"]),
+            );
+          }),
+        {
+          automationsFile: {
+            automations: [
+              {
+                ...CONFIG,
+                triggers: [
+                  { type: "cron", expression: "* * * * *" },
+                  { type: "github", event: "pull_request.opened" },
+                ],
+                id: "mixed",
+                createdAt: epoch,
+                updatedAt: epoch,
+                runs: [],
+                scheduleCursor: epoch,
+                githubCursor: epoch,
+              },
+            ],
+          },
+          gitHubCli: {
+            // Lists the pull request once it has been opened.
+            execute: () =>
+              Clock.currentTimeMillis.pipe(
+                Effect.flatMap((nowMs) =>
+                  encodeJson(Date.parse(pullRequest.createdAt) <= nowMs ? [pullRequest] : []),
+                ),
+                Effect.orDie,
+                Effect.map((stdout) => ({
+                  exitCode: ChildProcessSpawner.ExitCode(0),
+                  stdout,
+                  stderr: "",
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                })),
+              ),
+          },
+        },
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    },
   );
 
   it.effect("a local run creates a thread and starts a turn with the instructions", () =>
@@ -407,4 +426,155 @@ describe("AutomationService", () => {
       );
     },
   );
+
+  describe("pull request runs", () => {
+    const PR_CONFIG: AutomationConfig = {
+      ...CONFIG,
+      name: "Review new pull requests",
+      triggers: [{ type: "github", event: "pull_request.opened" }],
+      prompt: "Review the pull request.",
+      workingCopy: "worktree",
+    };
+    const PR_LIST = JSON.stringify([
+      {
+        number: 30,
+        title: "feat(web): add tooltip",
+        url: "https://github.com/acme/app/pull/30",
+        createdAt: "2026-09-28T15:00:00.000Z",
+        isDraft: false,
+      },
+    ]);
+    const output = (stdout: string) => ({
+      exitCode: ChildProcessSpawner.ExitCode(0),
+      stdout,
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    });
+
+    // Watching started before the PR was opened, so the first poll picks it up.
+    const PR_AUTOMATIONS_FILE = {
+      automations: [
+        {
+          ...PR_CONFIG,
+          id: "pr-review",
+          createdAt: "2026-09-28T00:00:00.000Z",
+          updatedAt: "2026-09-28T00:00:00.000Z",
+          runs: [],
+          scheduleCursor: "2026-09-28T00:00:00.000Z",
+          githubCursor: "2026-09-28T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const pollUntilRun = (service: AutomationService.AutomationService["Service"]) =>
+      Effect.gen(function* () {
+        // Past the poll interval, so the loop's first iteration polls GitHub.
+        yield* TestClock.setTime(Date.parse("2026-09-28T16:00:00.000Z"));
+        yield* service.start();
+        const snapshot = yield* service.changes.pipe(
+          Stream.filter((value) => (value.automations[0]?.runs.length ?? 0) > 0),
+          Stream.runHead,
+        );
+        return Option.getOrThrow(snapshot).automations[0]!.runs[0]!;
+      });
+
+    it.effect("reviews the PR head in a detached worktree and links the PR", () =>
+      Effect.gen(function* () {
+        const worktrees = yield* Ref.make<ReadonlyArray<VcsCreateWorktreeInput>>([]);
+        const ghCalls = yield* Ref.make<ReadonlyArray<{ cwd: string; args: string }>>([]);
+        yield* withService(
+          PROJECT,
+          (service, { commands }) =>
+            Effect.gen(function* () {
+              const run = yield* pollUntilRun(service);
+              assert.strictEqual(run.error, null);
+
+              const [worktree] = yield* Ref.get(worktrees);
+              assert.strictEqual(worktree?.refName, "HEAD");
+              assert.isUndefined(worktree?.newRefName);
+              assert.match(worktree?.path ?? "", /\/automation-project\/pr-30-[0-9a-f]{8}$/);
+              assert.deepInclude(yield* Ref.get(ghCalls), {
+                cwd: worktree!.path!,
+                args: "pr checkout 30 --detach",
+              });
+
+              const dispatched = yield* Ref.get(commands);
+              assert.deepStrictEqual(
+                dispatched.map((command) => command.type),
+                ["thread.create", "thread.pull-request.link", "thread.turn.start"],
+              );
+              const [create, link, turn] = dispatched;
+              assert.deepStrictEqual(
+                create?.type === "thread.create" && [create.branch, create.worktreePath],
+                [null, worktree!.path],
+              );
+              assert.deepStrictEqual(
+                link?.type === "thread.pull-request.link" && [link.repository, link.number],
+                ["acme/app", 30],
+              );
+              assert.include(
+                turn?.type === "thread.turn.start" ? turn.message.text : "",
+                "gh pr checkout 30 --detach",
+              );
+            }),
+          {
+            automationsFile: PR_AUTOMATIONS_FILE,
+            git: {
+              isRepository: () => Effect.succeed(true),
+              createWorktree: (input) =>
+                Ref.update(worktrees, (all) => [...all, input]).pipe(
+                  Effect.as({ worktree: { path: input.path!, refName: input.refName } }),
+                ),
+            },
+            gitHubCli: {
+              execute: (input) =>
+                Ref.update(ghCalls, (all) => [
+                  ...all,
+                  { cwd: input.cwd, args: input.args.join(" ") },
+                ]).pipe(Effect.as(output(input.args[1] === "list" ? PR_LIST : ""))),
+            },
+          },
+        );
+      }),
+    );
+
+    it.effect("removes the worktree and records the failure when the checkout fails", () =>
+      Effect.gen(function* () {
+        const removed = yield* Ref.make<ReadonlyArray<string>>([]);
+        yield* withService(
+          PROJECT,
+          (service, { commands }) =>
+            Effect.gen(function* () {
+              const run = yield* pollUntilRun(service);
+              assert.strictEqual(run.threadId, null);
+              assert.isNotNull(run.error);
+              assert.match((yield* Ref.get(removed))[0] ?? "", /pr-30-[0-9a-f]{8}$/);
+              assert.deepStrictEqual(yield* Ref.get(commands), []);
+            }),
+          {
+            automationsFile: PR_AUTOMATIONS_FILE,
+            git: {
+              isRepository: () => Effect.succeed(true),
+              createWorktree: (input) =>
+                Effect.succeed({ worktree: { path: input.path!, refName: input.refName } }),
+              removeWorktree: (input) => Ref.update(removed, (all) => [...all, input.path]),
+            },
+            gitHubCli: {
+              execute: (input) =>
+                input.args[1] === "list"
+                  ? Effect.succeed(output(PR_LIST))
+                  : Effect.fail(
+                      new GitHubPullRequestNotFoundError({
+                        command: "gh",
+                        cwd: input.cwd,
+                        cause: null,
+                      }),
+                    ),
+            },
+          },
+        );
+      }),
+    );
+  });
 });
