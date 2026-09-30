@@ -45,7 +45,7 @@ function projectLabel(root: string, roots: ReadonlyArray<string>) {
 }
 
 /** The project root that holds a project skill, or null for personal skills and strays. */
-export function skillProjectRoot(
+function skillProjectRoot(
   skill: Pick<SettingsSkill, "environmentId" | "path" | "scope">,
   targets: ReadonlyArray<Pick<SkillEnvironmentTarget, "environmentId" | "workspaceRoots">>,
 ): string | null {
