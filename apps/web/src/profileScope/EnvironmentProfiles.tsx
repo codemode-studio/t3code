@@ -149,27 +149,25 @@ export function EnvironmentProfiles({
               key={id}
               title={profile.name}
               icon={<ProfileAvatar option={profileOption(id, profile)} size="sm" />}
+              badge={isDefault ? <Badge variant="info">Default</Badge> : null}
               headerAction={
                 <span className="flex items-center gap-2">
-                  {isDefault ? (
-                    <Badge variant="secondary" size="sm">
-                      Default
-                    </Badge>
-                  ) : null}
                   {readOnly ? null : isDefault ? (
-                    <InlineButton
-                      tone="muted"
+                    <Button
+                      size="xs"
+                      variant="outline"
                       onClick={() => updateSettings({ providerProfileId: null })}
                     >
                       Unset default
-                    </InlineButton>
+                    </Button>
                   ) : (
-                    <InlineButton
-                      tone="muted"
+                    <Button
+                      size="xs"
+                      variant="outline"
                       onClick={() => updateSettings({ providerProfileId: id })}
                     >
                       Make default
-                    </InlineButton>
+                    </Button>
                   )}
                   {readOnly ? null : (
                     <Button size="xs" variant="outline" onClick={() => setEditing({ id, profile })}>
