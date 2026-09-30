@@ -201,6 +201,19 @@ describe("file skills catalog", () => {
     expect(result.skills).toEqual([]);
   });
 
+  it("labels a provider-reported skill by the folder it lives in", async () => {
+    const synced = NodePath.join(home, ".claude", "skills", "synced", "account-id", "docs");
+    await NodeFSP.mkdir(synced, { recursive: true });
+    const file = NodePath.join(synced, "SKILL.md");
+    await NodeFSP.writeFile(file, "---\nname: docs\n---\n");
+    const opencode = {
+      ...provider([{ name: "docs", path: file, scope: "user", enabled: true }]),
+      driver: ProviderDriverKind.make("opencode"),
+    };
+    const result = await listSkillFiles({ workspaceRoots: [] }, [opencode], home);
+    expect(result.skills.map(({ name, source }) => [name, source])).toEqual([["docs", "claude"]]);
+  });
+
   it("ignores skills providers report from worktrees, other checkouts, and plugin caches", async () => {
     const worktree = NodePath.join(home, ".t3", "worktrees", "app", "feature-1");
     const otherCheckout = NodePath.join(home, "Git", "other-repo");

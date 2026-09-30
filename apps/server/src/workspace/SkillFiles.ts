@@ -74,6 +74,21 @@ function hiddenSkillFile(file: string) {
   );
 }
 
+/**
+ * The folder family a skill file lives in, such as `claude` for anything under `.claude/skills`.
+ * Providers also report skills from other tools' folders (OpenCode reads `~/.claude/skills`), so
+ * the folder, not the reporting provider, says where a skill comes from.
+ */
+function folderSource(file: string): string | null {
+  const normalized = file.replaceAll("\\", "/");
+  let match: { readonly index: number; readonly source: string } | null = null;
+  for (const [folder, source] of PERSONAL_SKILL_FOLDERS) {
+    const index = normalized.lastIndexOf(`/${folder}/`);
+    if (index >= 0 && (match === null || index > match.index)) match = { index, source };
+  }
+  return match?.source ?? null;
+}
+
 /** Limit open handles, not catalog size. Cancellation stops scheduling further disk reads. */
 async function forEachConcurrent<T>(
   values: readonly T[],
@@ -123,7 +138,7 @@ export async function listSkillFiles(
     const previous = candidates.get(file);
     candidates.set(file, {
       scope: personal || previous?.scope === "personal" ? "personal" : scope,
-      source: previous?.source ?? source,
+      source: previous?.source ?? folderSource(file) ?? source,
     });
   };
   await forEachConcurrent(
