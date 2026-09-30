@@ -1,4 +1,4 @@
-import { deriveRepositoryGroupKey } from "@t3tools/client-runtime/state/project-grouping";
+import { sharesRepository } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -57,20 +57,20 @@ export function resolveEnvironmentProjectMatch(
   projectsOnTarget: ReadonlyArray<EnvironmentProject>,
   selectedProject: EnvironmentProject | null,
 ): EnvironmentProject | null {
-  const repositoryKey = deriveRepositoryGroupKey(selectedProject);
+  const hasRepository = selectedProject?.repositoryIdentity != null;
   // `|| null` (not `??`): a pending-task placeholder project can have an empty
   // workspaceRoot, and an "" basename would match nothing meaningful.
   const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
   // The weaker signals only apply where identity is unknown on at least one
   // side; two known, different repositories never match on a shared basename
   // or title (mirrors the environment list filter in the new-task flow).
-  const isKnownMismatch = (project: EnvironmentProject) => {
-    const projectKey = deriveRepositoryGroupKey(project);
-    return repositoryKey !== null && projectKey !== null && projectKey !== repositoryKey;
-  };
+  const isKnownMismatch = (project: EnvironmentProject) =>
+    hasRepository &&
+    project.repositoryIdentity !== null &&
+    !sharesRepository(selectedProject, project);
   return (
-    (repositoryKey !== null
-      ? projectsOnTarget.find((project) => deriveRepositoryGroupKey(project) === repositoryKey)
+    (hasRepository
+      ? projectsOnTarget.find((project) => sharesRepository(selectedProject, project))
       : undefined) ??
     (workspaceBasename !== null
       ? projectsOnTarget.find(

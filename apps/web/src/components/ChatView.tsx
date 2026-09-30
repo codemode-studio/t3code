@@ -2458,10 +2458,18 @@ export default function ChatView(props: ChatViewProps) {
   );
   const logicalProjectEnvironments = useMemo(() => {
     if (!activeProject) return [];
-    const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
-    const memberProjects = allProjects.filter(
-      (p) => deriveLogicalProjectKeyFromSettings(p, projectGroupingSettings) === logicalKey,
-    );
+    // Follow the sidebar's groups, which also merge projects whose servers
+    // report different repository keys.
+    const logicalKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
+      projects: allProjects,
+      settings: projectGroupingSettings,
+      primaryEnvironmentId,
+    });
+    const logicalKeyOf = (project: typeof activeProject) =>
+      logicalKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
+      deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
+    const logicalKey = logicalKeyOf(activeProject);
+    const memberProjects = allProjects.filter((p) => logicalKeyOf(p) === logicalKey);
     const seen = new Set<string>();
     const envs: EnvironmentOption[] = [];
     for (const p of memberProjects) {

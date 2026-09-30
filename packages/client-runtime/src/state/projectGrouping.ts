@@ -96,35 +96,40 @@ export function resolveProjectGroupingMode(
   );
 }
 
-/** Key that identifies the same repository across environments, or null when unknown. */
-export function deriveRepositoryGroupKey(
+/**
+ * Keys that identify a project's repository across environments, preferred key
+ * first. Servers before `groupKey` report only `canonicalKey`, so two projects
+ * are the same repository when they share any key.
+ */
+export function deriveRepositoryKeys(
   project: Pick<EnvironmentProject, "repositoryIdentity"> | null | undefined,
-): string | null {
+): ReadonlyArray<string> {
   const identity = project?.repositoryIdentity;
-  return identity?.groupKey ?? identity?.canonicalKey ?? null;
+  if (!identity) return [];
+  return identity.groupKey && identity.groupKey !== identity.canonicalKey
+    ? [identity.groupKey, identity.canonicalKey]
+    : [identity.canonicalKey];
 }
 
-function deriveRepositoryScopedKey(
+export function sharesRepository(
+  left: Pick<EnvironmentProject, "repositoryIdentity"> | null | undefined,
+  right: Pick<EnvironmentProject, "repositoryIdentity"> | null | undefined,
+): boolean {
+  const rightKeys = deriveRepositoryKeys(right);
+  return deriveRepositoryKeys(left).some((key) => rightKeys.includes(key));
+}
+
+function deriveRepositoryScopedKeys(
   project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
   groupingMode: SidebarProjectGroupingMode,
-): string | null {
-  const repositoryKey = deriveRepositoryGroupKey(project);
-  if (!repositoryKey) {
-    return null;
-  }
-
-  if (groupingMode === "repository") {
-    return repositoryKey;
-  }
+): ReadonlyArray<string> {
+  const repositoryKeys = deriveRepositoryKeys(project);
+  if (groupingMode === "repository") return repositoryKeys;
 
   const relativeProjectPath = deriveRepositoryRelativeProjectPath(project);
-  if (relativeProjectPath === null) {
-    return repositoryKey;
-  }
-
-  return relativeProjectPath.length === 0
-    ? repositoryKey
-    : `${repositoryKey}::${relativeProjectPath}`;
+  return relativeProjectPath
+    ? repositoryKeys.map((key) => `${key}::${relativeProjectPath}`)
+    : repositoryKeys;
 }
 
 export function deriveLogicalProjectKey(
@@ -142,7 +147,7 @@ export function deriveLogicalProjectKey(
   }
 
   return (
-    deriveRepositoryScopedKey(project, groupingMode) ??
+    deriveRepositoryScopedKeys(project, groupingMode)[0] ??
     derivePhysicalProjectKey(project) ??
     scopedProjectKey(scopeProjectRef(project.environmentId, project.id))
   );
@@ -268,24 +273,70 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
     }
   }
 
-  const logicalKeyByPhysicalKey = new Map<string, string>();
-  const groupedMembers = new Map<string, ProjectGroupMember<TProject>[]>();
+  // Projects whose repository keys overlap share a group even when their
+  // preferred keys differ, as when only one environment's server sends `groupKey`.
+  const parentByLogicalKey = new Map<string, string>();
+  const findRoot = (logicalKey: string): string => {
+    const parent = parentByLogicalKey.get(logicalKey);
+    return parent === undefined ? logicalKey : findRoot(parent);
+  };
+  const logicalKeyByRepositoryKey = new Map<string, string>();
+  const entries: Array<{
+    readonly logicalKey: string;
+    readonly member: ProjectGroupMember<TProject>;
+  }> = [];
   for (const [physicalProjectKey, physicalProjects] of projectsByPhysicalKey) {
     const winner = physicalProjects.reduce((current, candidate) =>
       shouldReplacePhysicalProjectWinner(current, candidate) ? candidate : current,
     );
     const identitySource = selectProjectIdentitySource(physicalProjects, winner);
-    const logicalKey = deriveLogicalProjectKey(identitySource, {
-      groupingMode: resolveProjectGroupingMode(winner, input.settings),
-    });
-    logicalKeyByPhysicalKey.set(physicalProjectKey, logicalKey);
-    const member = { physicalProjectKey, project: winner };
-    const existing = groupedMembers.get(logicalKey);
-    if (existing) {
-      existing.push(member);
-    } else {
-      groupedMembers.set(logicalKey, [member]);
+    const groupingMode = resolveProjectGroupingMode(winner, input.settings);
+    const logicalKey = deriveLogicalProjectKey(identitySource, { groupingMode });
+    if (groupingMode !== "separate") {
+      for (const repositoryKey of deriveRepositoryScopedKeys(identitySource, groupingMode)) {
+        const owner = logicalKeyByRepositoryKey.get(repositoryKey);
+        if (owner === undefined) {
+          logicalKeyByRepositoryKey.set(repositoryKey, logicalKey);
+          continue;
+        }
+        const ownerRoot = findRoot(owner);
+        const root = findRoot(logicalKey);
+        if (ownerRoot !== root) parentByLogicalKey.set(root, ownerRoot);
+      }
     }
+    entries.push({ logicalKey, member: { physicalProjectKey, project: winner } });
+  }
+
+  const entriesByRoot = new Map<string, (typeof entries)[number][]>();
+  for (const entry of entries) {
+    const root = findRoot(entry.logicalKey);
+    const existing = entriesByRoot.get(root);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      entriesByRoot.set(root, [entry]);
+    }
+  }
+
+  // A merged group keeps the preferred environment's key, which is the key its
+  // local project derives on its own.
+  const preferredEnvironmentId = input.preferredEnvironmentId ?? null;
+  const logicalKeyByPhysicalKey = new Map<string, string>();
+  const groupedMembers = new Map<string, ProjectGroupMember<TProject>[]>();
+  for (const groupEntries of entriesByRoot.values()) {
+    const representativeEntry =
+      (preferredEnvironmentId
+        ? groupEntries.find(
+            (entry) => entry.member.project.environmentId === preferredEnvironmentId,
+          )
+        : undefined) ?? groupEntries[0]!;
+    for (const entry of groupEntries) {
+      logicalKeyByPhysicalKey.set(entry.member.physicalProjectKey, representativeEntry.logicalKey);
+    }
+    groupedMembers.set(
+      representativeEntry.logicalKey,
+      groupEntries.map((entry) => entry.member),
+    );
   }
 
   const projectRefsByLogicalKey = new Map<string, ScopedProjectRef[]>();
@@ -307,7 +358,6 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
     }
   }
 
-  const preferredEnvironmentId = input.preferredEnvironmentId ?? null;
   return Array.from(groupedMembers, ([key, members]) => {
     const representative =
       (preferredEnvironmentId
