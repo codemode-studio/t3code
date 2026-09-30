@@ -188,6 +188,76 @@ describe("file skills catalog", () => {
     expect(result.skills).toEqual([]);
   });
 
+  it("skips deleted skills a provider keeps in a hidden trash folder", async () => {
+    const trashed = NodePath.join(home, ".claude", "skills", ".trash", "1790310884383", "review");
+    await NodeFSP.mkdir(trashed, { recursive: true });
+    const file = NodePath.join(trashed, "SKILL.md");
+    await NodeFSP.writeFile(file, "---\nname: review\n---\n");
+    const result = await listSkillFiles(
+      { workspaceRoots: [] },
+      [provider([{ name: "review", path: file, scope: "user", enabled: true }])],
+      home,
+    );
+    expect(result.skills).toEqual([]);
+  });
+
+  it("labels a provider-reported skill by the folder it lives in", async () => {
+    const synced = NodePath.join(home, ".claude", "skills", "synced", "account-id", "docs");
+    await NodeFSP.mkdir(synced, { recursive: true });
+    const file = NodePath.join(synced, "SKILL.md");
+    await NodeFSP.writeFile(file, "---\nname: docs\n---\n");
+    const opencode = {
+      ...provider([{ name: "docs", path: file, scope: "user", enabled: true }]),
+      driver: ProviderDriverKind.make("opencode"),
+    };
+    const result = await listSkillFiles({ workspaceRoots: [] }, [opencode], home);
+    expect(result.skills.map(({ name, source }) => [name, source])).toEqual([["docs", "claude"]]);
+  });
+
+  it("keeps personal skills from a provider's custom home", async () => {
+    const customHome = NodePath.join(home, ".codex-work");
+    const file = NodePath.join(customHome, "skills", "review", "SKILL.md");
+    await NodeFSP.mkdir(NodePath.dirname(file), { recursive: true });
+    await NodeFSP.writeFile(file, "---\nname: review\n---\n");
+    const codex = {
+      ...provider([{ name: "review", path: file, scope: "user", enabled: true }]),
+      runtimePaths: { homePath: customHome, shadowHomePath: null },
+    };
+    const result = await listSkillFiles({ workspaceRoots: [] }, [codex], home);
+    expect(result.skills.map(({ name, scope, source }) => [name, scope, source])).toEqual([
+      ["review", "personal", "codex"],
+    ]);
+  });
+
+  it("ignores skills providers report from worktrees, other checkouts, and plugin caches", async () => {
+    const worktree = NodePath.join(home, ".t3", "worktrees", "app", "feature-1");
+    const otherCheckout = NodePath.join(home, "Git", "other-repo");
+    const pluginCache = NodePath.join(home, ".codex", "plugins", "cache", "vendor", "tool");
+    const reported = await Promise.all([
+      writeSkill(worktree, "from-worktree"),
+      writeSkill(otherCheckout, "from-other-repo"),
+      writeSkill(pluginCache, "from-plugin-cache"),
+      writeSkill(project, "from-selected-project"),
+    ]);
+    const result = await listSkillFiles(
+      { workspaceRoots: [project] },
+      [
+        provider(
+          reported.map((path) => ({
+            name: NodePath.basename(NodePath.dirname(path)),
+            path,
+            scope: "user",
+            enabled: true,
+          })),
+        ),
+      ],
+      home,
+    );
+    expect(result.skills.map(({ name, scope }) => [name, scope])).toEqual([
+      ["from-selected-project", "project"],
+    ]);
+  });
+
   it("reports malformed or oversized frontmatter instead of silently showing a complete catalog", async () => {
     await writeSkill(project, "bad", "---\nname: [invalid\n---\n");
     await writeSkill(project, "huge", "---\ndescription: " + "x".repeat(20_000) + "\n---\n");

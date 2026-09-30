@@ -62,8 +62,31 @@ function within(file: string, root: string) {
       !NodePath.isAbsolute(relative))
   );
 }
-function builtin(file: string) {
-  return file.replaceAll("\\", "/").includes("/skills/.system/");
+/**
+ * Skills inside a hidden folder of a skills directory are not installed skills: `.system` holds
+ * provider built-ins and `.trash` holds deleted skills a provider keeps around.
+ */
+function hiddenSkillFile(file: string) {
+  const segments = file.replaceAll("\\", "/").split("/");
+  const skillsIndex = segments.lastIndexOf("skills");
+  return (
+    skillsIndex >= 0 && segments.slice(skillsIndex + 1).some((segment) => segment.startsWith("."))
+  );
+}
+
+/**
+ * The folder family a skill file lives in, such as `claude` for anything under `.claude/skills`.
+ * Providers also report skills from other tools' folders (OpenCode reads `~/.claude/skills`), so
+ * the folder, not the reporting provider, says where a skill comes from.
+ */
+function folderSource(file: string): string | null {
+  const normalized = file.replaceAll("\\", "/");
+  let match: { readonly index: number; readonly source: string } | null = null;
+  for (const [folder, source] of PERSONAL_SKILL_FOLDERS) {
+    const index = normalized.lastIndexOf(`/${folder}/`);
+    if (index >= 0 && (match === null || index > match.index)) match = { index, source };
+  }
+  return match?.source ?? null;
 }
 
 /** Limit open handles, not catalog size. Cancellation stops scheduling further disk reads. */
@@ -108,14 +131,22 @@ export async function listSkillFiles(
       })),
     ),
   ];
-  const personalRoots = PERSONAL_SKILL_FOLDERS.map(([folder]) => NodePath.join(home, folder));
+  // Providers can run from a custom home, such as `~/.codex-work`, whose skills folder is personal.
+  const personalRoots = [
+    ...PERSONAL_SKILL_FOLDERS.map(([folder]) => NodePath.join(home, folder)),
+    ...providers.flatMap(({ runtimePaths }) =>
+      [runtimePaths?.homePath, runtimePaths?.shadowHomePath].flatMap((providerHome) =>
+        providerHome ? [NodePath.join(NodePath.resolve(providerHome), "skills")] : [],
+      ),
+    ),
+  ];
   const addCandidate = (file: string, scope: FileSkill["scope"], source: string) => {
-    if (builtin(file)) return;
+    if (hiddenSkillFile(file)) return;
     const personal = personalRoots.some((root) => within(file, root));
     const previous = candidates.get(file);
     candidates.set(file, {
       scope: personal || previous?.scope === "personal" ? "personal" : scope,
-      source: previous?.source ?? source,
+      source: previous?.source ?? folderSource(file) ?? source,
     });
   };
   await forEachConcurrent(
@@ -151,17 +182,13 @@ export async function listSkillFiles(
       }
       if (!provider.enabled || !provider.installed) continue;
       providerPaths.add(file);
-      const homeSkill =
-        within(file, home) && !roots.some((root) => root !== home && within(file, root));
-      if (
-        homeSkill &&
-        !["project", "repo", "workspace", "local"].includes(skill.scope?.toLowerCase() ?? "")
-      ) {
+      // Providers report every skill they can see from wherever they run, including worktrees,
+      // other checkouts, and plugin caches under home. Only personal skill folders and the
+      // selected projects belong in this catalog.
+      if (personalRoots.some((root) => within(file, root))) {
         addCandidate(file, "personal", provider.driver);
-      } else if (roots.some((root) => within(file, root))) {
+      } else if (roots.some((root) => root !== home && within(file, root))) {
         addCandidate(file, "project", provider.driver);
-      } else if (["user", "personal"].includes(skill.scope?.toLowerCase() ?? "")) {
-        addCandidate(file, "personal", provider.driver);
       }
     }
   }
@@ -182,7 +209,8 @@ export async function listSkillFiles(
     async ([file, location]) => {
       try {
         const canonical = await NodeFSP.realpath(file);
-        if (builtin(canonical) || excludedPaths.has(file) || excludedPaths.has(canonical)) return;
+        if (hiddenSkillFile(canonical) || excludedPaths.has(file) || excludedPaths.has(canonical))
+          return;
         if (!(await NodeFSP.stat(file)).isFile()) return;
         const handle = await NodeFSP.open(file, "r");
         let contents: string;
