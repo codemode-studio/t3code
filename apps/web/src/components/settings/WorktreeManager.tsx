@@ -48,9 +48,11 @@ import {
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsSection } from "./settingsLayout";
 import {
+  selectedWorktreePaths,
   worktreeThreads,
   worktreeDeletionBlockReason,
   type WorktreeDeletionTarget,
+  type WorktreeSelection,
 } from "./worktreeManager.logic";
 
 function commandError(result: Parameters<typeof squashAtomCommandFailure>[0]): string {
@@ -191,7 +193,7 @@ export function WorktreeManager() {
   const { scope, connectedEnvironments } = useSettingsScope();
   const [selectedMemberKey, setSelectedMemberKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const [selection, setSelection] = useState<WorktreeSelection | null>(null);
   const [deleting, setDeleting] = useState<ReadonlyArray<WorktreeDeletionTarget> | null>(null);
   // Keep the targets through the close animation.
   const [shownDeleting, setShownDeleting] = useState(deleting);
@@ -218,6 +220,7 @@ export function WorktreeManager() {
           input: { cwd: member.workspaceRoot },
         }),
   );
+  const selectedPaths = selectedWorktreePaths(selection, member);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const worktrees = query.data?.worktrees.filter((tree) => !tree.isMain) ?? [];
   const threadsByWorktree = member
@@ -281,7 +284,13 @@ export function WorktreeManager() {
       else failed.push({ target, message: commandError(result) });
     }
     setBusy(false);
-    setSelectedPaths((current) => new Set([...current].filter((path) => !removed.has(path))));
+    setSelection(
+      (current) =>
+        current && {
+          ...current,
+          paths: new Set([...current.paths].filter((path) => !removed.has(path))),
+        },
+    );
     if (failed.length === 0) {
       setDeleting(null);
       return;
@@ -295,13 +304,13 @@ export function WorktreeManager() {
             .join("\n"),
     );
   };
-  const toggleSelected = (path: string, checked: boolean) =>
-    setSelectedPaths((current) => {
-      const next = new Set(current);
-      if (checked) next.add(path);
-      else next.delete(path);
-      return next;
-    });
+  const toggleSelected = (path: string, checked: boolean) => {
+    if (!member) return;
+    const paths = new Set(selectedPaths);
+    if (checked) paths.add(path);
+    else paths.delete(path);
+    setSelection({ environmentId: member.environmentId, cwd: member.workspaceRoot, paths });
+  };
   return (
     <SettingsSection id="storage-manage-worktrees" title="Manage worktrees">
       <div className="flex flex-col gap-4 p-4">
@@ -314,7 +323,7 @@ export function WorktreeManager() {
                   setSelectedMemberKey(value);
                   setError(null);
                   setDeleting(null);
-                  setSelectedPaths(new Set());
+                  setSelection(null);
                 }
               }}
             >
@@ -357,7 +366,7 @@ export function WorktreeManager() {
           </Button>
           {selectedTargets.length > 0 && (
             <div className="ml-auto flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setSelectedPaths(new Set())}>
+              <Button size="sm" variant="ghost" onClick={() => setSelection(null)}>
                 Clear selection
               </Button>
               <Button

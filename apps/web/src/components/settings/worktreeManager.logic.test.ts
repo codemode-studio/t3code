@@ -2,6 +2,7 @@ import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  selectedWorktreePaths,
   worktreeDeletionBlockReason,
   worktreeThreads,
   type WorktreeDeletionTarget,
@@ -81,5 +82,14 @@ describe("worktree deletion", () => {
     expect(
       worktreeDeletionBlockReason(target, member, [{ ...idle, hasPendingApprovals: true }]),
     ).toBe("A thread is running here");
+  });
+
+  it("does not carry a selection to the checkout the manager falls back to", () => {
+    const selection = { environmentId: laptop, cwd: "/repo", paths: new Set(["/linked"]) };
+    expect(selectedWorktreePaths(selection, member)).toEqual(new Set(["/linked"]));
+    // The laptop disconnected and the server has a worktree at the same path.
+    expect(selectedWorktreePaths(selection, { ...member, environmentId: server }).size).toBe(0);
+    expect(selectedWorktreePaths(selection, { ...member, workspaceRoot: "/other" }).size).toBe(0);
+    expect(selectedWorktreePaths(selection, null).size).toBe(0);
   });
 });

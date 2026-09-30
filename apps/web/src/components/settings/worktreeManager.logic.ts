@@ -10,6 +10,28 @@ export interface WorktreeDeletionTarget {
   worktree: VcsListedWorktree;
 }
 
+/** Worktree paths checked in one checkout. Paths alone are ambiguous across checkouts. */
+export interface WorktreeSelection {
+  environmentId: EnvironmentId;
+  cwd: string;
+  paths: ReadonlySet<string>;
+}
+
+const noSelection: ReadonlySet<string> = new Set();
+
+/** The selection visible in `member`; empty when the manager fell back to another checkout. */
+export function selectedWorktreePaths(
+  selection: WorktreeSelection | null,
+  member: { environmentId: EnvironmentId; workspaceRoot: string } | null,
+): ReadonlySet<string> {
+  return selection &&
+    member &&
+    selection.environmentId === member.environmentId &&
+    selection.cwd === member.workspaceRoot
+    ? selection.paths
+    : noSelection;
+}
+
 export function worktreeThreads<
   T extends Pick<EnvironmentThreadShell, "environmentId" | "projectId" | "worktreePath">,
 >(
