@@ -56,6 +56,7 @@ import {
   normalizeCommandPath,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
+import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
@@ -153,13 +154,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           ? configDir
           : undefined,
       );
-      const stampIdentity = withInstanceIdentity({
+      const stampInstance = withInstanceIdentity({
         instanceId,
         driverKind: DRIVER_KIND,
         displayName,
         accentColor,
         continuationGroupKey,
       });
+      // The resolved config dir tells the Skills catalog where this instance's personal skills live.
+      const stampIdentity = (draft: ServerProviderDraft) =>
+        stampInstance({ ...draft, runtimePaths: { homePath: configDir, shadowHomePath: null } });
 
       // One per instance: the status probe writes the model-scoped bucket
       // names it saw, the adapter reads them to place turn-driven events.

@@ -214,6 +214,21 @@ describe("file skills catalog", () => {
     expect(result.skills.map(({ name, source }) => [name, source])).toEqual([["docs", "claude"]]);
   });
 
+  it("keeps personal skills from a provider's custom home", async () => {
+    const customHome = NodePath.join(home, ".codex-work");
+    const file = NodePath.join(customHome, "skills", "review", "SKILL.md");
+    await NodeFSP.mkdir(NodePath.dirname(file), { recursive: true });
+    await NodeFSP.writeFile(file, "---\nname: review\n---\n");
+    const codex = {
+      ...provider([{ name: "review", path: file, scope: "user", enabled: true }]),
+      runtimePaths: { homePath: customHome, shadowHomePath: null },
+    };
+    const result = await listSkillFiles({ workspaceRoots: [] }, [codex], home);
+    expect(result.skills.map(({ name, scope, source }) => [name, scope, source])).toEqual([
+      ["review", "personal", "codex"],
+    ]);
+  });
+
   it("ignores skills providers report from worktrees, other checkouts, and plugin caches", async () => {
     const worktree = NodePath.join(home, ".t3", "worktrees", "app", "feature-1");
     const otherCheckout = NodePath.join(home, "Git", "other-repo");

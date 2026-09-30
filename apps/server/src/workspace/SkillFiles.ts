@@ -131,7 +131,15 @@ export async function listSkillFiles(
       })),
     ),
   ];
-  const personalRoots = PERSONAL_SKILL_FOLDERS.map(([folder]) => NodePath.join(home, folder));
+  // Providers can run from a custom home, such as `~/.codex-work`, whose skills folder is personal.
+  const personalRoots = [
+    ...PERSONAL_SKILL_FOLDERS.map(([folder]) => NodePath.join(home, folder)),
+    ...providers.flatMap(({ runtimePaths }) =>
+      [runtimePaths?.homePath, runtimePaths?.shadowHomePath].flatMap((providerHome) =>
+        providerHome ? [NodePath.join(NodePath.resolve(providerHome), "skills")] : [],
+      ),
+    ),
+  ];
   const addCandidate = (file: string, scope: FileSkill["scope"], source: string) => {
     if (hiddenSkillFile(file)) return;
     const personal = personalRoots.some((root) => within(file, root));
