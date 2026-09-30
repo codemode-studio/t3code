@@ -54,7 +54,6 @@ export function worktreeDeletionBlockReason(
   const tree = target.worktree;
   if (tree.locked) return "Locked in Git";
   if (tree.isMain || tree.path === target.cwd) return "Selected project checkout";
-  if (!tree.branch) return "Detached worktree";
   if (
     threads.some(
       (thread) =>
