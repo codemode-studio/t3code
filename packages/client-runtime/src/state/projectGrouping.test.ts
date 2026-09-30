@@ -136,6 +136,51 @@ describe("buildProjectGroups", () => {
     }
   });
 
+  it("groups one checkout across environments whose gh default repositories differ", () => {
+    const fork = {
+      ...repositoryIdentity,
+      canonicalKey: "github.com/julius/t3code",
+      groupKey: "github.com/t3tools/t3code",
+    };
+    const projects = [
+      makeProject("linux", "/home/julius/t3code"),
+      makeProject("mac", "/Users/julius/t3code", {
+        environmentId: EnvironmentId.make("environment-mac"),
+        repositoryIdentity: fork,
+      }),
+    ];
+
+    const groups = buildProjectGroups({ projects, settings: settings("repository") });
+
+    expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
+      ["linux", "mac"],
+    ]);
+  });
+
+  it("groups one checkout while only one environment's server reports groupKey", () => {
+    const fork = { ...repositoryIdentity, canonicalKey: "github.com/julius/t3code" };
+    const mac = EnvironmentId.make("environment-mac");
+    const projects = [
+      makeProject("linux", "/home/julius/t3code", {
+        repositoryIdentity: { ...fork, groupKey: "github.com/t3tools/t3code" },
+      }),
+      makeProject("mac", "/Users/julius/t3code", { environmentId: mac, repositoryIdentity: fork }),
+    ];
+
+    for (const mode of ["repository", "repository_path"] as const) {
+      const groups = buildProjectGroups({
+        projects,
+        settings: settings(mode),
+        preferredEnvironmentId: mac,
+      });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.key).toBe("github.com/julius/t3code");
+      expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["linux", "mac"]);
+      expect(groups[0]?.memberProjectRefs).toHaveLength(2);
+    }
+  });
+
   it("uses a shared custom title as the repository group's label", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "Custom project" }),

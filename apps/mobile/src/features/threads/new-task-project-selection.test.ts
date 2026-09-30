@@ -17,6 +17,7 @@ function makeProject(
     readonly title?: string;
     readonly workspaceRoot?: string;
     readonly repositoryKey?: string;
+    readonly groupKey?: string;
   } = {},
 ): EnvironmentProject {
   return {
@@ -27,6 +28,7 @@ function makeProject(
     repositoryIdentity: options.repositoryKey
       ? {
           canonicalKey: options.repositoryKey,
+          ...(options.groupKey ? { groupKey: options.groupKey } : {}),
           locator: {
             source: "git-remote",
             remoteName: "origin",
@@ -71,6 +73,18 @@ describe("getProjectScopeSelectionTarget", () => {
 });
 
 describe("resolveEnvironmentProjectMatch", () => {
+  it("follows the repository onto a machine whose server predates groupKey", () => {
+    const selected = makeProject("t3code", "mac", {
+      repositoryKey: "github.com/julius/t3code",
+      groupKey: "github.com/t3tools/t3code",
+    });
+    const target = [
+      makeProject("t3code-fork", "server", { repositoryKey: "github.com/julius/other" }),
+      makeProject("t3code-clone", "server", { repositoryKey: "github.com/julius/t3code" }),
+    ];
+    expect(resolveEnvironmentProjectMatch(target, selected)).toBe(target[1]);
+  });
+
   it("follows the same repository onto the target machine", () => {
     const selected = makeProject("t3code", "mac", { repositoryKey: "github.com/t3tools/t3code" });
     const target = [

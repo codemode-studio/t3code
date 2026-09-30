@@ -79,6 +79,7 @@ import {
   setPendingConnectionError,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
+import { sharesRepository } from "@t3tools/client-runtime/state/project-grouping";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
 import {
@@ -341,7 +342,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // whatever unrelated project happens to be first on the other machine. Repository
   // identity is the primary signal; projects that haven't reported one yet (still
   // indexing) fall back to workspace basename / title so a valid host isn't hidden.
-  const selectedRepositoryKey = selectedProject?.repositoryIdentity?.canonicalKey ?? null;
+  const selectedRepositoryIdentity = selectedProject?.repositoryIdentity ?? null;
   // `|| null` (not `??`): a pending-task placeholder project can have an empty
   // workspaceRoot, and an "" basename would reject every real host below.
   const selectedWorkspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
@@ -353,12 +354,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       readonly environmentLabel: string;
     }> = [];
     const hostsSelectedRepository = (project: EnvironmentProject) => {
-      if (selectedRepositoryKey === null && selectedWorkspaceBasename === null) {
+      if (selectedRepositoryIdentity === null && selectedWorkspaceBasename === null) {
         return true;
       }
-      const projectKey = project.repositoryIdentity?.canonicalKey ?? null;
-      if (selectedRepositoryKey !== null && projectKey !== null) {
-        return projectKey === selectedRepositoryKey;
+      if (selectedRepositoryIdentity !== null && project.repositoryIdentity !== null) {
+        return sharesRepository({ repositoryIdentity: selectedRepositoryIdentity }, project);
       }
       return (
         project.workspaceRoot.split("/").at(-1) === selectedWorkspaceBasename ||
@@ -386,7 +386,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   }, [
     projects,
     savedConnectionsById,
-    selectedRepositoryKey,
+    selectedRepositoryIdentity,
     selectedWorkspaceBasename,
     selectedProjectTitle,
   ]);
