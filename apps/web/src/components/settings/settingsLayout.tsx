@@ -172,6 +172,7 @@ export function SettingsSection({
   title,
   hideTitle = false,
   icon,
+  badge,
   headerAction,
   variant = "grouped",
   children,
@@ -181,6 +182,8 @@ export function SettingsSection({
   title: string;
   hideTitle?: boolean;
   icon?: ReactNode;
+  /** Status shown right after the title, e.g. which profile is the default. */
+  badge?: ReactNode;
   headerAction?: ReactNode;
   variant?: "grouped" | "plain";
   children: ReactNode;
@@ -205,6 +208,7 @@ export function SettingsSection({
             <h2 className="flex min-h-7 items-center gap-2 text-sm font-normal text-foreground/70">
               {icon}
               {title}
+              {badge}
             </h2>
           </div>
           <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
