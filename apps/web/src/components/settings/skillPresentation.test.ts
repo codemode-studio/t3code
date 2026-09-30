@@ -41,9 +41,38 @@ describe("skill presentation", () => {
     expect(
       skillDisplayPath(
         { path: "/Users/dev/Git/t3code/.claude/skills/review/SKILL.md" },
-        "/Users/dev/Git/t3code",
+        { root: "/Users/dev/Git/t3code", label: "t3code" },
       ),
     ).toBe("t3code/.claude/skills/review");
+  });
+
+  it("tells apart selected projects that share a folder name", () => {
+    const groups = groupSkills(
+      [
+        skill({
+          name: "one",
+          path: "/src/one/app/.agents/skills/review/SKILL.md",
+          scope: "project",
+        }),
+        skill({
+          name: "two",
+          path: "/src/two/app/.agents/skills/review/SKILL.md",
+          scope: "project",
+        }),
+      ],
+      [
+        {
+          environmentId: local,
+          environmentLabel: "This Mac",
+          workspaceRoots: ["/src/one/app", "/src/two/app", "/src/solo"],
+        },
+      ],
+    );
+
+    expect(groups.map((group) => [group.label, group.skills[0]?.displayPath])).toEqual([
+      ["one/app", "one/app/.agents/skills/review"],
+      ["two/app", "two/app/.agents/skills/review"],
+    ]);
   });
 
   it("puts personal skills first, then one group per project and environment", () => {
