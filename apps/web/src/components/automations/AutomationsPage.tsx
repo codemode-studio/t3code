@@ -923,25 +923,28 @@ function OptionSelect<T extends string>({
   options: ReadonlyArray<readonly [T, string]>;
   onChange: (value: T) => void;
 }) {
+  // The trigger fills its parent; the wrapper sizes it to its content so trigger rows stay on one line.
   return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        const match = options.find(([option]) => option === next);
-        if (match) onChange(match[0]);
-      }}
-    >
-      <SelectTrigger size="sm" aria-label={label}>
-        <SelectValue>{options.find(([option]) => option === value)?.[1]}</SelectValue>
-      </SelectTrigger>
-      <SelectPopup align="end" alignItemWithTrigger={false}>
-        {options.map(([option, optionLabel]) => (
-          <SelectItem key={option} value={option}>
-            {optionLabel}
-          </SelectItem>
-        ))}
-      </SelectPopup>
-    </Select>
+    <div className="shrink-0">
+      <Select
+        value={value}
+        onValueChange={(next) => {
+          const match = options.find(([option]) => option === next);
+          if (match) onChange(match[0]);
+        }}
+      >
+        <SelectTrigger size="sm" aria-label={label}>
+          <SelectValue>{options.find(([option]) => option === value)?.[1]}</SelectValue>
+        </SelectTrigger>
+        <SelectPopup align="end" alignItemWithTrigger={false}>
+          {options.map(([option, optionLabel]) => (
+            <SelectItem key={option} value={option}>
+              {optionLabel}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
   );
 }
 
