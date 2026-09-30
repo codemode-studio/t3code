@@ -521,6 +521,7 @@ function AutomationEditor({
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const connectedEnvironments = useConnectedEnvironments();
   const projects = useProjects();
+  const { timeZones } = useAutomations();
   // A new draft runs on this device's server until the user picks another environment.
   const environmentId =
     draft.environmentId ??
@@ -528,6 +529,7 @@ function AutomationEditor({
       ?.environmentId ??
     connectedEnvironments[0]?.environmentId ??
     null;
+  const timeZone = environmentId ? timeZones.get(environmentId) : undefined;
 
   const patch = (next: Partial<AutomationDraft>) =>
     setDraft((current) => ({ ...current, ...next }));
@@ -702,6 +704,7 @@ function AutomationEditor({
               // oxlint-disable-next-line react/no-array-index-key -- triggers have no identity of their own
               key={index}
               trigger={trigger}
+              timeZone={timeZone}
               onChange={(next) =>
                 patch({
                   triggers: draft.triggers.map((entry, i) => (i === index ? next : entry)),
@@ -715,6 +718,13 @@ function AutomationEditor({
         {draft.triggers.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Without a trigger, the automation only runs when you press Run now.
+          </p>
+        ) : draft.triggers.some((trigger) => trigger.type !== "github") ? (
+          <p className="text-xs text-muted-foreground">
+            {timeZone ? `Times use ${timeZone}. ` : null}
+            {draft.catchUpMinutes === 0
+              ? "Missed runs are skipped."
+              : `Missed runs are skipped after ${formatCatchUpWindow(draft.catchUpMinutes)}.`}
           </p>
         ) : null}
       </EditorSection>
@@ -897,6 +907,11 @@ function OptionSelect<T extends string>({
   );
 }
 
+function formatCatchUpWindow(minutes: number): string {
+  if (minutes % 60 === 0) return minutes === 60 ? "1 hour" : `${minutes / 60} hours`;
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
 const CADENCE_LABELS: Record<AutomationScheduleCadence, string> = {
   hourly: "Hourly",
   daily: "Daily",
@@ -911,10 +926,12 @@ const MINUTE_OPTIONS = Array.from({ length: 12 }, (_, index) => {
 
 function TriggerRow({
   trigger,
+  timeZone,
   onChange,
   onRemove,
 }: {
   trigger: AutomationTrigger;
+  timeZone: string | undefined;
   onChange: (trigger: AutomationTrigger) => void;
   onRemove: () => void;
 }) {
@@ -927,7 +944,7 @@ function TriggerRow({
           <span className="text-muted-foreground"> on the project's GitHub repository</span>
         </span>
       ) : trigger.type === "cron" ? (
-        <CronTriggerFields trigger={trigger} onChange={onChange} />
+        <CronTriggerFields trigger={trigger} timeZone={timeZone} onChange={onChange} />
       ) : (
         <>
           <CadenceSelect
@@ -971,7 +988,7 @@ function TriggerRow({
               }}
             />
           )}
-          <NextRunLabel trigger={trigger} />
+          <NextRunLabel trigger={trigger} timeZone={timeZone} />
         </>
       )}
       <Button
@@ -1011,9 +1028,11 @@ function CadenceSelect({
 
 function CronTriggerFields({
   trigger,
+  timeZone,
   onChange,
 }: {
   trigger: AutomationCronTrigger;
+  timeZone: string | undefined;
   onChange: (trigger: AutomationTrigger) => void;
 }) {
   const label = describeCronExpression(trigger.expression);
@@ -1044,17 +1063,24 @@ function CronTriggerFields({
       ) : (
         <>
           <span className="text-xs">{label}</span>
-          <NextRunLabel trigger={trigger} />
+          <NextRunLabel trigger={trigger} timeZone={timeZone} />
         </>
       )}
     </>
   );
 }
 
-function NextRunLabel({ trigger }: { trigger: AutomationTimedTrigger }) {
+/** The next run in the server's zone, which can differ from this device's for a remote server. */
+function NextRunLabel({
+  trigger,
+  timeZone,
+}: {
+  trigger: AutomationTimedTrigger;
+  timeZone: string | undefined;
+}) {
   // Read once on mount: the label only needs to be right while the user is editing the row.
   const [now] = useState(Date.now);
-  const next = nextTriggerAt(trigger, now);
+  const next = nextTriggerAt(trigger, now, timeZone);
   if (next === null) return null;
   return (
     <span className="text-xs text-muted-foreground">
@@ -1063,6 +1089,7 @@ function NextRunLabel({ trigger }: { trigger: AutomationTimedTrigger }) {
         weekday: "short",
         hour: "2-digit",
         minute: "2-digit",
+        ...(timeZone ? { timeZone } : {}),
       })}
     </span>
   );

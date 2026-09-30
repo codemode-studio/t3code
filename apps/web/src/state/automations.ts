@@ -48,12 +48,15 @@ export const runAutomationNow = createEnvironmentRpcCommand(connectionAtomRuntim
 
 interface AutomationsView {
   readonly automations: readonly EnvironmentAutomation[];
+  /** The zone each environment reads schedules in, when it reports one. */
+  readonly timeZones: ReadonlyMap<EnvironmentId, string>;
   /** True while a reachable environment has not answered yet. */
   readonly isPending: boolean;
 }
 
 const allAutomationsAtom = Atom.make((get): AutomationsView => {
   const automations: EnvironmentAutomation[] = [];
+  const timeZones = new Map<EnvironmentId, string>();
   let isPending = false;
   for (const [environmentId, presentation] of get(environmentPresentations.presentationsAtom)) {
     const result = get(automationsByEnvironment({ environmentId, input: {} }));
@@ -63,12 +66,13 @@ const allAutomationsAtom = Atom.make((get): AutomationsView => {
       isPending ||= result._tag !== "Failure" && isAnswerExpected(presentation);
       continue;
     }
+    if (snapshot.timeZone) timeZones.set(environmentId, snapshot.timeZone);
     for (const automation of snapshot.automations) {
       automations.push({ ...automation, environmentId });
     }
   }
   automations.sort((a, b) => a.name.localeCompare(b.name));
-  return { automations, isPending };
+  return { automations, timeZones, isPending };
 }).pipe(Atom.withLabel("web-automations:all"));
 
 export function useAutomations(): AutomationsView {
