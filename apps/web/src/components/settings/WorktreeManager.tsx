@@ -16,6 +16,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
   Dialog,
@@ -182,12 +183,17 @@ function CreateWorktreeDialog({
   );
 }
 
+function worktreeName(tree: VcsListedWorktree) {
+  return tree.path.split(/[\\/]/).at(-1) ?? tree.path;
+}
+
 export function WorktreeManager() {
   const { scope, connectedEnvironments } = useSettingsScope();
   const [selectedMemberKey, setSelectedMemberKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState<WorktreeDeletionTarget | null>(null);
-  // Keep the target through the close animation.
+  const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const [deleting, setDeleting] = useState<ReadonlyArray<WorktreeDeletionTarget> | null>(null);
+  // Keep the targets through the close animation.
   const [shownDeleting, setShownDeleting] = useState(deleting);
   if (deleting !== null && deleting !== shownDeleting) setShownDeleting(deleting);
   const [busy, setBusy] = useState(false);
@@ -218,29 +224,84 @@ export function WorktreeManager() {
     ? worktreeThreads(threads, projects, member.environmentId)
     : null;
   const associatedThreads = (tree: VcsListedWorktree) => threadsByWorktree?.get(tree.path) ?? [];
-  const deletingThreads = shownDeleting
-    ? (worktreeThreads(threads, projects, shownDeleting.environmentId).get(
-        shownDeleting.worktree.path,
-      ) ?? [])
+  const rows = member
+    ? worktrees.map((tree) => {
+        const usedBy = associatedThreads(tree);
+        const target = {
+          environmentId: member.environmentId,
+          cwd: member.workspaceRoot,
+          worktree: tree,
+        };
+        return {
+          tree,
+          target,
+          usedBy,
+          blocked: worktreeDeletionBlockReason(target, member, usedBy),
+        };
+      })
     : [];
-  const deletionBlocked = deleting
-    ? worktreeDeletionBlockReason(deleting, member, deletingThreads)
+  const selectedTargets = rows
+    .filter((row) => !row.blocked && selectedPaths.has(row.tree.path))
+    .map((row) => row.target);
+  const deletingThreadsByWorktree = shownDeleting?.[0]
+    ? worktreeThreads(threads, projects, shownDeleting[0].environmentId)
     : null;
-  const deleteWorktree = async () => {
+  const deletingThreadCount =
+    shownDeleting?.reduce(
+      (count, target) =>
+        count + (deletingThreadsByWorktree?.get(target.worktree.path)?.length ?? 0),
+      0,
+    ) ?? 0;
+  const deletionBlocked = (() => {
+    if (!deleting) return null;
+    for (const target of deleting) {
+      const reason = worktreeDeletionBlockReason(
+        target,
+        member,
+        deletingThreadsByWorktree?.get(target.worktree.path) ?? [],
+      );
+      if (reason)
+        return deleting.length > 1 ? `${worktreeName(target.worktree)}: ${reason}` : reason;
+    }
+    return null;
+  })();
+  const deleteWorktrees = async () => {
     if (!deleting || deletionBlocked || busy) return;
     setBusy(true);
     setError(null);
-    const result = await removeWorktree({
-      environmentId: deleting.environmentId,
-      input: { cwd: deleting.cwd, path: deleting.worktree.path, force: true },
-    });
-    setBusy(false);
-    if (result._tag === "Success") {
-      setDeleting(null);
-    } else {
-      setError(commandError(result));
+    const failed: Array<{ target: WorktreeDeletionTarget; message: string }> = [];
+    const removed = new Set<string>();
+    // One at a time: each removal rewrites the repository's shared worktree metadata.
+    for (const target of deleting) {
+      const result = await removeWorktree({
+        environmentId: target.environmentId,
+        input: { cwd: target.cwd, path: target.worktree.path, force: true },
+      });
+      if (result._tag === "Success") removed.add(target.worktree.path);
+      else failed.push({ target, message: commandError(result) });
     }
+    setBusy(false);
+    setSelectedPaths((current) => new Set([...current].filter((path) => !removed.has(path))));
+    if (failed.length === 0) {
+      setDeleting(null);
+      return;
+    }
+    setDeleting(failed.map((failure) => failure.target));
+    setError(
+      deleting.length === 1
+        ? failed[0]!.message
+        : failed
+            .map((failure) => `${worktreeName(failure.target.worktree)}: ${failure.message}`)
+            .join("\n"),
+    );
   };
+  const toggleSelected = (path: string, checked: boolean) =>
+    setSelectedPaths((current) => {
+      const next = new Set(current);
+      if (checked) next.add(path);
+      else next.delete(path);
+      return next;
+    });
   return (
     <SettingsSection id="storage-manage-worktrees" title="Manage worktrees">
       <div className="flex flex-col gap-4 p-4">
@@ -253,6 +314,7 @@ export function WorktreeManager() {
                   setSelectedMemberKey(value);
                   setError(null);
                   setDeleting(null);
+                  setSelectedPaths(new Set());
                 }
               }}
             >
@@ -293,6 +355,25 @@ export function WorktreeManager() {
             <RefreshCwIcon data-icon="inline-start" />
             Refresh
           </Button>
+          {selectedTargets.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setSelectedPaths(new Set())}>
+                Clear selection
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive-outline"
+                onClick={() => {
+                  setError(null);
+                  setDeleting(selectedTargets);
+                }}
+              >
+                <Trash2Icon data-icon="inline-start" />
+                Delete {selectedTargets.length}{" "}
+                {selectedTargets.length === 1 ? "worktree" : "worktrees"}
+              </Button>
+            </div>
+          )}
         </div>
         <p className="text-xs text-muted-foreground">
           Threads can share a worktree. Deleting one keeps its threads and branch, but discards
@@ -334,22 +415,28 @@ export function WorktreeManager() {
             </Empty>
           </div>
         ) : (
-          <div className="divide-y rounded-lg border">
-            {worktrees.map((tree) => {
-              const usedBy = associatedThreads(tree);
-              const target = {
-                environmentId: member.environmentId,
-                cwd: member.workspaceRoot,
-                worktree: tree,
-              };
-              const blocked = worktreeDeletionBlockReason(target, member, usedBy);
+          <div
+            className="group/worktrees divide-y rounded-lg border"
+            data-selecting={selectedTargets.length > 0 ? "" : undefined}
+          >
+            {rows.map(({ tree, target, usedBy, blocked }) => {
+              const name = worktreeName(tree);
               return (
-                <div key={tree.path} className="flex items-start gap-3 p-4">
-                  <FolderGit2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div key={tree.path} className="group/worktree flex items-start gap-3 p-4">
+                  <span className="relative mt-0.5 flex size-4 shrink-0 items-center justify-center">
+                    <FolderGit2Icon className="size-4 text-muted-foreground transition-opacity group-focus-within/worktree:opacity-0 group-hover/worktree:opacity-0 group-data-selecting/worktrees:opacity-0 pointer-coarse:opacity-0" />
+                    <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-focus-within/worktree:opacity-100 group-hover/worktree:opacity-100 group-data-selecting/worktrees:opacity-100 pointer-coarse:opacity-100">
+                      <Checkbox
+                        aria-label={`Select ${name}`}
+                        title={blocked ?? undefined}
+                        checked={!blocked && selectedPaths.has(tree.path)}
+                        disabled={!!blocked}
+                        onCheckedChange={(checked) => toggleSelected(tree.path, checked)}
+                      />
+                    </span>
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {tree.path.split(/[\\/]/).at(-1) ?? tree.path}
-                    </p>
+                    <p className="truncate text-sm font-medium">{name}</p>
                     <p className="break-all text-xs text-muted-foreground">{tree.path}</p>
                     <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <GitBranchIcon className="size-3" />
@@ -369,7 +456,7 @@ export function WorktreeManager() {
                     disabled={!!blocked}
                     onClick={() => {
                       setError(null);
-                      setDeleting(target);
+                      setDeleting([target]);
                     }}
                   >
                     <Trash2Icon />
@@ -398,52 +485,67 @@ export function WorktreeManager() {
       >
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {shownDeleting && shownDeleting.length > 1
+                ? `Delete ${shownDeleting.length} worktrees?`
+                : "Delete worktree?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {shownDeleting?.worktree.prunable
-                ? "Its folder is already missing. This removes the stale Git worktree record."
-                : "This permanently deletes the working copy and everything inside it."}
+              {shownDeleting?.every((target) => target.worktree.prunable)
+                ? shownDeleting.length > 1
+                  ? "Their folders are already missing. This removes the stale Git worktree records."
+                  : "Its folder is already missing. This removes the stale Git worktree record."
+                : shownDeleting && shownDeleting.length > 1
+                  ? "This permanently deletes the working copies and everything inside them."
+                  : "This permanently deletes the working copy and everything inside it."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {shownDeleting && (
-            <ul className="mx-6 mb-6 divide-y rounded-lg border bg-muted/40 text-sm max-sm:mb-4">
-              <li className="flex gap-3 px-3 py-2.5">
-                <FolderIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 break-all font-mono text-xs leading-5">
-                  {shownDeleting.worktree.path}
-                </span>
-              </li>
-              <li className="flex gap-3 px-3 py-2.5">
-                <GitBranchIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                {shownDeleting.worktree.branch ? (
-                  <span>
-                    The <span className="font-medium">{shownDeleting.worktree.branch}</span> branch
-                    and its commits are kept.
-                  </span>
-                ) : (
-                  <span>
-                    Detached at{" "}
-                    <span className="font-medium font-mono">
-                      {shownDeleting.worktree.head.slice(0, 7)}
+            <ul className="mx-6 mb-6 max-h-80 divide-y overflow-y-auto rounded-lg border bg-muted/40 text-sm max-sm:mb-4">
+              {shownDeleting.map(({ worktree }) => (
+                <li key={worktree.path} className="flex gap-3 px-3 py-2.5">
+                  <FolderIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="break-all font-mono text-xs leading-5">{worktree.path}</span>
+                    <span className="flex gap-1.5 text-xs text-muted-foreground">
+                      <GitBranchIcon className="mt-0.5 size-3 shrink-0" />
+                      {worktree.branch ? (
+                        <span>
+                          The <span className="font-medium text-foreground">{worktree.branch}</span>{" "}
+                          branch and its commits are kept.
+                        </span>
+                      ) : (
+                        <span>
+                          Detached at{" "}
+                          <span className="font-medium font-mono text-foreground">
+                            {worktree.head.slice(0, 7)}
+                          </span>
+                          . Commits that aren&apos;t on a branch can be lost.
+                        </span>
+                      )}
                     </span>
-                    . Commits that aren&apos;t on a branch can be lost.
-                  </span>
-                )}
-              </li>
-              {deletingThreads.length > 0 && (
+                  </div>
+                </li>
+              ))}
+              {deletingThreadCount > 0 && (
                 <li className="flex gap-3 px-3 py-2.5">
                   <MessageSquareIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <span>
-                    {deletingThreads.length === 1
-                      ? "Its thread is kept."
-                      : `Its ${deletingThreads.length} threads are kept.`}
+                    {shownDeleting.length > 1
+                      ? `${deletingThreadCount} ${deletingThreadCount === 1 ? "thread is" : "threads are"} kept.`
+                      : deletingThreadCount === 1
+                        ? "Its thread is kept."
+                        : `Its ${deletingThreadCount} threads are kept.`}
                   </span>
                 </li>
               )}
             </ul>
           )}
           {(error || deletionBlocked) && (
-            <p role="alert" className="px-6 pb-6 text-sm text-destructive max-sm:pb-4">
+            <p
+              role="alert"
+              className="whitespace-pre-line px-6 pb-6 text-sm text-destructive max-sm:pb-4"
+            >
               {deletionBlocked ?? error}
             </p>
           )}
@@ -454,9 +556,13 @@ export function WorktreeManager() {
             <Button
               variant="destructive"
               disabled={busy || !!deletionBlocked}
-              onClick={() => void deleteWorktree()}
+              onClick={() => void deleteWorktrees()}
             >
-              {busy ? "Deleting…" : "Delete worktree"}
+              {busy
+                ? "Deleting…"
+                : deleting && deleting.length > 1
+                  ? `Delete ${deleting.length} worktrees`
+                  : "Delete worktree"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>
