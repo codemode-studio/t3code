@@ -68,6 +68,11 @@ describe("worktree deletion", () => {
     expect(worktreeDeletionBlockReason(target, null, [])).not.toBeNull();
   });
 
+  it("allows deleting a detached worktree", () => {
+    const detached = { ...target, worktree: { ...target.worktree, branch: null } };
+    expect(worktreeDeletionBlockReason(detached, member, [idle])).toBeNull();
+  });
+
   it("rechecks activity for an already selected deletion target", () => {
     expect(worktreeDeletionBlockReason(target, member, [idle])).toBeNull();
     expect(

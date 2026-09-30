@@ -1,6 +1,14 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { VcsListedWorktree } from "@t3tools/contracts";
-import { FolderGit2Icon, GitBranchIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import {
+  FolderGit2Icon,
+  FolderIcon,
+  GitBranchIcon,
+  MessageSquareIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { useProjects, useThreadShells } from "../../state/entities";
@@ -179,6 +187,9 @@ export function WorktreeManager() {
   const [selectedMemberKey, setSelectedMemberKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<WorktreeDeletionTarget | null>(null);
+  // Keep the target through the close animation.
+  const [shownDeleting, setShownDeleting] = useState(deleting);
+  if (deleting !== null && deleting !== shownDeleting) setShownDeleting(deleting);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const threads = useThreadShells();
@@ -207,8 +218,10 @@ export function WorktreeManager() {
     ? worktreeThreads(threads, projects, member.environmentId)
     : null;
   const associatedThreads = (tree: VcsListedWorktree) => threadsByWorktree?.get(tree.path) ?? [];
-  const deletingThreads = deleting
-    ? (worktreeThreads(threads, projects, deleting.environmentId).get(deleting.worktree.path) ?? [])
+  const deletingThreads = shownDeleting
+    ? (worktreeThreads(threads, projects, shownDeleting.environmentId).get(
+        shownDeleting.worktree.path,
+      ) ?? [])
     : [];
   const deletionBlocked = deleting
     ? worktreeDeletionBlockReason(deleting, member, deletingThreads)
@@ -387,15 +400,50 @@ export function WorktreeManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleting?.worktree.prunable
-                ? `This removes the stale Git worktree record for ${deleting.worktree.path}.`
-                : `This permanently removes the working copy at ${deleting?.worktree.path}. Uncommitted and untracked changes are discarded.`}{" "}
-              Its branch, commits, and {deletingThreads.length} associated{" "}
-              {deletingThreads.length === 1 ? "thread" : "threads"} are kept.
+              {shownDeleting?.worktree.prunable
+                ? "Its folder is already missing. This removes the stale Git worktree record."
+                : "This permanently deletes the working copy and everything inside it."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {shownDeleting && (
+            <ul className="mx-6 mb-6 divide-y rounded-lg border bg-muted/40 text-sm max-sm:mb-4">
+              <li className="flex gap-3 px-3 py-2.5">
+                <FolderIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 break-all font-mono text-xs leading-5">
+                  {shownDeleting.worktree.path}
+                </span>
+              </li>
+              <li className="flex gap-3 px-3 py-2.5">
+                <GitBranchIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                {shownDeleting.worktree.branch ? (
+                  <span>
+                    The <span className="font-medium">{shownDeleting.worktree.branch}</span> branch
+                    and its commits are kept.
+                  </span>
+                ) : (
+                  <span>
+                    Detached at{" "}
+                    <span className="font-medium font-mono">
+                      {shownDeleting.worktree.head.slice(0, 7)}
+                    </span>
+                    . Commits that aren&apos;t on a branch can be lost.
+                  </span>
+                )}
+              </li>
+              {deletingThreads.length > 0 && (
+                <li className="flex gap-3 px-3 py-2.5">
+                  <MessageSquareIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <span>
+                    {deletingThreads.length === 1
+                      ? "Its thread is kept."
+                      : `Its ${deletingThreads.length} threads are kept.`}
+                  </span>
+                </li>
+              )}
+            </ul>
+          )}
           {(error || deletionBlocked) && (
-            <p role="alert" className="px-6 text-sm text-destructive">
+            <p role="alert" className="px-6 pb-6 text-sm text-destructive max-sm:pb-4">
               {deletionBlocked ?? error}
             </p>
           )}
