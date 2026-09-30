@@ -128,7 +128,11 @@ function toPublic(stored: StoredAutomation): Automation {
 }
 
 function toSnapshot(file: AutomationsFile): AutomationsSnapshot {
-  return { automations: file.automations.map(toPublic) };
+  return {
+    automations: file.automations.map(toPublic),
+    // Schedules run in the host's local zone, which is what `latestTriggerAt` defaults to.
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  };
 }
 
 function githubItemMatches(event: AutomationGitHubEvent, item: GitHubItem): boolean {

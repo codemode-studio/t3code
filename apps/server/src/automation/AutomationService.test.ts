@@ -192,6 +192,11 @@ describe("AutomationService", () => {
           Option.map(snapshot, (value) => value.automations.map((entry) => entry.name)),
           Option.some(["Weekly review"]),
         );
+        // Clients show schedule times in the zone the server evaluates them in.
+        assert.deepStrictEqual(
+          Option.map(snapshot, (value) => value.timeZone),
+          Option.some(Intl.DateTimeFormat().resolvedOptions().timeZone),
+        );
       }),
     ),
   );

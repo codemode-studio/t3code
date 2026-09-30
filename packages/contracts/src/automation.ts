@@ -119,6 +119,8 @@ export type Automation = typeof Automation.Type;
 
 export const AutomationsSnapshot = Schema.Struct({
   automations: Schema.Array(Automation),
+  /** IANA zone the server reads schedules in. Absent from servers that predate it. */
+  timeZone: Schema.optional(TrimmedNonEmptyString),
 });
 export type AutomationsSnapshot = typeof AutomationsSnapshot.Type;
 
