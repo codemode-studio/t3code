@@ -214,6 +214,11 @@ export function AutomationsPage({
       new Map(environments.map((environment) => [environment.environmentId, environment.label])),
     [environments],
   );
+  const projects = useProjects();
+  const projectsByKey = useMemo(
+    () => new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project])),
+    [projects],
+  );
   const [filter, setFilter] = useState("");
   const [newDraft, setNewDraft] = useState<AutomationDraft | null>(null);
   const selected = selectedKey
@@ -314,6 +319,10 @@ export function AutomationsPage({
                       key={automationKey(automation)}
                       automation={automation}
                       active={automationKey(automation) === selectedKey}
+                      project={
+                        projectsByKey.get(`${automation.environmentId}:${automation.projectId}`) ??
+                        null
+                      }
                       environmentLabel={
                         environmentLabels.size > 1
                           ? (environmentLabels.get(automation.environmentId) ?? null)
@@ -341,11 +350,13 @@ export function AutomationsPage({
 function AutomationListItem({
   automation,
   active,
+  project,
   environmentLabel,
   onSelect,
 }: {
   automation: EnvironmentAutomation;
   active: boolean;
+  project: EnvironmentProject | null;
   /** Shown only when automations span more than one environment. */
   environmentLabel: string | null;
   onSelect: () => void;
@@ -380,6 +391,12 @@ function AutomationListItem({
           {lastRun?.error ? " · last run failed" : ""}
         </span>
       </span>
+      {project ? (
+        <span className="flex min-w-0 items-center gap-1.5 pl-3.5 text-xs text-muted-foreground">
+          <ProjectFavicon project={project} className="size-3 shrink-0" />
+          <span className="min-w-0 truncate">{project.title}</span>
+        </span>
+      ) : null}
     </button>
   );
 }
