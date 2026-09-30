@@ -101,7 +101,7 @@ export function resolveProjectGroupingMode(
  * first. Servers before `groupKey` report only `canonicalKey`, so two projects
  * are the same repository when they share any key.
  */
-export function deriveRepositoryKeys(
+function deriveRepositoryKeys(
   project: Pick<EnvironmentProject, "repositoryIdentity"> | null | undefined,
 ): ReadonlyArray<string> {
   const identity = project?.repositoryIdentity;
