@@ -147,6 +147,11 @@ function toPublic(stored: StoredAutomation): Automation {
   return automation;
 }
 
+/** A continued conversation's thread outlives the run, so only fresh ones are deleted. */
+function deletesRunThreads(config: AutomationConfig): boolean {
+  return config.deleteThreadWhenDone && config.conversation === "fresh";
+}
+
 function findPendingThreadDelete(
   file: AutomationsFile,
   threadId: ThreadId,
@@ -331,9 +336,9 @@ const make = Effect.gen(function* () {
 
   const cleanupLock = yield* Semaphore.make(1);
   /**
-   * Deletes a pending run thread once its turn completed. Safe to call at any time. The delete
-   * is guarded by the projection sequence read before the thread, so the engine rejects it if
-   * anything, such as a new user message, reached the thread after that read.
+   * Deletes a pending run thread once its turn completed. Safe to call at any time; one call at a
+   * time. The delete is guarded by the projection sequence read before the thread, so the engine
+   * rejects it if anything, such as a new user message, reached the thread after that read.
    */
   const settleRunThread = (threadId: ThreadId) =>
     Effect.gen(function* () {
@@ -359,10 +364,12 @@ const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.as(true),
-          // The thread changed after the read; whatever changed it queues another check.
           Effect.catchTag("OrchestrationCommandInvariantError", () => Effect.succeed(false)),
         );
-      if (deleted) yield* finishPendingThreadDelete(threadId, true);
+      // The thread changed after the read, and not every change is an event cleanup watches,
+      // so check again against a fresh read.
+      if (!deleted) return yield* recheck(threadId);
+      yield* finishPendingThreadDelete(threadId, true);
     }).pipe(
       cleanupLock.withPermits(1),
       Effect.catchCause((failure) =>
@@ -371,6 +378,29 @@ const make = Effect.gen(function* () {
           cause: Cause.pretty(failure),
         }),
       ),
+    );
+
+  // Off the event stream, so a slow lookup or dispatch never holds up the engine's subscribers.
+  // A thread already queued is not queued again; it is dequeued before it is read, so an event
+  // arriving during a check still queues the next one.
+  const queued = new Set<ThreadId>();
+  const cleanup = yield* makeDrainableWorker((threadId: ThreadId) =>
+    Effect.suspend(() => {
+      queued.delete(threadId);
+      return settleRunThread(threadId);
+    }),
+  );
+  // Annotated: the worker, `settleRunThread` and this refer to one another. A retry from inside
+  // `settleRunThread` only enqueues, so it cannot wait on the lock it holds.
+  const recheck = (threadId: ThreadId): Effect.Effect<void> =>
+    SubscriptionRef.get(state).pipe(
+      Effect.flatMap((file) => {
+        if (queued.has(threadId) || findPendingThreadDelete(file, threadId) === undefined) {
+          return Effect.void;
+        }
+        queued.add(threadId);
+        return cleanup.enqueue(threadId);
+      }),
     );
 
   /**
@@ -588,14 +618,6 @@ const make = Effect.gen(function* () {
       ),
       Effect.flatMap(({ threadId, messageAt, error }) =>
         Effect.gen(function* () {
-          // A continued conversation's thread outlives the run, so only fresh ones are deleted.
-          const pendingDelete =
-            threadId !== null &&
-            messageAt !== null &&
-            automation.deleteThreadWhenDone &&
-            automation.conversation === "fresh"
-              ? { threadId, messageAt }
-              : null;
           const run: AutomationRun = {
             id: yield* newId,
             startedAt: yield* nowIso,
@@ -606,12 +628,18 @@ const make = Effect.gen(function* () {
           yield* patchAutomation(automation.id, (stored) => ({
             ...stored,
             runs: [run, ...stored.runs].slice(0, AUTOMATION_MAX_RUNS),
-            pendingThreadDeletes: pendingDelete
-              ? [...stored.pendingThreadDeletes, pendingDelete]
-              : stored.pendingThreadDeletes,
+            // The run's config made the thread and the stored one may have been edited while
+            // it started; both must still delete it.
+            pendingThreadDeletes:
+              threadId !== null &&
+              messageAt !== null &&
+              deletesRunThreads(automation) &&
+              deletesRunThreads(stored)
+                ? [...stored.pendingThreadDeletes, { threadId, messageAt }]
+                : stored.pendingThreadDeletes,
           })).pipe(Effect.ignoreCause({ log: true }));
           // The turn may have finished before its delete was recorded.
-          if (pendingDelete) yield* settleRunThread(pendingDelete.threadId);
+          if (threadId !== null) yield* settleRunThread(threadId);
           return run;
         }),
       ),
@@ -779,26 +807,6 @@ const make = Effect.gen(function* () {
   });
 
   const start = Effect.fn("AutomationService.start")(function* () {
-    // Off the event stream, so a slow lookup or dispatch never holds up the engine's subscribers.
-    // A thread already queued is not queued again; it is dequeued before it is read, so an event
-    // arriving during a check still queues the next one.
-    const queued = new Set<ThreadId>();
-    const cleanup = yield* makeDrainableWorker((threadId: ThreadId) =>
-      Effect.suspend(() => {
-        queued.delete(threadId);
-        return settleRunThread(threadId);
-      }),
-    );
-    const recheck = (threadId: ThreadId) =>
-      SubscriptionRef.get(state).pipe(
-        Effect.flatMap((file) => {
-          if (queued.has(threadId) || findPendingThreadDelete(file, threadId) === undefined) {
-            return Effect.void;
-          }
-          queued.add(threadId);
-          return cleanup.enqueue(threadId);
-        }),
-      );
     // Turns that finished while the server was down, checked once events are flowing.
     const recheckAll = SubscriptionRef.get(state).pipe(
       Effect.flatMap((file) =>

@@ -22,6 +22,7 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -177,6 +178,8 @@ const makeLayer = (input: {
   /** Thread shells the projection returns; missing ids read as deleted. */
   readonly threads?: Ref.Ref<ReadonlyMap<ThreadId, OrchestrationThreadShell>>;
   readonly events?: PubSub.PubSub<OrchestrationEvent>;
+  /** Completed once the service subscribes to `events`; earlier publishes are not seen. */
+  readonly subscribed?: Deferred.Deferred<void>;
 }) =>
   AutomationService.layer.pipe(
     Layer.provide(
@@ -187,7 +190,16 @@ const makeLayer = (input: {
               Effect.andThen(input.afterRecord?.(command) ?? Effect.void),
               Effect.as({ sequence: 1 }),
             ),
-          streamDomainEvents: input.events ? Stream.fromPubSub(input.events) : Stream.never,
+          streamDomainEvents: input.events
+            ? Stream.unwrap(
+                PubSub.subscribe(input.events).pipe(
+                  Effect.tap(() =>
+                    input.subscribed ? Deferred.succeed(input.subscribed, undefined) : Effect.void,
+                  ),
+                  Effect.map(Stream.fromSubscription),
+                ),
+              )
+            : Stream.never,
         }),
         Layer.mock(ProjectionSnapshotQuery)({
           getProjectShellById: () => Effect.succeed(Option.fromNullishOr(input.project)),
@@ -227,7 +239,14 @@ const withService = <A, E>(
     ...environment
   }: Pick<
     Parameters<typeof makeLayer>[0],
-    "settings" | "providers" | "git" | "gitHubCli" | "afterRecord" | "threads" | "events"
+    | "settings"
+    | "providers"
+    | "git"
+    | "gitHubCli"
+    | "afterRecord"
+    | "threads"
+    | "events"
+    | "subscribed"
   > & {
     /** Seeds `automations.json` before the service reads it. */
     readonly automationsFile?: unknown;
@@ -247,8 +266,10 @@ const withService = <A, E>(
       );
     }
     const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
-    const service = yield* AutomationService.AutomationService.pipe(
-      Effect.provide(makeLayer({ stateDir, commands, project, ...environment })),
+    // Built in the test's scope, so the service's background work lives as long as the test.
+    const service = Context.get(
+      yield* Layer.build(makeLayer({ stateDir, commands, project, ...environment })),
+      AutomationService.AutomationService,
     );
     return yield* body(service, { stateDir, commands });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
@@ -524,6 +545,11 @@ describe("AutomationService", () => {
             readonly publish: (event: OrchestrationEvent) => Effect.Effect<void>;
           },
         ) => Effect.Effect<void, OrchestrationCommandInvariantError>;
+        /** Runs as a run starts its turn, while the run is still being set up. */
+        readonly onTurnStart?: (automation: {
+          readonly service: AutomationService.AutomationService["Service"];
+          readonly automationId: string;
+        }) => Effect.Effect<void>;
       } = {},
     ) =>
       Effect.gen(function* () {
@@ -531,10 +557,15 @@ describe("AutomationService", () => {
           new Map((options.threads ?? []).map((thread) => [thread.id, thread])),
         );
         const events = yield* PubSub.unbounded<OrchestrationEvent>();
+        const subscribed = yield* Deferred.make<void>();
         const setThread = (thread: OrchestrationThreadShell) =>
           Ref.update(threads, (current) => new Map(current).set(thread.id, thread));
         const publish = (event: OrchestrationEvent) =>
           PubSub.publish(events, event).pipe(Effect.asVoid);
+        const automation = yield* Ref.make<{
+          readonly service: AutomationService.AutomationService["Service"];
+          readonly automationId: string;
+        } | null>(null);
         return yield* withService(
           PROJECT,
           (service, { commands }) =>
@@ -543,7 +574,9 @@ describe("AutomationService", () => {
                 options.automationsFile === undefined
                   ? (yield* service.create({ ...CONFIG, deleteThreadWhenDone: true })).id
                   : "offline";
+              yield* Ref.set(automation, { service, automationId });
               yield* service.start();
+              yield* Deferred.await(subscribed);
               return yield* body({
                 service,
                 automationId,
@@ -567,6 +600,7 @@ describe("AutomationService", () => {
           {
             threads,
             events,
+            subscribed,
             ...(options.automationsFile === undefined
               ? {}
               : { automationsFile: options.automationsFile }),
@@ -575,7 +609,13 @@ describe("AutomationService", () => {
                 ? setThread(threadShell(command.threadId, null))
                 : command.type === "thread.auto-delete"
                   ? (options.onDelete?.(command.threadId, { setThread, publish }) ?? Effect.void)
-                  : Effect.void,
+                  : command.type === "thread.turn.start" && options.onTurnStart
+                    ? Ref.get(automation).pipe(
+                        Effect.flatMap((current) =>
+                          current ? options.onTurnStart!(current) : Effect.void,
+                        ),
+                      )
+                    : Effect.void,
           },
         );
       });
@@ -659,6 +699,71 @@ describe("AutomationService", () => {
                   detail: "thread changed before automatic deletion",
                 });
               }),
+          },
+        );
+      }),
+    );
+
+    it.effect("retries a rejected delete even when no watched event follows", () =>
+      Effect.gen(function* () {
+        const rejected = yield* Ref.make(false);
+        yield* withCleanup(
+          ({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+            Effect.gen(function* () {
+              const threadId = (yield* service.runNow(automationId)).threadId!;
+              yield* setThread(threadShell(threadId, "completed"));
+              yield* publish(sessionSettled(threadId));
+              yield* waitDeleted(threadId);
+              assert.deepStrictEqual(yield* deletes, [threadId, threadId]);
+            }),
+          {
+            // Like a title or pull request update landing after the read: the engine rejects
+            // the delete, and the change emits nothing cleanup subscribes to.
+            onDelete: () =>
+              Ref.getAndSet(rejected, true).pipe(
+                Effect.flatMap((already) =>
+                  already
+                    ? Effect.void
+                    : Effect.fail(
+                        new OrchestrationCommandInvariantError({
+                          commandType: "thread.auto-delete",
+                          detail: "thread changed before automatic deletion",
+                        }),
+                      ),
+                ),
+              ),
+          },
+        );
+      }),
+    );
+
+    it.effect("turning the setting off while a run starts spares that run's thread", () =>
+      Effect.gen(function* () {
+        const disabled = yield* Ref.make(false);
+        yield* withCleanup(
+          ({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+            Effect.gen(function* () {
+              const spared = (yield* service.runNow(automationId)).threadId!;
+              // Turned back on, it applies to the next run only.
+              yield* service.update(automationId, { ...CONFIG, deleteThreadWhenDone: true });
+              const sentinel = (yield* service.runNow(automationId)).threadId!;
+              yield* setThread(threadShell(spared, "completed"));
+              yield* publish(sessionSettled(spared));
+              yield* setThread(threadShell(sentinel, "completed"));
+              yield* publish(sessionSettled(sentinel));
+              yield* waitDeleted(sentinel);
+              assert.deepStrictEqual(yield* deletes, [sentinel]);
+            }),
+          {
+            // Only the first run: the user saves the automation with the setting off meanwhile.
+            onTurnStart: ({ service, automationId }) =>
+              Ref.getAndSet(disabled, true).pipe(
+                Effect.flatMap((already) =>
+                  already
+                    ? Effect.void
+                    : service.update(automationId, CONFIG).pipe(Effect.orDie, Effect.asVoid),
+                ),
+              ),
           },
         );
       }),
