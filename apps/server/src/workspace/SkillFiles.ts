@@ -62,8 +62,16 @@ function within(file: string, root: string) {
       !NodePath.isAbsolute(relative))
   );
 }
-function builtin(file: string) {
-  return file.replaceAll("\\", "/").includes("/skills/.system/");
+/**
+ * Skills inside a hidden folder of a skills directory are not installed skills: `.system` holds
+ * provider built-ins and `.trash` holds deleted skills a provider keeps around.
+ */
+function hiddenSkillFile(file: string) {
+  const segments = file.replaceAll("\\", "/").split("/");
+  const skillsIndex = segments.lastIndexOf("skills");
+  return (
+    skillsIndex >= 0 && segments.slice(skillsIndex + 1).some((segment) => segment.startsWith("."))
+  );
 }
 
 /** Limit open handles, not catalog size. Cancellation stops scheduling further disk reads. */
@@ -110,7 +118,7 @@ export async function listSkillFiles(
   ];
   const personalRoots = PERSONAL_SKILL_FOLDERS.map(([folder]) => NodePath.join(home, folder));
   const addCandidate = (file: string, scope: FileSkill["scope"], source: string) => {
-    if (builtin(file)) return;
+    if (hiddenSkillFile(file)) return;
     const personal = personalRoots.some((root) => within(file, root));
     const previous = candidates.get(file);
     candidates.set(file, {
@@ -182,7 +190,8 @@ export async function listSkillFiles(
     async ([file, location]) => {
       try {
         const canonical = await NodeFSP.realpath(file);
-        if (builtin(canonical) || excludedPaths.has(file) || excludedPaths.has(canonical)) return;
+        if (hiddenSkillFile(canonical) || excludedPaths.has(file) || excludedPaths.has(canonical))
+          return;
         if (!(await NodeFSP.stat(file)).isFile()) return;
         const handle = await NodeFSP.open(file, "r");
         let contents: string;
