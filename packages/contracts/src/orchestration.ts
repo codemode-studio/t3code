@@ -1165,6 +1165,18 @@ const ThreadAutoSettleCommand = Schema.Struct({
   settledAt: IsoDateTime,
 });
 
+/**
+ * Deletes a finished automation run's thread. The engine rejects it when the thread has events
+ * after `snapshotSequence` or live background work, so it never stops a turn started after the
+ * caller decided the thread was done.
+ */
+const ThreadAutoDeleteCommand = Schema.Struct({
+  type: Schema.Literal("thread.auto-delete"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  snapshotSequence: NonNegativeInt,
+});
+
 const ThreadUnsettleCommand = Schema.Struct({
   type: Schema.Literal("thread.unsettle"),
   commandId: CommandId,
@@ -1660,6 +1672,7 @@ const ThreadPullRequestLinkSyncCommand = Schema.Struct({
 
 const InternalOrchestrationCommand = Schema.Union([
   ThreadAutoSettleCommand,
+  ThreadAutoDeleteCommand,
   ThreadPullRequestSyncCommand,
   ThreadPullRequestLinkSyncCommand,
   ThreadSessionSetCommand,

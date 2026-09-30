@@ -82,6 +82,8 @@ export const AutomationRun = Schema.Struct({
   cause: Schema.String,
   threadId: Schema.NullOr(ThreadId),
   error: Schema.NullOr(Schema.String),
+  /** Set once the run's thread was deleted, by `deleteThreadWhenDone` or by hand. */
+  threadDeleted: Schema.optional(Schema.Boolean),
 });
 export type AutomationRun = typeof AutomationRun.Type;
 
@@ -102,6 +104,8 @@ export const AutomationConfig = Schema.Struct({
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   workingCopy: AutomationWorkingCopy,
   conversation: AutomationConversation,
+  /** Delete each run's thread once its turn completes. Only applies to fresh conversations. */
+  deleteThreadWhenDone: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** How late a missed scheduled run may still start, e.g. after the machine slept. */
   catchUpMinutes: NonNegativeInt,
 });

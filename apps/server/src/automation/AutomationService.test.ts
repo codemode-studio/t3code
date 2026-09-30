@@ -1,6 +1,9 @@
 import {
   type Automation,
+  AUTOMATION_MAX_RUNS,
   type AutomationConfig,
+  CommandId,
+  EventId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -9,17 +12,25 @@ import {
   type ServerSettings,
   type VcsCreateWorktreeInput,
   type OrchestrationCommand,
+  type OrchestrationEvent,
+  type OrchestrationLatestTurn,
   type OrchestrationProjectShell,
+  type OrchestrationThreadShell,
+  ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -29,6 +40,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ServerConfig } from "../config.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { OrchestrationCommandInvariantError } from "../orchestration/Errors.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "../orchestration/Services/ThreadDeletionReactor.ts";
@@ -61,8 +73,95 @@ const CONFIG: AutomationConfig = {
   runtimeMode: "full-access",
   workingCopy: "local",
   conversation: "fresh",
+  deleteThreadWhenDone: false,
   catchUpMinutes: 60,
 };
+
+const threadShell = (
+  id: ThreadId,
+  latestTurn: OrchestrationLatestTurn["state"] | null,
+  overrides: Partial<OrchestrationThreadShell> = {},
+): OrchestrationThreadShell => ({
+  id,
+  projectId: PROJECT_ID,
+  title: "Nightly review",
+  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  pullRequests: [],
+  branch: null,
+  worktreePath: null,
+  latestTurn:
+    latestTurn === null
+      ? null
+      : {
+          turnId: TurnId.make("turn-1"),
+          state: latestTurn,
+          requestedAt: "2026-09-01T00:00:00.000Z",
+          startedAt: "2026-09-01T00:00:00.000Z",
+          completedAt: latestTurn === "running" ? null : "2026-09-01T00:01:00.000Z",
+          assistantMessageId: null,
+        },
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:00:00.000Z",
+  archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
+  session: null,
+  latestUserMessageAt: null,
+  hasPendingApprovals: false,
+  hasPendingUserInput: false,
+  hasActionableProposedPlan: false,
+  ...overrides,
+});
+
+const threadEventBase = (threadId: ThreadId) => ({
+  sequence: 2,
+  eventId: EventId.make(`event-${threadId}`),
+  aggregateKind: "thread" as const,
+  aggregateId: threadId,
+  occurredAt: "2026-09-01T00:01:00.000Z",
+  commandId: CommandId.make(`command-${threadId}`),
+  causationEventId: null,
+  correlationId: null,
+  metadata: {},
+});
+
+/** A background task finishing, which can come after the turn and its checkpoint. */
+const taskCompleted = (threadId: ThreadId): OrchestrationEvent => ({
+  ...threadEventBase(threadId),
+  type: "thread.activity-appended",
+  payload: {
+    threadId,
+    activity: {
+      id: EventId.make(`task-${threadId}`),
+      tone: "info",
+      kind: "task.completed",
+      summary: "Task completed",
+      payload: {},
+      turnId: null,
+      createdAt: "2026-09-01T00:02:00.000Z",
+    },
+  },
+});
+
+/** The session settling, which is what tells cleanup to look at the thread again. */
+const sessionSettled = (threadId: ThreadId): OrchestrationEvent => ({
+  ...threadEventBase(threadId),
+  type: "thread.session-set",
+  payload: {
+    threadId,
+    session: {
+      threadId,
+      status: "ready",
+      providerName: "codex",
+      runtimeMode: "full-access",
+      activeTurnId: null,
+      lastError: null,
+      updatedAt: "2026-09-01T00:01:00.000Z",
+    },
+  },
+});
 
 const makeLayer = (input: {
   readonly stateDir: string;
@@ -72,8 +171,15 @@ const makeLayer = (input: {
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflowService["Service"]>;
   readonly gitHubCli?: Partial<GitHubCli["Service"]>;
-  /** Runs after a command is recorded, e.g. to hold one up. */
-  readonly afterRecord?: (command: OrchestrationCommand) => Effect.Effect<void>;
+  /** Runs after a command is recorded, e.g. to hold one up or reject it. */
+  readonly afterRecord?: (
+    command: OrchestrationCommand,
+  ) => Effect.Effect<void, OrchestrationCommandInvariantError>;
+  /** Thread shells the projection returns; missing ids read as deleted. */
+  readonly threads?: Ref.Ref<ReadonlyMap<ThreadId, OrchestrationThreadShell>>;
+  readonly events?: PubSub.PubSub<OrchestrationEvent>;
+  /** Completed once the service subscribes to `events`; earlier publishes are not seen. */
+  readonly subscribed?: Deferred.Deferred<void>;
 }) =>
   AutomationService.layer.pipe(
     Layer.provide(
@@ -84,10 +190,26 @@ const makeLayer = (input: {
               Effect.andThen(input.afterRecord?.(command) ?? Effect.void),
               Effect.as({ sequence: 1 }),
             ),
+          streamDomainEvents: input.events
+            ? Stream.unwrap(
+                PubSub.subscribe(input.events).pipe(
+                  Effect.tap(() =>
+                    input.subscribed ? Deferred.succeed(input.subscribed, undefined) : Effect.void,
+                  ),
+                  Effect.map(Stream.fromSubscription),
+                ),
+              )
+            : Stream.never,
         }),
         Layer.mock(ProjectionSnapshotQuery)({
           getProjectShellById: () => Effect.succeed(Option.fromNullishOr(input.project)),
-          getThreadShellById: () => Effect.succeed(Option.none()),
+          getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 1 }),
+          getThreadShellById: (threadId) =>
+            input.threads
+              ? Ref.get(input.threads).pipe(
+                  Effect.map((threads) => Option.fromNullishOr(threads.get(threadId))),
+                )
+              : Effect.succeedNone,
         }),
         Layer.mock(ThreadDeletionReactor)({ drainThrough: () => Effect.void }),
         Layer.mock(GitWorkflowService)(input.git ?? {}),
@@ -117,7 +239,14 @@ const withService = <A, E>(
     ...environment
   }: Pick<
     Parameters<typeof makeLayer>[0],
-    "settings" | "providers" | "git" | "gitHubCli" | "afterRecord"
+    | "settings"
+    | "providers"
+    | "git"
+    | "gitHubCli"
+    | "afterRecord"
+    | "threads"
+    | "events"
+    | "subscribed"
   > & {
     /** Seeds `automations.json` before the service reads it. */
     readonly automationsFile?: unknown;
@@ -137,8 +266,10 @@ const withService = <A, E>(
       );
     }
     const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
-    const service = yield* AutomationService.AutomationService.pipe(
-      Effect.provide(makeLayer({ stateDir, commands, project, ...environment })),
+    // Built in the test's scope, so the service's background work lives as long as the test.
+    const service = Context.get(
+      yield* Layer.build(makeLayer({ stateDir, commands, project, ...environment })),
+      AutomationService.AutomationService,
     );
     return yield* body(service, { stateDir, commands });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
@@ -383,6 +514,345 @@ describe("AutomationService", () => {
       }),
     ),
   );
+
+  describe("deleting a run's thread when done", () => {
+    const isDeleted = (snapshot: { automations: ReadonlyArray<Automation> }, threadId: ThreadId) =>
+      snapshot.automations[0]?.runs.some((run) => run.threadId === threadId && run.threadDeleted) ??
+      false;
+
+    /**
+     * A service with cleanup started, whose projection starts each new thread without a turn.
+     * The cleanup worker checks threads in order, so once a later thread is deleted every
+     * earlier check has been decided.
+     */
+    const withCleanup = <A, E>(
+      body: (context: {
+        readonly service: AutomationService.AutomationService["Service"];
+        readonly automationId: string;
+        readonly setThread: (thread: OrchestrationThreadShell) => Effect.Effect<void>;
+        readonly publish: (event: OrchestrationEvent) => Effect.Effect<void>;
+        readonly deletes: Effect.Effect<ReadonlyArray<ThreadId>>;
+        readonly waitDeleted: (threadId: ThreadId) => Effect.Effect<void>;
+      }) => Effect.Effect<A, E, Scope.Scope>,
+      options: {
+        readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
+        readonly automationsFile?: unknown;
+        /** Runs when a delete is dispatched; fail to reject it like the engine guard would. */
+        readonly onDelete?: (
+          threadId: ThreadId,
+          projection: {
+            readonly setThread: (thread: OrchestrationThreadShell) => Effect.Effect<void>;
+            readonly publish: (event: OrchestrationEvent) => Effect.Effect<void>;
+          },
+        ) => Effect.Effect<void, OrchestrationCommandInvariantError>;
+        /** Runs as a run starts its turn, while the run is still being set up. */
+        readonly onTurnStart?: (automation: {
+          readonly service: AutomationService.AutomationService["Service"];
+          readonly automationId: string;
+        }) => Effect.Effect<void>;
+      } = {},
+    ) =>
+      Effect.gen(function* () {
+        const threads = yield* Ref.make<ReadonlyMap<ThreadId, OrchestrationThreadShell>>(
+          new Map((options.threads ?? []).map((thread) => [thread.id, thread])),
+        );
+        const events = yield* PubSub.unbounded<OrchestrationEvent>();
+        const subscribed = yield* Deferred.make<void>();
+        const setThread = (thread: OrchestrationThreadShell) =>
+          Ref.update(threads, (current) => new Map(current).set(thread.id, thread));
+        const publish = (event: OrchestrationEvent) =>
+          PubSub.publish(events, event).pipe(Effect.asVoid);
+        const automation = yield* Ref.make<{
+          readonly service: AutomationService.AutomationService["Service"];
+          readonly automationId: string;
+        } | null>(null);
+        return yield* withService(
+          PROJECT,
+          (service, { commands }) =>
+            Effect.gen(function* () {
+              const automationId =
+                options.automationsFile === undefined
+                  ? (yield* service.create({ ...CONFIG, deleteThreadWhenDone: true })).id
+                  : "offline";
+              yield* Ref.set(automation, { service, automationId });
+              yield* service.start();
+              yield* Deferred.await(subscribed);
+              return yield* body({
+                service,
+                automationId,
+                setThread,
+                publish,
+                deletes: Ref.get(commands).pipe(
+                  Effect.map((all) =>
+                    all.flatMap((command) =>
+                      command.type === "thread.auto-delete" ? [command.threadId] : [],
+                    ),
+                  ),
+                ),
+                waitDeleted: (threadId) =>
+                  service.changes.pipe(
+                    Stream.filter((snapshot) => isDeleted(snapshot, threadId)),
+                    Stream.runHead,
+                    Effect.asVoid,
+                  ),
+              });
+            }),
+          {
+            threads,
+            events,
+            subscribed,
+            ...(options.automationsFile === undefined
+              ? {}
+              : { automationsFile: options.automationsFile }),
+            afterRecord: (command) =>
+              command.type === "thread.create"
+                ? setThread(threadShell(command.threadId, null))
+                : command.type === "thread.auto-delete"
+                  ? (options.onDelete?.(command.threadId, { setThread, publish }) ?? Effect.void)
+                  : command.type === "thread.turn.start" && options.onTurnStart
+                    ? Ref.get(automation).pipe(
+                        Effect.flatMap((current) =>
+                          current ? options.onTurnStart!(current) : Effect.void,
+                        ),
+                      )
+                    : Effect.void,
+          },
+        );
+      });
+
+    it.effect("deletes the thread once its turn completes and keeps one that errored", () =>
+      withCleanup(({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+        Effect.gen(function* () {
+          const failed = (yield* service.runNow(automationId)).threadId!;
+          const finished = (yield* service.runNow(automationId)).threadId!;
+          yield* setThread(threadShell(failed, "error"));
+          yield* publish(sessionSettled(failed));
+          yield* setThread(threadShell(finished, "completed"));
+          yield* publish(sessionSettled(finished));
+          yield* waitDeleted(finished);
+          assert.deepStrictEqual(yield* deletes, [finished]);
+
+          // The errored thread was let go, so a later completion does not delete it either.
+          const sentinel = (yield* service.runNow(automationId)).threadId!;
+          yield* setThread(threadShell(failed, "completed"));
+          yield* publish(sessionSettled(failed));
+          yield* setThread(threadShell(sentinel, "completed"));
+          yield* publish(sessionSettled(sentinel));
+          yield* waitDeleted(sentinel);
+          assert.deepStrictEqual(yield* deletes, [finished, sentinel]);
+        }),
+      ),
+    );
+
+    it.effect("keeps a thread the user wrote in after the engine rejects a stale delete", () =>
+      Effect.gen(function* () {
+        const rejected = yield* Ref.make<ReadonlyArray<ThreadId>>([]);
+        yield* withCleanup(
+          ({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+            Effect.gen(function* () {
+              const adopted = (yield* service.runNow(automationId)).threadId!;
+              const sentinel = (yield* service.runNow(automationId)).threadId!;
+              yield* setThread(threadShell(adopted, "completed"));
+              yield* publish(sessionSettled(adopted));
+              yield* setThread(threadShell(sentinel, "completed"));
+              yield* publish(sessionSettled(sentinel));
+              yield* waitDeleted(sentinel);
+              assert.deepStrictEqual(yield* Ref.get(rejected), [adopted]);
+
+              // The user's turn finishing later still leaves the thread alone.
+              const laterSentinel = (yield* service.runNow(automationId)).threadId!;
+              yield* setThread(
+                threadShell(adopted, "completed", {
+                  latestUserMessageAt: "2026-09-01T00:03:00.000Z",
+                }),
+              );
+              yield* publish(sessionSettled(adopted));
+              yield* setThread(threadShell(laterSentinel, "completed"));
+              yield* publish(sessionSettled(laterSentinel));
+              yield* waitDeleted(laterSentinel);
+              assert.deepStrictEqual(yield* deletes, [adopted, sentinel, laterSentinel]);
+            }),
+          {
+            // The user's message lands after cleanup read the thread and before the engine
+            // decides the delete, so the engine rejects it and the message queues another check.
+            onDelete: (threadId, { setThread, publish }) =>
+              Effect.gen(function* () {
+                if ((yield* Ref.get(rejected)).length > 0) return;
+                yield* Ref.set(rejected, [threadId]);
+                yield* setThread(
+                  threadShell(threadId, "running", {
+                    latestUserMessageAt: "2026-09-01T00:03:00.000Z",
+                    session: {
+                      threadId,
+                      status: "running",
+                      providerName: "codex",
+                      runtimeMode: "full-access",
+                      activeTurnId: TurnId.make("turn-2"),
+                      lastError: null,
+                      updatedAt: "2026-09-01T00:03:00.000Z",
+                    },
+                  }),
+                );
+                yield* publish(sessionSettled(threadId));
+                return yield* new OrchestrationCommandInvariantError({
+                  commandType: "thread.auto-delete",
+                  detail: "thread changed before automatic deletion",
+                });
+              }),
+          },
+        );
+      }),
+    );
+
+    it.effect("retries a rejected delete even when no watched event follows", () =>
+      Effect.gen(function* () {
+        const rejected = yield* Ref.make(false);
+        yield* withCleanup(
+          ({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+            Effect.gen(function* () {
+              const threadId = (yield* service.runNow(automationId)).threadId!;
+              yield* setThread(threadShell(threadId, "completed"));
+              yield* publish(sessionSettled(threadId));
+              yield* waitDeleted(threadId);
+              assert.deepStrictEqual(yield* deletes, [threadId, threadId]);
+            }),
+          {
+            // Like a title or pull request update landing after the read: the engine rejects
+            // the delete, and the change emits nothing cleanup subscribes to.
+            onDelete: () =>
+              Ref.getAndSet(rejected, true).pipe(
+                Effect.flatMap((already) =>
+                  already
+                    ? Effect.void
+                    : Effect.fail(
+                        new OrchestrationCommandInvariantError({
+                          commandType: "thread.auto-delete",
+                          detail: "thread changed before automatic deletion",
+                        }),
+                      ),
+                ),
+              ),
+          },
+        );
+      }),
+    );
+
+    it.effect("turning the setting off while a run starts spares that run's thread", () =>
+      Effect.gen(function* () {
+        const disabled = yield* Ref.make(false);
+        yield* withCleanup(
+          ({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+            Effect.gen(function* () {
+              const spared = (yield* service.runNow(automationId)).threadId!;
+              // Turned back on, it applies to the next run only.
+              yield* service.update(automationId, { ...CONFIG, deleteThreadWhenDone: true });
+              const sentinel = (yield* service.runNow(automationId)).threadId!;
+              yield* setThread(threadShell(spared, "completed"));
+              yield* publish(sessionSettled(spared));
+              yield* setThread(threadShell(sentinel, "completed"));
+              yield* publish(sessionSettled(sentinel));
+              yield* waitDeleted(sentinel);
+              assert.deepStrictEqual(yield* deletes, [sentinel]);
+            }),
+          {
+            // Only the first run: the user saves the automation with the setting off meanwhile.
+            onTurnStart: ({ service, automationId }) =>
+              Ref.getAndSet(disabled, true).pipe(
+                Effect.flatMap((already) =>
+                  already
+                    ? Effect.void
+                    : service.update(automationId, CONFIG).pipe(Effect.orDie, Effect.asVoid),
+                ),
+              ),
+          },
+        );
+      }),
+    );
+
+    it.effect("rechecks when a background task outlasting the turn finishes", () =>
+      withCleanup(({ service, automationId, setThread, publish, deletes, waitDeleted }) =>
+        Effect.gen(function* () {
+          const threadId = (yield* service.runNow(automationId)).threadId!;
+          const sentinel = (yield* service.runNow(automationId)).threadId!;
+          // The turn and its checkpoint are done, but a subagent is still working.
+          yield* setThread(threadShell(threadId, "completed", { backgroundLiveness: "working" }));
+          yield* publish(sessionSettled(threadId));
+          yield* setThread(threadShell(sentinel, "completed"));
+          yield* publish(sessionSettled(sentinel));
+          yield* waitDeleted(sentinel);
+          assert.deepStrictEqual(yield* deletes, [sentinel]);
+
+          // Finishing the task emits only an activity, no session or checkpoint event.
+          yield* setThread(threadShell(threadId, "completed"));
+          yield* publish(taskCompleted(threadId));
+          yield* waitDeleted(threadId);
+          assert.deepStrictEqual(yield* deletes, [sentinel, threadId]);
+        }),
+      ),
+    );
+
+    it.effect("still deletes a thread whose run fell out of the run history", () =>
+      Effect.gen(function* () {
+        const deleted = yield* Deferred.make<ThreadId>();
+        yield* withCleanup(
+          ({ service, automationId, setThread, publish }) =>
+            Effect.gen(function* () {
+              const oldest = (yield* service.runNow(automationId)).threadId!;
+              for (let index = 0; index < AUTOMATION_MAX_RUNS; index++) {
+                yield* service.runNow(automationId);
+              }
+              const snapshot = yield* service.changes.pipe(Stream.runHead);
+              assert.isFalse(
+                Option.getOrThrow(snapshot).automations[0]!.runs.some(
+                  (run) => run.threadId === oldest,
+                ),
+              );
+              yield* setThread(threadShell(oldest, "completed"));
+              yield* publish(sessionSettled(oldest));
+              assert.strictEqual(yield* Deferred.await(deleted), oldest);
+            }),
+          { onDelete: (threadId) => Deferred.succeed(deleted, threadId).pipe(Effect.asVoid) },
+        );
+      }),
+    );
+
+    it.effect("finishes cleanup for turns that completed while the server was down", () => {
+      const threadId = ThreadId.make("finished-offline");
+      return withCleanup(
+        ({ deletes, waitDeleted }) =>
+          Effect.gen(function* () {
+            yield* waitDeleted(threadId);
+            assert.deepStrictEqual(yield* deletes, [threadId]);
+          }),
+        {
+          threads: [threadShell(threadId, "completed")],
+          automationsFile: {
+            automations: [
+              {
+                ...CONFIG,
+                deleteThreadWhenDone: true,
+                id: "offline",
+                createdAt: "2026-09-01T00:00:00.000Z",
+                updatedAt: "2026-09-01T00:00:00.000Z",
+                scheduleCursor: "2026-09-01T00:00:00.000Z",
+                githubCursor: null,
+                pendingThreadDeletes: [{ threadId, messageAt: "2026-09-01T00:00:00.000Z" }],
+                runs: [
+                  {
+                    id: "run-1",
+                    startedAt: "2026-09-01T00:00:00.000Z",
+                    cause: "Manual run",
+                    threadId,
+                    error: null,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      );
+    });
+  });
 
   it.effect(
     "an automation on a profiled project runs inside the profile, not on the environment default",
