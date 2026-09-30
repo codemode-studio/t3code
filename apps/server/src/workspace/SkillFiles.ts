@@ -159,17 +159,13 @@ export async function listSkillFiles(
       }
       if (!provider.enabled || !provider.installed) continue;
       providerPaths.add(file);
-      const homeSkill =
-        within(file, home) && !roots.some((root) => root !== home && within(file, root));
-      if (
-        homeSkill &&
-        !["project", "repo", "workspace", "local"].includes(skill.scope?.toLowerCase() ?? "")
-      ) {
+      // Providers report every skill they can see from wherever they run, including worktrees,
+      // other checkouts, and plugin caches under home. Only personal skill folders and the
+      // selected projects belong in this catalog.
+      if (personalRoots.some((root) => within(file, root))) {
         addCandidate(file, "personal", provider.driver);
-      } else if (roots.some((root) => within(file, root))) {
+      } else if (roots.some((root) => root !== home && within(file, root))) {
         addCandidate(file, "project", provider.driver);
-      } else if (["user", "personal"].includes(skill.scope?.toLowerCase() ?? "")) {
-        addCandidate(file, "personal", provider.driver);
       }
     }
   }

@@ -201,6 +201,35 @@ describe("file skills catalog", () => {
     expect(result.skills).toEqual([]);
   });
 
+  it("ignores skills providers report from worktrees, other checkouts, and plugin caches", async () => {
+    const worktree = NodePath.join(home, ".t3", "worktrees", "app", "feature-1");
+    const otherCheckout = NodePath.join(home, "Git", "other-repo");
+    const pluginCache = NodePath.join(home, ".codex", "plugins", "cache", "vendor", "tool");
+    const reported = await Promise.all([
+      writeSkill(worktree, "from-worktree"),
+      writeSkill(otherCheckout, "from-other-repo"),
+      writeSkill(pluginCache, "from-plugin-cache"),
+      writeSkill(project, "from-selected-project"),
+    ]);
+    const result = await listSkillFiles(
+      { workspaceRoots: [project] },
+      [
+        provider(
+          reported.map((path) => ({
+            name: NodePath.basename(NodePath.dirname(path)),
+            path,
+            scope: "user",
+            enabled: true,
+          })),
+        ),
+      ],
+      home,
+    );
+    expect(result.skills.map(({ name, scope }) => [name, scope])).toEqual([
+      ["from-selected-project", "project"],
+    ]);
+  });
+
   it("reports malformed or oversized frontmatter instead of silently showing a complete catalog", async () => {
     await writeSkill(project, "bad", "---\nname: [invalid\n---\n");
     await writeSkill(project, "huge", "---\ndescription: " + "x".repeat(20_000) + "\n---\n");
