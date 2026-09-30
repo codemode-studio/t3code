@@ -75,13 +75,6 @@ export type AutomationWorkingCopy = typeof AutomationWorkingCopy.Type;
 export const AutomationConversation = Schema.Literals(["fresh", "continue"]);
 export type AutomationConversation = typeof AutomationConversation.Type;
 
-/**
- * A run whose thread is deleted once its turn completes: `pending` until then, `deleted` after.
- * A turn that errors or is stopped keeps its thread and drops the mark.
- */
-export const AutomationRunThreadCleanup = Schema.Literals(["pending", "deleted"]);
-export type AutomationRunThreadCleanup = typeof AutomationRunThreadCleanup.Type;
-
 export const AutomationRun = Schema.Struct({
   id: TrimmedNonEmptyString,
   startedAt: IsoDateTime,
@@ -89,7 +82,8 @@ export const AutomationRun = Schema.Struct({
   cause: Schema.String,
   threadId: Schema.NullOr(ThreadId),
   error: Schema.NullOr(Schema.String),
-  threadCleanup: Schema.optional(AutomationRunThreadCleanup),
+  /** Set once the run's thread was deleted, by `deleteThreadWhenDone` or by hand. */
+  threadDeleted: Schema.optional(Schema.Boolean),
 });
 export type AutomationRun = typeof AutomationRun.Type;
 

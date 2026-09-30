@@ -701,6 +701,87 @@ describe("OrchestrationEngine", () => {
       }).pipe(Effect.provide(makeOrchestrationLayer())),
   );
 
+  effectIt.effect(
+    "rejects an automatic delete after the thread changed or with live background work",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(now()));
+        const engine = yield* OrchestrationEngineService;
+        const snapshots = yield* ProjectionSnapshotQuery;
+        const backgroundLiveness = yield* ThreadBackgroundLiveness.ThreadBackgroundLivenessService;
+        const projectId = ProjectId.make("project-auto-delete-guard");
+        const threadId = ThreadId.make("thread-auto-delete-guarded");
+
+        yield* engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("cmd-auto-delete-guard-project"),
+          projectId,
+          title: "Project",
+          workspaceRoot: "/tmp/project-auto-delete-guard",
+          createdAt: now(),
+        });
+        yield* engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-auto-delete-guard-thread"),
+          threadId,
+          projectId,
+          title: "Thread",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now(),
+        });
+
+        // Any thread event after the caller's read, such as a new user message, rejects it.
+        const readSequence = yield* engine.latestSequence;
+        yield* engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make("cmd-auto-delete-guard-meta"),
+          threadId,
+          title: "Changed",
+        });
+        const stale = yield* engine
+          .dispatch({
+            type: "thread.auto-delete",
+            commandId: CommandId.make("cmd-auto-delete-stale"),
+            threadId,
+            snapshotSequence: readSequence,
+          })
+          .pipe(Effect.flip);
+        expect(stale._tag).toBe("OrchestrationCommandInvariantError");
+
+        const freshSequence = yield* engine.latestSequence;
+        backgroundLiveness.recordTaskLiveness({
+          threadId,
+          taskId: "task-working",
+          taskType: "subagent",
+          status: undefined,
+          kind: "started",
+        });
+        const live = yield* engine
+          .dispatch({
+            type: "thread.auto-delete",
+            commandId: CommandId.make("cmd-auto-delete-live"),
+            threadId,
+            snapshotSequence: freshSequence,
+          })
+          .pipe(Effect.flip);
+        expect(live._tag).toBe("OrchestrationCommandInvariantError");
+        expect(yield* engine.latestSequence).toBe(freshSequence);
+        backgroundLiveness.clearThreadLiveness(threadId);
+
+        yield* engine.dispatch({
+          type: "thread.auto-delete",
+          commandId: CommandId.make("cmd-auto-delete-fresh"),
+          threadId,
+          snapshotSequence: freshSequence,
+        });
+        expect(Option.isNone(yield* snapshots.getThreadShellById(threadId))).toBe(true);
+      }).pipe(Effect.provide(makeOrchestrationLayer())),
+  );
+
   it("persists deterministic read models for repeated snapshot reads", async () => {
     const createdAt = now();
     const system = await createOrchestrationSystem();

@@ -1457,7 +1457,7 @@ function RunHistory({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatRelativeTimeLabel(run.startedAt)}
                 </span>
-                {run.threadCleanup === "deleted" ? (
+                {run.threadDeleted ? (
                   <span className="shrink-0 text-xs text-muted-foreground">Thread deleted</span>
                 ) : threadId ? (
                   <Button size="xs" variant="ghost" onClick={() => onOpenThread(threadId)}>

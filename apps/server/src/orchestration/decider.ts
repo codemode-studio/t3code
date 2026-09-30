@@ -410,7 +410,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
-    case "thread.delete": {
+    case "thread.delete":
+    case "thread.auto-delete": {
       yield* requireThread({
         readModel,
         command,

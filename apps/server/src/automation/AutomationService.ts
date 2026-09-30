@@ -17,7 +17,6 @@ import {
   type AutomationConfig,
   type AutomationGitHubEvent,
   type AutomationRun,
-  type AutomationRunThreadCleanup,
   type AutomationsSnapshot,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -71,7 +70,14 @@ import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 
-/** What the file keeps beyond the public record: how far each trigger source has been read. */
+/** A run thread to delete once its turn finishes; `messageAt` is when the run's message was sent. */
+const PendingThreadDelete = Schema.Struct({ threadId: ThreadId, messageAt: IsoDateTime });
+type PendingThreadDelete = typeof PendingThreadDelete.Type;
+
+/**
+ * What the file keeps beyond the public record: how far each trigger source has been read, and
+ * which run threads still need deleting.
+ */
 const StoredAutomation = Schema.Struct({
   ...Automation.fields,
   /**
@@ -81,6 +87,10 @@ const StoredAutomation = Schema.Struct({
   scheduleCursor: IsoDateTime,
   /** GitHub items created at or before this instant have been handled; null until first poll. */
   githubCursor: Schema.NullOr(IsoDateTime),
+  /** Kept apart from the capped run history, so newer runs cannot drop an older run's cleanup. */
+  pendingThreadDeletes: Schema.Array(PendingThreadDelete).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 type StoredAutomation = typeof StoredAutomation.Type;
 
@@ -128,8 +138,24 @@ export class AutomationService extends Context.Service<
 >()("t3/automation/AutomationService") {}
 
 function toPublic(stored: StoredAutomation): Automation {
-  const { scheduleCursor: _scheduleCursor, githubCursor: _githubCursor, ...automation } = stored;
+  const {
+    scheduleCursor: _scheduleCursor,
+    githubCursor: _githubCursor,
+    pendingThreadDeletes: _pendingThreadDeletes,
+    ...automation
+  } = stored;
   return automation;
+}
+
+function findPendingThreadDelete(
+  file: AutomationsFile,
+  threadId: ThreadId,
+): PendingThreadDelete | undefined {
+  for (const automation of file.automations) {
+    const pending = automation.pendingThreadDeletes.find((entry) => entry.threadId === threadId);
+    if (pending) return pending;
+  }
+  return undefined;
 }
 
 function toSnapshot(file: AutomationsFile): AutomationsSnapshot {
@@ -153,12 +179,21 @@ function githubItemMatches(event: AutomationGitHubEvent, item: GitHubItem): bool
 
 /**
  * What to do with a run's thread marked for deletion: delete it once its turn completed, keep it
- * when the turn errored or was stopped so the user can see why, and wait while work remains.
+ * when the turn errored or was stopped so the user can see why or when the user wrote in it, and
+ * wait while work remains.
  */
 function runThreadOutcome(
   thread: OrchestrationThreadShell,
+  pending: PendingThreadDelete,
   now: string,
 ): "delete" | "keep" | "wait" {
+  // Server-stamped, so a later message is the user's, not the run's.
+  if (
+    thread.latestUserMessageAt !== null &&
+    Date.parse(thread.latestUserMessageAt) > Date.parse(pending.messageAt)
+  ) {
+    return "keep";
+  }
   if (
     thread.hasPendingApprovals ||
     thread.hasPendingUserInput ||
@@ -269,52 +304,65 @@ const make = Effect.gen(function* () {
 
   const failWith = (message: string) => Effect.fail(new AutomationError({ message }));
 
-  /** Sets or clears the cleanup mark on the pending runs of `threadId`. */
-  const markRunThread = (threadId: ThreadId, cleanup: AutomationRunThreadCleanup | undefined) =>
+  /** Drops the pending delete for `threadId`, marking its run when the thread is gone. */
+  const finishPendingThreadDelete = (threadId: ThreadId, deleted: boolean) =>
     modify((file) =>
       Effect.succeed([
         undefined,
         {
-          automations: file.automations.map((automation) => ({
-            ...automation,
-            runs: automation.runs.map((run) => {
-              if (run.threadId !== threadId || run.threadCleanup !== "pending") return run;
-              const { threadCleanup: _threadCleanup, ...rest } = run;
-              return cleanup === undefined ? rest : { ...rest, threadCleanup: cleanup };
-            }),
-          })),
+          automations: file.automations.map((automation) =>
+            automation.pendingThreadDeletes.some((entry) => entry.threadId === threadId)
+              ? {
+                  ...automation,
+                  pendingThreadDeletes: automation.pendingThreadDeletes.filter(
+                    (entry) => entry.threadId !== threadId,
+                  ),
+                  runs: deleted
+                    ? automation.runs.map((run) =>
+                        run.threadId === threadId ? { ...run, threadDeleted: true } : run,
+                      )
+                    : automation.runs,
+                }
+              : automation,
+          ),
         },
       ] as const),
     );
 
   const cleanupLock = yield* Semaphore.make(1);
   /**
-   * Deletes a pending run's thread once its turn completed. Safe to call at any time; one call at
-   * a time, so two events for the same finished turn cannot delete its thread twice.
+   * Deletes a pending run thread once its turn completed. Safe to call at any time. The delete
+   * is guarded by the projection sequence read before the thread, so the engine rejects it if
+   * anything, such as a new user message, reached the thread after that read.
    */
   const settleRunThread = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      const file = yield* SubscriptionRef.get(state);
-      const pending = file.automations.some((automation) =>
-        automation.runs.some((run) => run.threadId === threadId && run.threadCleanup === "pending"),
-      );
-      if (!pending) return;
+      const pending = findPendingThreadDelete(yield* SubscriptionRef.get(state), threadId);
+      if (pending === undefined) return;
+      const { snapshotSequence } = yield* snapshotQuery.getSnapshotSequence();
       const thread = yield* snapshotQuery
         .getThreadShellById(threadId)
         .pipe(Effect.map(Option.getOrUndefined));
       if (thread === undefined) {
         // Deleted some other way, e.g. by the user.
-        return yield* markRunThread(threadId, "deleted");
+        return yield* finishPendingThreadDelete(threadId, true);
       }
-      const outcome = runThreadOutcome(thread, yield* nowIso);
+      const outcome = runThreadOutcome(thread, pending, yield* nowIso);
       if (outcome === "wait") return;
-      if (outcome === "keep") return yield* markRunThread(threadId, undefined);
-      yield* engine.dispatch({
-        type: "thread.delete",
-        commandId: CommandId.make(`server:automation-thread-delete:${yield* newId}`),
-        threadId,
-      });
-      yield* markRunThread(threadId, "deleted");
+      if (outcome === "keep") return yield* finishPendingThreadDelete(threadId, false);
+      const deleted = yield* engine
+        .dispatch({
+          type: "thread.auto-delete",
+          commandId: CommandId.make(`server:automation-thread-delete:${yield* newId}`),
+          threadId,
+          snapshotSequence,
+        })
+        .pipe(
+          Effect.as(true),
+          // The thread changed after the read; whatever changed it queues another check.
+          Effect.catchTag("OrchestrationCommandInvariantError", () => Effect.succeed(false)),
+        );
+      if (deleted) yield* finishPendingThreadDelete(threadId, true);
     }).pipe(
       cleanupLock.withPermits(1),
       Effect.catchCause((failure) =>
@@ -520,9 +568,9 @@ const make = Effect.gen(function* () {
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         createdAt,
       });
-      return threadId;
+      return { threadId, messageAt: createdAt };
     }).pipe(
-      Effect.map((threadId) => ({ threadId, error: null })),
+      Effect.map(({ threadId, messageAt }) => ({ threadId, messageAt, error: null })),
       Effect.catchCause((failure) =>
         Effect.logWarning("automation run failed", {
           automationId: automation.id,
@@ -530,6 +578,7 @@ const make = Effect.gen(function* () {
         }).pipe(
           Effect.as({
             threadId: null,
+            messageAt: null,
             error:
               Cause.squash(failure) instanceof Error
                 ? (Cause.squash(failure) as Error).message
@@ -537,27 +586,32 @@ const make = Effect.gen(function* () {
           }),
         ),
       ),
-      Effect.flatMap(({ threadId, error }) =>
+      Effect.flatMap(({ threadId, messageAt, error }) =>
         Effect.gen(function* () {
           // A continued conversation's thread outlives the run, so only fresh ones are deleted.
-          const cleanUp =
+          const pendingDelete =
             threadId !== null &&
+            messageAt !== null &&
             automation.deleteThreadWhenDone &&
-            automation.conversation === "fresh";
+            automation.conversation === "fresh"
+              ? { threadId, messageAt }
+              : null;
           const run: AutomationRun = {
             id: yield* newId,
             startedAt: yield* nowIso,
             cause,
             threadId,
             error,
-            ...(cleanUp ? { threadCleanup: "pending" as const } : {}),
           };
           yield* patchAutomation(automation.id, (stored) => ({
             ...stored,
             runs: [run, ...stored.runs].slice(0, AUTOMATION_MAX_RUNS),
+            pendingThreadDeletes: pendingDelete
+              ? [...stored.pendingThreadDeletes, pendingDelete]
+              : stored.pendingThreadDeletes,
           })).pipe(Effect.ignoreCause({ log: true }));
-          // The turn may have finished before the run was recorded as pending.
-          if (cleanUp) yield* settleRunThread(threadId);
+          // The turn may have finished before its delete was recorded.
+          if (pendingDelete) yield* settleRunThread(pendingDelete.threadId);
           return run;
         }),
       ),
@@ -726,30 +780,47 @@ const make = Effect.gen(function* () {
 
   const start = Effect.fn("AutomationService.start")(function* () {
     // Off the event stream, so a slow lookup or dispatch never holds up the engine's subscribers.
-    const cleanup = yield* makeDrainableWorker(settleRunThread);
+    // A thread already queued is not queued again; it is dequeued before it is read, so an event
+    // arriving during a check still queues the next one.
+    const queued = new Set<ThreadId>();
+    const cleanup = yield* makeDrainableWorker((threadId: ThreadId) =>
+      Effect.suspend(() => {
+        queued.delete(threadId);
+        return settleRunThread(threadId);
+      }),
+    );
+    const recheck = (threadId: ThreadId) =>
+      SubscriptionRef.get(state).pipe(
+        Effect.flatMap((file) => {
+          if (queued.has(threadId) || findPendingThreadDelete(file, threadId) === undefined) {
+            return Effect.void;
+          }
+          queued.add(threadId);
+          return cleanup.enqueue(threadId);
+        }),
+      );
     // Turns that finished while the server was down, checked once events are flowing.
-    const enqueuePendingRuns = SubscriptionRef.get(state).pipe(
+    const recheckAll = SubscriptionRef.get(state).pipe(
       Effect.flatMap((file) =>
         Effect.forEach(
           file.automations.flatMap((automation) =>
-            automation.runs.flatMap((run) =>
-              run.threadId !== null && run.threadCleanup === "pending" ? [run.threadId] : [],
-            ),
+            automation.pendingThreadDeletes.map((entry) => entry.threadId),
           ),
-          cleanup.enqueue,
+          recheck,
           { discard: true },
         ),
       ),
     );
     yield* forkParked(
-      Stream.runForEach(
-        engine.streamDomainEvents.pipe(Stream.onStart(enqueuePendingRuns)),
-        (event) =>
-          event.type === "thread.session-set" ||
-          event.type === "thread.turn-diff-completed" ||
-          event.type === "thread.deleted"
-            ? cleanup.enqueue(event.payload.threadId)
-            : Effect.void,
+      Stream.runForEach(engine.streamDomainEvents.pipe(Stream.onStart(recheckAll)), (event) =>
+        // Session and checkpoint events end a turn; activities resolve requests and end
+        // background tasks, which can outlast both.
+        event.type === "thread.session-set" ||
+        event.type === "thread.turn-diff-completed" ||
+        event.type === "thread.activity-appended" ||
+        event.type === "thread.deleted"
+          ? recheck(event.payload.threadId)
+          : Effect.void,
       ),
     );
     yield* forkParked(
@@ -765,7 +836,10 @@ const make = Effect.gen(function* () {
 
   const buildStored = (
     config: AutomationConfig,
-    base: Pick<StoredAutomation, "id" | "createdAt" | "runs" | "githubCursor">,
+    base: Pick<
+      StoredAutomation,
+      "id" | "createdAt" | "runs" | "githubCursor" | "pendingThreadDeletes"
+    >,
     now: string,
   ): StoredAutomation => ({
     ...config,
@@ -774,6 +848,8 @@ const make = Effect.gen(function* () {
     createdAt: base.createdAt,
     runs: base.runs,
     githubCursor: base.githubCursor,
+    // Turning the setting off also spares threads of runs still going.
+    pendingThreadDeletes: config.deleteThreadWhenDone ? base.pendingThreadDeletes : [],
     updatedAt: now,
     // Editing restarts the schedule from now, so saving never replays a time that already passed.
     scheduleCursor: now,
@@ -788,7 +864,13 @@ const make = Effect.gen(function* () {
         const now = yield* nowIso;
         const stored = buildStored(
           config,
-          { id: yield* newId, createdAt: now, runs: [], githubCursor: null },
+          {
+            id: yield* newId,
+            createdAt: now,
+            runs: [],
+            githubCursor: null,
+            pendingThreadDeletes: [],
+          },
           now,
         );
         yield* modify((file) =>
