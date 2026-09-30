@@ -75,6 +75,13 @@ export type AutomationWorkingCopy = typeof AutomationWorkingCopy.Type;
 export const AutomationConversation = Schema.Literals(["fresh", "continue"]);
 export type AutomationConversation = typeof AutomationConversation.Type;
 
+/**
+ * A run whose thread is deleted once its turn completes: `pending` until then, `deleted` after.
+ * A turn that errors or is stopped keeps its thread and drops the mark.
+ */
+export const AutomationRunThreadCleanup = Schema.Literals(["pending", "deleted"]);
+export type AutomationRunThreadCleanup = typeof AutomationRunThreadCleanup.Type;
+
 export const AutomationRun = Schema.Struct({
   id: TrimmedNonEmptyString,
   startedAt: IsoDateTime,
@@ -82,6 +89,7 @@ export const AutomationRun = Schema.Struct({
   cause: Schema.String,
   threadId: Schema.NullOr(ThreadId),
   error: Schema.NullOr(Schema.String),
+  threadCleanup: Schema.optional(AutomationRunThreadCleanup),
 });
 export type AutomationRun = typeof AutomationRun.Type;
 
@@ -102,6 +110,8 @@ export const AutomationConfig = Schema.Struct({
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   workingCopy: AutomationWorkingCopy,
   conversation: AutomationConversation,
+  /** Delete each run's thread once its turn completes. Only applies to fresh conversations. */
+  deleteThreadWhenDone: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** How late a missed scheduled run may still start, e.g. after the machine slept. */
   catchUpMinutes: NonNegativeInt,
 });

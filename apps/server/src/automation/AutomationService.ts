@@ -3,7 +3,8 @@
  *
  * The records live in `automations.json` in the state directory. A run creates a thread in the
  * automation's project (in a fresh worktree or the project checkout) and starts a turn with the
- * automation's instructions, the same way a user sending a first message would.
+ * automation's instructions, the same way a user sending a first message would. With
+ * `deleteThreadWhenDone`, the run's thread is deleted once that turn completes.
  *
  * @module AutomationService
  */
@@ -16,11 +17,13 @@ import {
   type AutomationConfig,
   type AutomationGitHubEvent,
   type AutomationRun,
+  type AutomationRunThreadCleanup,
   type AutomationsSnapshot,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   IsoDateTime,
   MessageId,
+  type OrchestrationThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -35,6 +38,7 @@ import {
   resolveProviderProfile,
   resolveProviderProfileFallbackModelSelection,
 } from "@t3tools/shared/projectSettings";
+import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -60,6 +64,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "../orchestration/Services/ThreadDeletionReactor.ts";
+import { threadHasQueuedTurnStart } from "../orchestration/ThreadSettlementPolicy.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -143,6 +148,38 @@ function githubItemMatches(event: AutomationGitHubEvent, item: GitHubItem): bool
       return item.isDraft === true;
     case "issue.opened":
       return true;
+  }
+}
+
+/**
+ * What to do with a run's thread marked for deletion: delete it once its turn completed, keep it
+ * when the turn errored or was stopped so the user can see why, and wait while work remains.
+ */
+function runThreadOutcome(
+  thread: OrchestrationThreadShell,
+  now: string,
+): "delete" | "keep" | "wait" {
+  if (
+    thread.hasPendingApprovals ||
+    thread.hasPendingUserInput ||
+    thread.session?.status === "starting" ||
+    thread.session?.status === "running" ||
+    thread.backgroundLiveness != null ||
+    threadHasQueuedTurnStart(thread, now)
+  ) {
+    return "wait";
+  }
+  switch (thread.latestTurn?.state) {
+    case "completed":
+      return "delete";
+    case "error":
+    case "interrupted":
+      return "keep";
+    case "running":
+      return "wait";
+    default:
+      // No turn yet: waiting on it, unless the session failed before it could start.
+      return thread.session?.status === "error" ? "keep" : "wait";
   }
 }
 
@@ -231,6 +268,62 @@ const make = Effect.gen(function* () {
     );
 
   const failWith = (message: string) => Effect.fail(new AutomationError({ message }));
+
+  /** Sets or clears the cleanup mark on the pending runs of `threadId`. */
+  const markRunThread = (threadId: ThreadId, cleanup: AutomationRunThreadCleanup | undefined) =>
+    modify((file) =>
+      Effect.succeed([
+        undefined,
+        {
+          automations: file.automations.map((automation) => ({
+            ...automation,
+            runs: automation.runs.map((run) => {
+              if (run.threadId !== threadId || run.threadCleanup !== "pending") return run;
+              const { threadCleanup: _threadCleanup, ...rest } = run;
+              return cleanup === undefined ? rest : { ...rest, threadCleanup: cleanup };
+            }),
+          })),
+        },
+      ] as const),
+    );
+
+  const cleanupLock = yield* Semaphore.make(1);
+  /**
+   * Deletes a pending run's thread once its turn completed. Safe to call at any time; one call at
+   * a time, so two events for the same finished turn cannot delete its thread twice.
+   */
+  const settleRunThread = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const file = yield* SubscriptionRef.get(state);
+      const pending = file.automations.some((automation) =>
+        automation.runs.some((run) => run.threadId === threadId && run.threadCleanup === "pending"),
+      );
+      if (!pending) return;
+      const thread = yield* snapshotQuery
+        .getThreadShellById(threadId)
+        .pipe(Effect.map(Option.getOrUndefined));
+      if (thread === undefined) {
+        // Deleted some other way, e.g. by the user.
+        return yield* markRunThread(threadId, "deleted");
+      }
+      const outcome = runThreadOutcome(thread, yield* nowIso);
+      if (outcome === "wait") return;
+      if (outcome === "keep") return yield* markRunThread(threadId, undefined);
+      yield* engine.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make(`server:automation-thread-delete:${yield* newId}`),
+        threadId,
+      });
+      yield* markRunThread(threadId, "deleted");
+    }).pipe(
+      cleanupLock.withPermits(1),
+      Effect.catchCause((failure) =>
+        Effect.logWarning("automation run thread cleanup failed", {
+          threadId,
+          cause: Cause.pretty(failure),
+        }),
+      ),
+    );
 
   /**
    * Checks a pull request out detached in a fresh worktree. The PR's branch is usually still
@@ -446,17 +539,25 @@ const make = Effect.gen(function* () {
       ),
       Effect.flatMap(({ threadId, error }) =>
         Effect.gen(function* () {
+          // A continued conversation's thread outlives the run, so only fresh ones are deleted.
+          const cleanUp =
+            threadId !== null &&
+            automation.deleteThreadWhenDone &&
+            automation.conversation === "fresh";
           const run: AutomationRun = {
             id: yield* newId,
             startedAt: yield* nowIso,
             cause,
             threadId,
             error,
+            ...(cleanUp ? { threadCleanup: "pending" as const } : {}),
           };
           yield* patchAutomation(automation.id, (stored) => ({
             ...stored,
             runs: [run, ...stored.runs].slice(0, AUTOMATION_MAX_RUNS),
           })).pipe(Effect.ignoreCause({ log: true }));
+          // The turn may have finished before the run was recorded as pending.
+          if (cleanUp) yield* settleRunThread(threadId);
           return run;
         }),
       ),
@@ -624,6 +725,33 @@ const make = Effect.gen(function* () {
   });
 
   const start = Effect.fn("AutomationService.start")(function* () {
+    // Off the event stream, so a slow lookup or dispatch never holds up the engine's subscribers.
+    const cleanup = yield* makeDrainableWorker(settleRunThread);
+    // Turns that finished while the server was down, checked once events are flowing.
+    const enqueuePendingRuns = SubscriptionRef.get(state).pipe(
+      Effect.flatMap((file) =>
+        Effect.forEach(
+          file.automations.flatMap((automation) =>
+            automation.runs.flatMap((run) =>
+              run.threadId !== null && run.threadCleanup === "pending" ? [run.threadId] : [],
+            ),
+          ),
+          cleanup.enqueue,
+          { discard: true },
+        ),
+      ),
+    );
+    yield* forkParked(
+      Stream.runForEach(
+        engine.streamDomainEvents.pipe(Stream.onStart(enqueuePendingRuns)),
+        (event) =>
+          event.type === "thread.session-set" ||
+          event.type === "thread.turn-diff-completed" ||
+          event.type === "thread.deleted"
+            ? cleanup.enqueue(event.payload.threadId)
+            : Effect.void,
+      ),
+    );
     yield* forkParked(
       Effect.all([scheduleTick, githubTick], { discard: true }).pipe(
         Effect.catchCause((failure) =>

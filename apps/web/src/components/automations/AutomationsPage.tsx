@@ -124,6 +124,7 @@ interface AutomationDraft {
   readonly runtimeMode: RuntimeMode;
   readonly workingCopy: AutomationWorkingCopy;
   readonly conversation: AutomationConversation;
+  readonly deleteThreadWhenDone: boolean;
   readonly catchUpMinutes: number;
 }
 
@@ -138,6 +139,7 @@ const EMPTY_DRAFT: AutomationDraft = {
   runtimeMode: DEFAULT_RUNTIME_MODE,
   workingCopy: "worktree",
   conversation: "fresh",
+  deleteThreadWhenDone: false,
   catchUpMinutes: DEFAULT_AUTOMATION_CATCH_UP_MINUTES,
 };
 
@@ -153,6 +155,7 @@ function draftFromAutomation(automation: EnvironmentAutomation): AutomationDraft
     runtimeMode: automation.runtimeMode,
     workingCopy: automation.workingCopy,
     conversation: automation.conversation,
+    deleteThreadWhenDone: automation.deleteThreadWhenDone,
     catchUpMinutes: automation.catchUpMinutes,
   };
 }
@@ -187,6 +190,7 @@ function configFromDraft(
       runtimeMode: draft.runtimeMode,
       workingCopy: draft.workingCopy,
       conversation: draft.conversation,
+      deleteThreadWhenDone: draft.deleteThreadWhenDone,
       catchUpMinutes: draft.catchUpMinutes,
     },
   };
@@ -807,6 +811,22 @@ function AutomationEditor({
                 ["continue", "Continue last run"],
               ]}
               onChange={(conversation) => patch({ conversation })}
+            />
+          </OptionRow>
+          <OptionRow
+            title="Delete thread when done"
+            description={
+              draft.conversation === "continue"
+                ? "Needs a new thread for each run"
+                : "Once the run finishes. Failed or stopped runs keep theirs"
+            }
+          >
+            <Switch
+              size="sm"
+              aria-label="Delete thread when done"
+              checked={draft.deleteThreadWhenDone && draft.conversation === "fresh"}
+              disabled={draft.conversation === "continue"}
+              onCheckedChange={(deleteThreadWhenDone) => patch({ deleteThreadWhenDone })}
             />
           </OptionRow>
           <OptionRow
@@ -1437,7 +1457,9 @@ function RunHistory({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatRelativeTimeLabel(run.startedAt)}
                 </span>
-                {threadId ? (
+                {run.threadCleanup === "deleted" ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">Thread deleted</span>
+                ) : threadId ? (
                   <Button size="xs" variant="ghost" onClick={() => onOpenThread(threadId)}>
                     Open thread
                   </Button>

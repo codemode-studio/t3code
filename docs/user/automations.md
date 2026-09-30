@@ -44,5 +44,11 @@ linked to the pull request. To review newer commits, ask the agent to run
 **Conversation** chooses between a new thread for each run and continuing the previous run's
 thread.
 
+**Delete thread when done** deletes each run's thread once the agent finishes, for automations
+whose results live elsewhere, such as a pushed branch or a pull request comment. A run that fails
+or that you stop keeps its thread so you can see what happened. It only applies to new threads for
+each run. The run's worktree is removed too when **Delete worktrees with deleted threads** is on
+in **Settings → Storage**.
+
 **Permissions** work like [permission modes](./permission-modes.md). Runs start with nobody
 watching, so a mode that asks before acting waits until you answer in the thread.
