@@ -98,8 +98,6 @@ interface Outcome {
 const startedActivityId = (child: ThreadId) => EventId.make(`delegation:${child}:started`);
 const completedActivityId = (child: ThreadId) => EventId.make(`delegation:${child}:completed`);
 const resultMessageId = (child: ThreadId) => MessageId.make(`delegation:${child}`);
-/** Tags the command that creates a delegated thread; its creation event keeps it for good. */
-const CREATE_COMMAND_TAG = "delegation-thread-create";
 
 /** How a delegated thread stands; `null` while its turn has not finished. */
 export function delegatedThreadStatus(
@@ -347,34 +345,18 @@ const make = Effect.gen(function* () {
   });
 
   const delegate = Effect.fn("DelegationService.delegate")(function* (input: DelegateInput) {
-    // Read from the thread's creation event, so the rule holds after the task finishes, when
-    // the user continues or rewinds it, and across restarts.
-    const created = yield* engine
-      .readThreadEvents({
-        threadId: input.parentThreadId,
-        fromSequenceExclusive: 0,
-        toSequenceInclusive: Number.MAX_SAFE_INTEGER,
-        limit: 1,
-      })
-      .pipe(
-        Stream.runHead,
-        Effect.mapError(() => new DelegationError({ message: "Could not read this thread." })),
-      );
-    if (
-      Option.exists(
-        created,
-        (event) => event.commandId?.startsWith(`server:${CREATE_COMMAND_TAG}:`) === true,
-      )
-    ) {
-      return yield* failWith(
-        "This thread is itself a delegated task and cannot delegate further. Do the work here.",
-      );
-    }
     const parent = yield* snapshots
       .getThreadShellById(input.parentThreadId)
       .pipe(Effect.mapError(() => new DelegationError({ message: "Could not read this thread." })));
     if (Option.isNone(parent)) {
       return yield* failWith(`Thread ${input.parentThreadId} was not found.`);
+    }
+    // Set at creation, so the rule holds after the task finishes, when the user continues or
+    // rewinds it, and across restarts.
+    if (parent.value.parentThreadId != null) {
+      return yield* failWith(
+        "This thread is itself a delegated task and cannot delegate further. Do the work here.",
+      );
     }
     const providers = yield* providerRegistry.getProviders;
     const provider = findProvider(providers, input.provider);
@@ -424,8 +406,9 @@ const make = Effect.gen(function* () {
     yield* Effect.gen(function* () {
       yield* engine.dispatch({
         type: "thread.create",
-        commandId: yield* commandId(CREATE_COMMAND_TAG),
+        commandId: yield* commandId("delegation-thread-create"),
         threadId: childThreadId,
+        parentThreadId: input.parentThreadId,
         projectId: parent.value.projectId,
         title,
         modelSelection,

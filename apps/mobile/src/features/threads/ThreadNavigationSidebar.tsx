@@ -64,6 +64,7 @@ import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ChildRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -760,6 +761,20 @@ function ThreadNavigationSidebarPane(
             />
           );
         }
+        case "v2-child":
+          return (
+            <ThreadListV2ChildRow
+              thread={item.thread}
+              timeLabel={item.timeLabel}
+              providerInstance={resolveProviderInstance(item.thread)}
+              pane="sidebar"
+              selected={
+                scopedThreadKey(item.thread.environmentId, item.thread.id) ===
+                props.selectedThreadKey
+              }
+              onSelectThread={handleSelectThread}
+            />
+          );
         case "v2-thread": {
           const thread = item.item.thread;
           const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);

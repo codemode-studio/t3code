@@ -28,6 +28,7 @@ import {
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreads,
+  nestSidebarSections,
   formatWorkingDurationLabel,
   shouldClearThreadSelectionOnMouseDown,
   shouldRecedeSidebarThread,
@@ -50,6 +51,10 @@ import {
   resolveSidebarDropVerb,
 } from "./Sidebar.logic";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import {
+  nestThreadsUnderParents,
+  withNestedChildren,
+} from "@t3tools/client-runtime/state/thread-nesting";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   EnvironmentId,
@@ -895,6 +900,18 @@ describe("searchSidebarThreads", () => {
       threads[0],
       threads[2],
     ]);
+  });
+  it("finds delegated threads nested under their parent by title and content", () => {
+    const parent = { ...searchThread("parent", "Plan release", "Alpha"), createdAt: "" };
+    const child = {
+      ...searchThread("child", "Review release notes", "Alpha"),
+      createdAt: "",
+      parentThreadId: ThreadId.make("parent"),
+    };
+    const { childrenByParentKey } = nestThreadsUnderParents([parent], [parent, child]);
+    const searchable = withNestedChildren([parent], childrenByParentKey);
+    expect(searchSidebarThreads(searchable, "notes")).toEqual([child]);
+    expect(searchSidebarThreads(searchable, "changelog", contentKeys("child"))).toEqual([child]);
   });
 });
 
@@ -2458,4 +2475,44 @@ describe("navigation after parking a thread", () => {
       ).toBe(expected);
     },
   );
+});
+
+describe("nestSidebarSections", () => {
+  const thread = (id: string, parent?: string) => ({
+    environmentId: localEnvironmentId,
+    id: ThreadId.make(id),
+    parentThreadId: parent === undefined ? null : ThreadId.make(parent),
+    createdAt: "2026-10-01T10:00:00.000Z",
+  });
+
+  it("keeps a nested child's settled or snoozed state while it renders under its parent", () => {
+    const parent = thread("parent");
+    const settledChild = thread("settled-child", "parent");
+    const snoozedChild = thread("snoozed-child", "parent");
+    const result = nestSidebarSections({
+      pinned: [],
+      active: [parent],
+      snoozed: [snoozedChild],
+      settled: [settledChild],
+    });
+    expect(result.settled).toEqual([]);
+    expect(result.snoozed).toEqual([]);
+    expect(result.childrenByParentKey.get(`${localEnvironmentId}:parent`)).toEqual([
+      snoozedChild,
+      settledChild,
+    ]);
+    expect([...result.settledKeys]).toEqual([`${localEnvironmentId}:settled-child`]);
+    expect([...result.snoozedKeys]).toEqual([`${localEnvironmentId}:snoozed-child`]);
+  });
+
+  it("leaves children of a settled parent on their own rows", () => {
+    const result = nestSidebarSections({
+      pinned: [],
+      active: [thread("child", "parent")],
+      snoozed: [],
+      settled: [thread("parent")],
+    });
+    expect(result.active.map((entry) => entry.id)).toEqual(["child"]);
+    expect(result.childrenByParentKey.size).toBe(0);
+  });
 });

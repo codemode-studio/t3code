@@ -23,7 +23,7 @@ import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } 
 import { Alert, Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -1230,5 +1230,123 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         )}
       </ThreadSwipeable>
     </View>
+  );
+});
+
+// Same hues as the status labels; a settled child reads as a quiet check.
+const CHILD_STATUS_SYMBOL: Record<
+  ThreadListV2Status,
+  { readonly name: AppSymbolName; readonly label: string; readonly tintClassName?: string }
+> = {
+  approval: {
+    name: "exclamationmark.shield",
+    label: "Approval",
+    tintClassName: "accent-warning-foreground",
+  },
+  input: {
+    name: "questionmark.bubble",
+    label: "Input",
+    tintClassName: "accent-adaptive-indigo-600-300",
+  },
+  working: {
+    name: "circle.dashed",
+    label: "Working",
+    tintClassName: "accent-adaptive-sky-600-400",
+  },
+  failed: {
+    name: "exclamationmark.circle",
+    label: "Failed",
+    tintClassName: "accent-danger-foreground",
+  },
+  ready: { name: "checkmark.circle", label: "Done" },
+};
+
+/**
+ * One-line row for a thread another thread delegated work to, drawn under
+ * its parent's card. Tap opens it; actions live on the thread screen.
+ */
+export const ThreadListV2ChildRow = memo(function ThreadListV2ChildRow(props: {
+  readonly thread: EnvironmentThreadShell;
+  readonly timeLabel: string;
+  readonly providerInstance: ThreadRowProviderInstance | null;
+  readonly pane?: "screen" | "sidebar";
+  readonly selected?: boolean;
+  readonly showTrailingDivider?: boolean;
+  readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
+}) {
+  const { thread, onSelectThread } = props;
+  const theme = useUniwindTheme();
+  const sidebarPane = props.pane === "sidebar";
+  const selected = props.selected === true;
+  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
+  const status = resolveThreadListV2Status(thread);
+  const symbol = CHILD_STATUS_SYMBOL[status];
+  const statusLabel = STATUS_LABEL_BY_STATUS[status];
+
+  return (
+    <RowPressable
+      interactionClassName={rowAppearance.interactionClassName}
+      interactionOpacity={rowAppearance.interactionOpacity}
+      className={rowAppearance.className}
+      accessibilityLabel={`${thread.title}, delegated task, ${symbol.label}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={() => onSelectThread(thread)}
+      style={rowAppearance.style}
+    >
+      <View
+        className={cn(
+          "min-h-[36px] flex-row items-center gap-2 py-1.5",
+          sidebarPane ? "pl-6 pr-3" : "pl-9 pr-5",
+        )}
+      >
+        <SymbolView
+          name={symbol.name}
+          size={14}
+          tintColorClassName={
+            selected
+              ? selectedThreadRowColors.mutedIconTintClassName
+              : (symbol.tintClassName ?? rowAppearance.tertiaryIconTintClassName)
+          }
+          type="monochrome"
+        />
+        {props.providerInstance ? (
+          <ProviderInstanceIcon
+            provider={props.providerInstance.driverKind}
+            size={13}
+            displayName={props.providerInstance.displayName}
+            accentColor={props.providerInstance.accentColor}
+            showBadge={false}
+            surfaceColor={rowAppearance.providerIconSurfaceColor}
+          />
+        ) : null}
+        <Text
+          className={cn(
+            "flex-1 text-sm",
+            selected
+              ? selectedThreadRowColors.foregroundClassName
+              : status === "input" || status === "approval"
+                ? rowAppearance.foregroundClassName
+                : rowAppearance.mutedForegroundClassName,
+          )}
+          numberOfLines={1}
+        >
+          {thread.title}
+        </Text>
+        <Text
+          className={cn(
+            "text-xs tabular-nums",
+            selected
+              ? selectedThreadRowColors.mutedForegroundClassName
+              : (statusLabel?.className ?? rowAppearance.tertiaryForegroundClassName),
+          )}
+        >
+          {statusLabel?.label ?? props.timeLabel}
+        </Text>
+      </View>
+      {!sidebarPane && THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider === true ? (
+        <View className="ml-5 h-px bg-border-subtle" />
+      ) : null}
+    </RowPressable>
   );
 });

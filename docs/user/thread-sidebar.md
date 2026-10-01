@@ -179,9 +179,11 @@ On web and desktop, use **Agents** to follow work delegated to subagents.
 
 An agent can also hand a task to another provider, for example "ask Codex to
 review this". The task runs as its own thread in the same working copy and shows
-in **Agents**; select it to open that thread. When it finishes, its final
-message arrives in the original thread as a new message, and the agent picks up
-from there. Stopping the delegated thread reports back too.
+in **Agents**; select it to open that thread. While the original thread is
+pinned or active, the delegated thread also appears as a short line beneath it
+in the thread list, with its own status. When it finishes, its final message
+arrives in the original thread as a new message, and the agent picks up from
+there. Stopping the delegated thread reports back too.
 
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
