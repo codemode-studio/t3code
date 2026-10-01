@@ -25,7 +25,10 @@ import {
   resolveSettledThreadTimestamp,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
-import { nestThreadsUnderParents } from "@t3tools/client-runtime/state/thread-nesting";
+import {
+  nestThreadsUnderParents,
+  withNestedChildren,
+} from "@t3tools/client-runtime/state/thread-nesting";
 import {
   threadSearchMatchKey,
   type EnvironmentThreadSearchMatch,
@@ -1007,17 +1010,19 @@ const childStatusTone = {
  * One-line row for a thread another thread delegated work to. It renders
  * inside the parent's list item, indented to the parent's text, so it moves
  * with the parent when dragged. Click opens the thread; right-click gets the
- * normal thread menu.
+ * normal thread menu; dropped files go to this thread, not the parent.
  */
 const SidebarChildThreadRow = memo(function SidebarChildThreadRow(props: {
   thread: SidebarThreadSummary;
   isActive: boolean;
+  jumpLabel: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
   onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+  onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
 }) {
-  const { thread, onThreadClick, onThreadActivate, onContextMenu } = props;
+  const { thread, onThreadClick, onThreadActivate, onContextMenu, onFileDropThreads } = props;
   const threadRef = useMemo(
     () => scopeThreadRef(thread.environmentId, thread.id),
     [thread.environmentId, thread.id],
@@ -1069,22 +1074,45 @@ const SidebarChildThreadRow = memo(function SidebarChildThreadRow(props: {
     },
     [onContextMenu, threadRef],
   );
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
+  const fileDropHandlers = useMemo(
+    () =>
+      onFileDropThreads
+        ? makeWorkspaceFileDropHandlers({
+            setDragActive: setIsFileDragOver,
+            addFiles: (files) => {
+              onFileDropThreads(threadRef, files);
+            },
+            addFolders: () => {},
+          })
+        : null,
+    [onFileDropThreads, threadRef],
+  );
+  useEffect(() => {
+    if (!isFileDragOver) return;
+    const clearFileDrag = () => setIsFileDragOver(false);
+    window.addEventListener("dragend", clearFileDrag);
+    return () => window.removeEventListener("dragend", clearFileDrag);
+  }, [isFileDragOver]);
 
   return (
     <li className="list-none">
       <div
+        {...(fileDropHandlers ?? {})}
         role="button"
         tabIndex={0}
         aria-label={`${thread.title}, delegated task`}
         aria-current={props.isActive ? "page" : undefined}
         data-testid="sidebar-row-child"
         className={cn(
-          "group/sidebar-child flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md px-(--sidebar-row-content-inset) text-left text-xs outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          "group/sidebar-child relative flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md px-(--sidebar-row-content-inset) text-left text-xs outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           props.isActive
             ? "bg-sidebar-row-active text-sidebar-foreground"
             : isSelected
               ? "bg-sidebar-row-selected text-sidebar-foreground"
               : "text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+          isFileDragOver && "ring-1 ring-inset ring-primary/70",
+          isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
         )}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
@@ -1116,6 +1144,7 @@ const SidebarChildThreadRow = memo(function SidebarChildThreadRow(props: {
             threadTimeLabel(thread)
           )}
         </span>
+        {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
       </div>
     </li>
   );
@@ -1185,6 +1214,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   childThreads: readonly SidebarThreadSummary[];
   /** The routed child's key when the route is one of `childThreads`. */
   activeChildKey: string | null;
+  /** Jump hints for `childThreads`; null while hints are hidden. */
+  childJumpLabelByKey: ReadonlyMap<string, string> | null;
 }) {
   const {
     isRenaming,
@@ -1924,10 +1955,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               key={childKey}
               thread={child}
               isActive={props.activeChildKey === childKey}
+              jumpLabel={props.childJumpLabelByKey?.get(childKey) ?? null}
               providerEntryByInstanceId={props.providerEntryByInstanceId}
               onThreadClick={onThreadClick}
               onThreadActivate={onThreadActivate}
               onContextMenu={onContextMenu}
+              onFileDropThreads={onFileDropThreads}
             />
           );
         })}
@@ -1938,7 +1971,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     <li
       data-thread-item
       {...sortableRootProps}
-      {...(fileDropHandlers ?? {})}
       className={cn(
         // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
@@ -1949,6 +1981,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         <TooltipTrigger
           render={
             <div
+              // On the card, not the list item: child rows below it take
+              // their own drops.
+              {...(fileDropHandlers ?? {})}
               ref={rowRef}
               role="button"
               tabIndex={0}
@@ -2878,8 +2913,12 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
+    () => [
+      ...withNestedChildren([...pinnedThreads, ...activeThreads], childThreadsByParentKey),
+      ...snoozedThreads,
+      ...settledThreads,
+    ],
+    [activeThreads, childThreadsByParentKey, pinnedThreads, settledThreads, snoozedThreads],
   );
   const searchEnvironmentIds = useMemo(
     () =>
@@ -3015,9 +3054,21 @@ export default function Sidebar() {
     return routeThread === undefined ? EMPTY_THREADS : [routeThread];
   }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
 
+  // Rendered order, nested children included: the context menu, multi-select,
+  // shift-range select, and jump shortcuts all resolve rows through it.
   const orderedThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...visibleSnoozedThreads, ...renderedSettledThreads],
-    [pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
+    () => [
+      ...withNestedChildren([...pinnedThreads, ...activeThreads], childThreadsByParentKey),
+      ...visibleSnoozedThreads,
+      ...renderedSettledThreads,
+    ],
+    [
+      pinnedThreads,
+      activeThreads,
+      childThreadsByParentKey,
+      visibleSnoozedThreads,
+      renderedSettledThreads,
+    ],
   );
   const orderedThreadKeys = useMemo(
     () =>
@@ -5035,6 +5086,9 @@ export default function Sidebar() {
                               )
                                 ? routeThreadKey
                                 : null
+                            }
+                            childJumpLabelByKey={
+                              showThreadJumpHints && childThreads.length > 0 ? jumpLabelByKey : null
                             }
                           />
                         );

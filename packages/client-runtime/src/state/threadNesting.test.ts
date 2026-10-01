@@ -1,7 +1,7 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { nestThreadsUnderParents } from "./threadNesting.ts";
+import { nestThreadsUnderParents, withNestedChildren } from "./threadNesting.ts";
 
 const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
@@ -60,5 +60,20 @@ describe("nestThreadsUnderParents", () => {
     const result = nestThreadsUnderParents(all, all);
     expect(childIds(result, "local:root")).toEqual(["child"]);
     expect(result.nestedKeys.has("local:grandchild")).toBe(false);
+  });
+
+  it("lists each nested child right after its parent", () => {
+    const parent = thread("parent");
+    const other = thread("other");
+    const child = thread("child", { parent: "parent" });
+    const { childrenByParentKey } = nestThreadsUnderParents(
+      [parent, other],
+      [parent, other, child],
+    );
+    expect(withNestedChildren([parent, other], childrenByParentKey).map((t) => t.id)).toEqual([
+      "parent",
+      "child",
+      "other",
+    ]);
   });
 });

@@ -51,3 +51,16 @@ export function nestThreadsUnderParents<T extends NestableThread>(
   }
   return { childrenByParentKey, nestedKeys };
 }
+
+/**
+ * `threads` in display order with each one's nested children right after it.
+ * Lookups, search, selection, and keyboard order use this so a nested child
+ * stays reachable even though it renders inside its parent's row.
+ */
+export function withNestedChildren<T extends NestableThread>(
+  threads: readonly T[],
+  childrenByParentKey: ReadonlyMap<string, readonly T[]>,
+): T[] {
+  if (childrenByParentKey.size === 0) return [...threads];
+  return threads.flatMap((thread) => [thread, ...(childrenByParentKey.get(keyOf(thread)) ?? [])]);
+}

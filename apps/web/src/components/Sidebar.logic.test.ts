@@ -50,6 +50,10 @@ import {
   resolveSidebarDropVerb,
 } from "./Sidebar.logic";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import {
+  nestThreadsUnderParents,
+  withNestedChildren,
+} from "@t3tools/client-runtime/state/thread-nesting";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   EnvironmentId,
@@ -895,6 +899,18 @@ describe("searchSidebarThreads", () => {
       threads[0],
       threads[2],
     ]);
+  });
+  it("finds delegated threads nested under their parent by title and content", () => {
+    const parent = { ...searchThread("parent", "Plan release", "Alpha"), createdAt: "" };
+    const child = {
+      ...searchThread("child", "Review release notes", "Alpha"),
+      createdAt: "",
+      parentThreadId: ThreadId.make("parent"),
+    };
+    const { childrenByParentKey } = nestThreadsUnderParents([parent], [parent, child]);
+    const searchable = withNestedChildren([parent], childrenByParentKey);
+    expect(searchSidebarThreads(searchable, "notes")).toEqual([child]);
+    expect(searchSidebarThreads(searchable, "changelog", contentKeys("child"))).toEqual([child]);
   });
 });
 
