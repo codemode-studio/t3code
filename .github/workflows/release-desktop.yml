@@ -123,6 +123,10 @@ jobs:
           GIT_TERMINAL_PROMPT: "0"
         run: |
           set -euo pipefail
+          # The release Mac retains the checkout and build outputs between jobs.
+          if [[ "${{ inputs.platform }}" == "mac" ]]; then
+            find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          fi
           git init .
           git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
