@@ -1504,18 +1504,22 @@ const delegateToCodex = (input: {
     (harness) => harness.dispose,
   ).pipe(Effect.provide(NodeServices.layer));
 
-it.live("a delegation follow-up runs in the same thread and reports only its own answer", () =>
+/**
+ * Delegates a review that answers "Found two bugs.", then follows up in the same thread with
+ * `followUpTurn` and returns the follow-up's result message and the child thread.
+ */
+const followUpInSameThread = (followUpTurn: TestTurnResponse) =>
   Effect.acquireUseRelease(
     makeDelegationHarness(),
     (harness) =>
       Effect.gen(function* () {
         yield* seedProjectAndThread(harness);
         const adapter = harness.adapterHarness!;
+        // Only the child gets responses: every queued next-session response goes to the
+        // first session that starts, and the results land in the caller either way.
         yield* adapter.queueTurnResponseForNextSession(
           delegatedAnswer("follow-up-first", FIXTURE_TURN_ID, "Found two bugs."),
         );
-        // Only the child gets responses: every queued next-session response goes to the
-        // first session that starts, and the results land in the caller either way.
         const { threadId: child } = yield* harness.delegation.delegate({
           parentThreadId: THREAD_ID,
           provider: "codex",
@@ -1526,10 +1530,7 @@ it.live("a delegation follow-up runs in the same thread and reports only its own
           thread.messages.some((message) => message.id === `delegation:${child}`),
         );
 
-        yield* adapter.queueTurnResponse(
-          child,
-          delegatedAnswer("follow-up-second", "follow-up-turn", "No issues left."),
-        );
+        yield* adapter.queueTurnResponse(child, followUpTurn);
         const again = yield* harness.delegation.delegate({
           parentThreadId: THREAD_ID,
           threadId: child,
@@ -1541,17 +1542,48 @@ it.live("a delegation follow-up runs in the same thread and reports only its own
         const parent = yield* harness.waitForThread(THREAD_ID, (thread) =>
           thread.messages.some((message) => isFollowUpResult(message.id)),
         );
-        const result = parent.messages.find((message) => isFollowUpResult(message.id))!;
-        assert.include(result.text, "No issues left.");
-        assert.notInclude(result.text, "Found two bugs.");
-        const childThread = yield* harness.waitForThread(child, () => true);
-        assert.strictEqual(
-          childThread.messages.filter((message) => message.role === "user").length,
-          2,
-        );
+        return {
+          result: parent.messages.find((message) => isFollowUpResult(message.id))!.text,
+          childThread: yield* harness.waitForThread(child, () => true),
+        };
       }),
     (harness) => harness.dispose,
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(NodeServices.layer));
+
+it.live("a delegation follow-up runs in the same thread and reports only its own answer", () =>
+  Effect.gen(function* () {
+    const { result, childThread } = yield* followUpInSameThread(
+      delegatedAnswer("follow-up-second", "follow-up-turn", "No issues left."),
+    );
+    assert.include(result, "No issues left.");
+    assert.notInclude(result, "Found two bugs.");
+    assert.strictEqual(childThread.messages.filter((message) => message.role === "user").length, 2);
+  }),
+);
+
+it.live("a delegation follow-up that fails before answering reports no earlier answer", () =>
+  Effect.gen(function* () {
+    const { result } = yield* followUpInSameThread({
+      events: [
+        {
+          type: "turn.started",
+          ...runtimeBase("evt-follow-up-failed-1", "2026-02-24T11:05:00.000Z"),
+          threadId: THREAD_ID,
+          turnId: "follow-up-failed-turn",
+        },
+        {
+          type: "turn.completed",
+          ...runtimeBase("evt-follow-up-failed-2", "2026-02-24T11:05:00.100Z"),
+          threadId: THREAD_ID,
+          turnId: "follow-up-failed-turn",
+          status: "failed",
+          errorMessage: "Usage limit reached.",
+        },
+      ],
+    });
+    assert.include(result, 'could not finish the delegated task "Review changes".');
+    assert.notInclude(result, "Found two bugs.");
+  }),
 );
 
 it.live("delegation reports a buffered final message once the delegated turn completes", () =>

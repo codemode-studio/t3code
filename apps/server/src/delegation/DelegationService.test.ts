@@ -538,6 +538,8 @@ describe("DelegationService", () => {
   /** A delegated thread whose turn requested at `at` has finished. */
   const finishedSince = (id: ThreadId, at: string): OrchestrationThreadShell => {
     const finished = shell(id, "completed", {
+      title: "Review changes",
+      modelSelection: { instanceId: CODEX.instanceId, model: "gpt-5" },
       session: { ...session(id, "ready"), updatedAt: at },
       parentThreadId: PARENT_ID,
     });
@@ -610,6 +612,86 @@ describe("DelegationService", () => {
             result.message.messageId,
             MessageId.make(`delegation:${child}:${round}`),
           );
+        }),
+      { threads: [idleParent] },
+    ),
+  );
+
+  /** Runs a first round that answers "Found two bugs.", then sends a follow-up. */
+  const startFollowUp = (
+    service: Harness["service"],
+    harness: Pick<Harness, "setThread" | "publish" | "nextCommand">,
+  ) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse("2026-09-02T00:00:00.000Z"));
+      const { threadId: child } = yield* service.delegate({
+        parentThreadId: PARENT_ID,
+        provider: "codex",
+        prompt: "Review.",
+        title: "Review changes",
+      });
+      for (let i = 0; i < 3; i++) yield* harness.nextCommand;
+      yield* harness.setThread(finishedSince(child, AT));
+      yield* harness.publish(sessionSet(child));
+      for (let i = 0; i < 2; i++) yield* harness.nextCommand;
+      yield* TestClock.setTime(Date.parse("2026-09-03T00:00:00.000Z"));
+      yield* service.delegate({
+        parentThreadId: PARENT_ID,
+        threadId: child,
+        prompt: "Please re-review.",
+      });
+      for (let i = 0; i < 3; i++) yield* harness.nextCommand;
+      return child;
+    });
+  const failedSession = (id: ThreadId): OrchestrationSession => ({
+    ...session(id, "error"),
+    lastError: "Usage limit reached.",
+    updatedAt: "2026-09-03T00:00:01.000Z",
+  });
+  const followUpResult = (harness: Pick<Harness, "publish" | "nextCommand">, child: ThreadId) =>
+    Effect.gen(function* () {
+      yield* harness.publish(sessionSet(child));
+      yield* harness.nextCommand;
+      const result = yield* harness.nextCommand;
+      assert(result.type === "thread.turn.start");
+      return result.message.text;
+    });
+
+  it.effect("a follow-up that fails before its turn starts reports only the error", () =>
+    withService(
+      ({ service, ...harness }) =>
+        Effect.gen(function* () {
+          const child = yield* startFollowUp(service, harness);
+          // The thread still shows the first round's finished turn.
+          yield* harness.setThread({ ...finishedSince(child, AT), session: failedSession(child) });
+          const text = yield* followUpResult(harness, child);
+          assert.include(text, 'Codex could not finish the delegated task "Review changes".');
+          assert.include(text, "Usage limit reached.");
+          assert.notInclude(text, "Found two bugs.");
+        }),
+      { threads: [idleParent] },
+    ),
+  );
+
+  it.effect("a follow-up that fails before answering does not repeat the earlier answer", () =>
+    withService(
+      ({ service, ...harness }) =>
+        Effect.gen(function* () {
+          const child = yield* startFollowUp(service, harness);
+          const previous = finishedSince(child, AT);
+          yield* harness.setThread({
+            ...previous,
+            latestTurn: {
+              ...previous.latestTurn!,
+              turnId: TurnId.make("turn-2"),
+              state: "error",
+              requestedAt: "2026-09-03T00:00:00.000Z",
+            },
+            session: failedSession(child),
+          });
+          const text = yield* followUpResult(harness, child);
+          assert.include(text, "Usage limit reached.");
+          assert.notInclude(text, "Found two bugs.");
         }),
       { threads: [idleParent] },
     ),

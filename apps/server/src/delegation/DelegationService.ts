@@ -120,6 +120,12 @@ const roundIds = (child: ThreadId, followUp: MessageId | null) => {
   };
 };
 
+/** The round's own turn: for a follow-up, only one requested since it began. */
+const roundTurn = (thread: Pick<OrchestrationThreadShell, "latestTurn">, since: string | null) =>
+  thread.latestTurn !== null && (since === null || thread.latestTurn.requestedAt >= since)
+    ? thread.latestTurn
+    : null;
+
 /**
  * How a delegated thread's round stands; `null` while its turn has not finished. A follow-up
  * (`since` set) reads only turns and session changes from after it was requested: until its
@@ -130,11 +136,7 @@ export function delegatedThreadStatus(
   since: string | null = null,
 ): DelegationStatus | null {
   if (thread.session?.status === "starting" || thread.session?.status === "running") return null;
-  const turn =
-    since === null || (thread.latestTurn !== null && thread.latestTurn.requestedAt >= since)
-      ? thread.latestTurn
-      : null;
-  switch (turn?.state) {
+  switch (roundTurn(thread, since)?.state) {
     case "completed":
       return "completed";
     case "error":
@@ -244,15 +246,19 @@ const make = Effect.gen(function* () {
       });
     });
 
-  const finalMessageOf = (childThreadId: ThreadId, status: DelegationStatus) =>
+  const finalMessageOf = (delegation: Delegation, status: DelegationStatus) =>
     Effect.gen(function* () {
-      const thread = yield* snapshots.getThreadDetailById(childThreadId);
+      const thread = yield* snapshots.getThreadDetailById(delegation.childThreadId);
       if (Option.isNone(thread)) return "The delegated thread no longer exists.";
       const assistant = thread.value.messages.filter((message) => message.role === "assistant");
-      const turnId = thread.value.latestTurn?.turnId;
+      const ownTurn = roundTurn(thread.value, delegation.since);
       // The turn's last message, not its message pointer: a checkpoint captured before the
-      // answer landed can leave the pointer on earlier commentary.
-      const final = assistant.findLast((message) => message.turnId === turnId) ?? assistant.at(-1);
+      // answer landed can leave the pointer on earlier commentary. Only a first round may fall
+      // back to the thread's last answer; a follow-up's would be an earlier round's verdict.
+      const final =
+        (ownTurn
+          ? assistant.findLast((message) => message.turnId === ownTurn.turnId)
+          : undefined) ?? (delegation.since === null ? assistant.at(-1) : undefined);
       const text = final?.text.trim();
       if (status !== "failed") return text || "It produced no final message.";
       const error = thread.value.session?.lastError ?? "The provider reported an error.";
@@ -301,7 +307,7 @@ const make = Effect.gen(function* () {
     running.delete(delegation.childThreadId);
     const text = Option.isNone(child)
       ? "The delegated thread was deleted before it finished."
-      : yield* finalMessageOf(delegation.childThreadId, status);
+      : yield* finalMessageOf(delegation, status);
     yield* appendParentActivity(delegation.parentThreadId, {
       id: delegation.completedActivityId,
       tone: status === "failed" ? "error" : "info",
