@@ -9,7 +9,7 @@ import {
   resolveProviderSkillsForCwd,
 } from "@t3tools/client-runtime/providerSkills";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, useId, useRef, useState } from "react";
 
 import {
   type ComposerTrigger,
@@ -20,7 +20,11 @@ import { useTheme } from "../../hooks/useTheme";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { basenameOfPath } from "../../pierre-icons";
 import { searchProviderSkills } from "../../providerSkillSearch";
-import { type ComposerCommandItem, ComposerCommandMenu } from "../chat/ComposerCommandMenu";
+import {
+  type ComposerCommandItem,
+  ComposerCommandMenu,
+  composerSuggestionOptionId,
+} from "../chat/ComposerCommandMenu";
 import { Textarea } from "../ui/textarea";
 
 /** A readable `@path` where the path allows it; the composer's link form where it has spaces. */
@@ -46,6 +50,7 @@ export function AutomationPromptField({
   providerKind: ProviderDriverKind | null;
 }) {
   const { resolvedTheme } = useTheme();
+  const suggestionListId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [cursor, setCursor] = useState(value.length);
   const [focused, setFocused] = useState(false);
@@ -177,11 +182,16 @@ export function AutomationPromptField({
         aria-label="Instructions"
         aria-expanded={menuOpen}
         aria-autocomplete="list"
+        aria-controls={menuOpen ? suggestionListId : undefined}
+        aria-activedescendant={
+          menuOpen && activeId ? composerSuggestionOptionId(suggestionListId, activeId) : undefined
+        }
         rows={8}
       />
       {menuOpen ? (
         <div className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-lg border bg-popover shadow-lg">
           <ComposerCommandMenu
+            listId={suggestionListId}
             items={items}
             resolvedTheme={resolvedTheme}
             isLoading={trigger.kind === "path" && pathSearch.isPending}
