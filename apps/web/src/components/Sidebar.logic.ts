@@ -6,6 +6,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { nestThreadsUnderParents } from "@t3tools/client-runtime/state/thread-nesting";
 import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/unstable/reactivity";
@@ -1246,4 +1247,36 @@ export function sortScopedProjectsForSidebar<
       left.environmentId.localeCompare(right.environmentId) ||
       left.id.localeCompare(right.id),
   );
+}
+
+type NestableSidebarThread = Parameters<typeof nestThreadsUnderParents>[0][number];
+
+/**
+ * Moves delegated threads under a pinned or active parent out of the section lists, so they
+ * render inside that parent's row; under a settled or snoozed parent they keep their own row.
+ * The settled and snoozed key sets come from every thread's own section, nested or not:
+ * menus and forward navigation must still treat a nested settled child as settled.
+ */
+export function nestSidebarSections<T extends NestableSidebarThread>(sections: {
+  readonly pinned: readonly T[];
+  readonly active: readonly T[];
+  readonly snoozed: readonly T[];
+  readonly settled: readonly T[];
+}) {
+  const { pinned, active, snoozed, settled } = sections;
+  const nesting = nestThreadsUnderParents(
+    [...pinned, ...active],
+    [...pinned, ...active, ...snoozed, ...settled],
+  );
+  const keyOf = (thread: T) => `${thread.environmentId}:${thread.id}`;
+  const isTopLevel = (thread: T) => !nesting.nestedKeys.has(keyOf(thread));
+  return {
+    pinned: pinned.filter(isTopLevel),
+    active: active.filter(isTopLevel),
+    snoozed: snoozed.filter(isTopLevel),
+    settled: settled.filter(isTopLevel),
+    childrenByParentKey: nesting.childrenByParentKey,
+    settledKeys: new Set(settled.map(keyOf)),
+    snoozedKeys: new Set(snoozed.map(keyOf)),
+  };
 }
