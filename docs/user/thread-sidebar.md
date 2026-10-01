@@ -185,6 +185,11 @@ in the thread list, with its own status. When it finishes, its final message
 arrives in the original thread as a new message, and the agent picks up from
 there. Stopping the delegated thread reports back too.
 
+The agent can follow up in the same delegated thread, for example "fix those and
+ask Codex to review again". The delegated agent keeps its conversation, so it
+sees what it said before, and each answer comes back the same way. Messages you
+type into the delegated thread yourself stay there.
+
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.

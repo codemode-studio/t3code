@@ -194,6 +194,31 @@ describe("foldSubagentActivities", () => {
     expect(agent.status).toBe("running");
   });
 
+  it("a delegated task's follow-up reads as its second run", () => {
+    const started = {
+      taskId: "child-thread",
+      agentKind: "agent",
+      delegatedThreadId: "child-thread",
+    };
+    const agents = fold([
+      activity("task.started", { ...started, title: "Review changes" }),
+      activity("task.completed", {
+        taskId: "child-thread",
+        status: "completed",
+        summary: "2 bugs",
+      }),
+      // The follow-up's start row lands on a finished agent; its status update reopens it.
+      activity("task.started", { ...started, title: "Review changes" }),
+      activity("task.updated", { taskId: "child-thread", status: "running" }),
+      activity("task.completed", { taskId: "child-thread", status: "completed", summary: "Clean" }),
+    ]);
+    expect(agents).toHaveLength(1);
+    expect(agents[0]!.activationCount).toBe(2);
+    expect(agents[0]!.status).toBe("completed");
+    expect(agents[0]!.result).toBe("Clean");
+    expect(agents[0]!.delegatedThreadId).toBe("child-thread");
+  });
+
   it("idle is nonterminal: an idle agent resumes without losing identity", () => {
     const agents = fold([
       activity("task.started", { taskId: "codex-child-1", title: "Marlow", role: "explorer" }),

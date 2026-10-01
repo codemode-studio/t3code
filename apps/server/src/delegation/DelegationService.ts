@@ -2,12 +2,14 @@
  * Lets an agent hand a task to another provider through the `t3-code` MCP
  * server. The task runs as its own thread in the caller's working copy, the
  * caller's Agents panel tracks it as a subagent, and its final message comes
- * back to the caller's thread as a new message once that thread is idle.
+ * back to the caller's thread as a new message once that thread is idle. The
+ * caller can send that thread follow-ups, such as a re-review, and each one
+ * reports back the same way.
  *
- * Nothing is stored outside the event log. The parent's `task.started` row
- * names the child thread, and the result message has an id derived from the
- * child, so after a restart the service finds every delegation that has not
- * reported back yet and resumes watching it.
+ * Nothing is stored outside the event log. Each round's `task.started` row on
+ * the parent names the child thread, and its result message has an id derived
+ * from the round, so after a restart the service finds every round that has
+ * not reported back yet and resumes watching it.
  *
  * @module DelegationService
  */
@@ -48,6 +50,8 @@ const MAX_TITLE_CHARS = 80;
 
 const CHILD_PROMPT_FOOTER =
   "This task was delegated to you by another agent working in this project, in the same working copy. When you finish, your final message is sent back to that agent as the result, so make it complete and self-contained.";
+const FOLLOW_UP_PROMPT_FOOTER =
+  "This follow-up comes from the agent that delegated this task. When you finish, your final message is sent back to it as the result, so make it complete and self-contained.";
 
 export class DelegationError extends Schema.TaggedError<DelegationError>()("DelegationError", {
   message: Schema.String,
@@ -55,8 +59,10 @@ export class DelegationError extends Schema.TaggedError<DelegationError>()("Dele
 
 export interface DelegateInput {
   readonly parentThreadId: ThreadId;
-  /** A provider instance id, driver kind, or display name, such as "codex". */
-  readonly provider: string;
+  /** A thread this caller delegated earlier; the prompt continues it instead of starting one. */
+  readonly threadId?: string | undefined;
+  /** A provider instance id, driver kind, or display name, such as "codex". Required for a new task. */
+  readonly provider?: string | undefined;
   readonly prompt: string;
   readonly title?: string | undefined;
   readonly model?: string | undefined;
@@ -79,11 +85,16 @@ export class DelegationService extends Context.Service<
   }
 >()("t3/delegation/DelegationService") {}
 
+/** One request to a delegated thread and the result it owes its parent. */
 interface Delegation {
   readonly childThreadId: ThreadId;
   readonly parentThreadId: ThreadId;
   readonly title: string;
   readonly providerName: string;
+  readonly resultMessageId: MessageId;
+  readonly completedActivityId: EventId;
+  /** When a follow-up was requested; null for the first round, the thread's only turn. */
+  readonly since: string | null;
 }
 
 type DelegationStatus = "completed" | "failed" | "stopped";
@@ -95,16 +106,37 @@ interface Outcome {
   readonly text: string;
 }
 
-const startedActivityId = (child: ThreadId) => EventId.make(`delegation:${child}:started`);
-const completedActivityId = (child: ThreadId) => EventId.make(`delegation:${child}:completed`);
-const resultMessageId = (child: ThreadId) => MessageId.make(`delegation:${child}`);
+/**
+ * Ids for one round. The first keeps the ids used before follow-ups existed, which the
+ * parent link migration also reads; a follow-up is keyed by the message that started it.
+ */
+const roundIds = (child: ThreadId, followUp: MessageId | null) => {
+  const base = followUp === null ? `delegation:${child}` : `delegation:${child}:${followUp}`;
+  return {
+    started: EventId.make(`${base}:started`),
+    resumed: EventId.make(`${base}:resumed`),
+    completed: EventId.make(`${base}:completed`),
+    result: MessageId.make(base),
+  };
+};
 
-/** How a delegated thread stands; `null` while its turn has not finished. */
+/** The round's own turn: for a follow-up, only one requested since it began. */
+const roundTurn = (thread: Pick<OrchestrationThreadShell, "latestTurn">, since: string | null) =>
+  thread.latestTurn !== null && (since === null || thread.latestTurn.requestedAt >= since)
+    ? thread.latestTurn
+    : null;
+
+/**
+ * How a delegated thread's round stands; `null` while its turn has not finished. A follow-up
+ * (`since` set) reads only turns and session changes from after it was requested: until its
+ * own turn starts, the thread still shows the previous round's finished turn.
+ */
 export function delegatedThreadStatus(
   thread: Pick<OrchestrationThreadShell, "latestTurn" | "session">,
+  since: string | null = null,
 ): DelegationStatus | null {
   if (thread.session?.status === "starting" || thread.session?.status === "running") return null;
-  switch (thread.latestTurn?.state) {
+  switch (roundTurn(thread, since)?.state) {
     case "completed":
       return "completed";
     case "error":
@@ -115,6 +147,9 @@ export function delegatedThreadStatus(
       return null;
     default:
       // No turn yet: still starting, unless the session failed or stopped before it could.
+      if (since !== null && (thread.session === null || thread.session.updatedAt < since)) {
+        return null;
+      }
       switch (thread.session?.status) {
         case "error":
           return "failed";
@@ -127,8 +162,8 @@ export function delegatedThreadStatus(
   }
 }
 
-/** Whether a message can start a new turn on the parent without steering or blocking one. */
-function parentCanReceive(thread: OrchestrationThreadShell, now: string): boolean {
+/** Whether a message can start a new turn on a thread without steering or blocking one. */
+function canStartTurn(thread: OrchestrationThreadShell, now: string): boolean {
   return !(
     thread.hasPendingApprovals ||
     thread.hasPendingUserInput ||
@@ -150,10 +185,11 @@ function resultMessageText(outcome: Outcome): string {
     outcome.text.length > MAX_RESULT_CHARS
       ? `${outcome.text.slice(0, MAX_RESULT_CHARS)}\n\n[Truncated. The full result is in the thread "${delegation.title}".]`
       : outcome.text;
-  return `${heading}\n\n${body}`;
+  const followUp = `To follow up in the same thread, for example to ask for a re-review, call delegate_task with threadId "${delegation.childThreadId}". It keeps this conversation.`;
+  return `${heading}\n\n${body}\n\n${followUp}`;
 }
 
-const titleFrom = (input: DelegateInput) => {
+const titleFrom = (input: Pick<DelegateInput, "title" | "prompt">) => {
   const source = input.title?.trim() || input.prompt.trim().split("\n")[0]!.trim();
   return source.length > MAX_TITLE_CHARS ? `${source.slice(0, MAX_TITLE_CHARS - 1)}…` : source;
 };
@@ -210,15 +246,19 @@ const make = Effect.gen(function* () {
       });
     });
 
-  const finalMessageOf = (childThreadId: ThreadId, status: DelegationStatus) =>
+  const finalMessageOf = (delegation: Delegation, status: DelegationStatus) =>
     Effect.gen(function* () {
-      const thread = yield* snapshots.getThreadDetailById(childThreadId);
+      const thread = yield* snapshots.getThreadDetailById(delegation.childThreadId);
       if (Option.isNone(thread)) return "The delegated thread no longer exists.";
       const assistant = thread.value.messages.filter((message) => message.role === "assistant");
-      const turnId = thread.value.latestTurn?.turnId;
+      const ownTurn = roundTurn(thread.value, delegation.since);
       // The turn's last message, not its message pointer: a checkpoint captured before the
-      // answer landed can leave the pointer on earlier commentary.
-      const final = assistant.findLast((message) => message.turnId === turnId) ?? assistant.at(-1);
+      // answer landed can leave the pointer on earlier commentary. Only a first round may fall
+      // back to the thread's last answer; a follow-up's would be an earlier round's verdict.
+      const final =
+        (ownTurn
+          ? assistant.findLast((message) => message.turnId === ownTurn.turnId)
+          : undefined) ?? (delegation.since === null ? assistant.at(-1) : undefined);
       const text = final?.text.trim();
       if (status !== "failed") return text || "It produced no final message.";
       const error = thread.value.session?.lastError ?? "The provider reported an error.";
@@ -234,14 +274,14 @@ const make = Effect.gen(function* () {
       undelivered.delete(parentThreadId);
       return;
     }
-    if (!parentCanReceive(parent.value, yield* nowIso)) return;
+    if (!canStartTurn(parent.value, yield* nowIso)) return;
     const outcome = outcomes[0]!;
     yield* engine.dispatch({
       type: "thread.turn.start",
       commandId: yield* commandId("delegation-result"),
       threadId: parentThreadId,
       message: {
-        messageId: resultMessageId(outcome.delegation.childThreadId),
+        messageId: outcome.delegation.resultMessageId,
         role: "user",
         text: resultMessageText(outcome),
         attachments: [],
@@ -260,14 +300,16 @@ const make = Effect.gen(function* () {
     delegation: Delegation,
   ) {
     const child = yield* snapshots.getThreadShellById(delegation.childThreadId);
-    const status = Option.isNone(child) ? "stopped" : delegatedThreadStatus(child.value);
+    const status = Option.isNone(child)
+      ? "stopped"
+      : delegatedThreadStatus(child.value, delegation.since);
     if (status === null) return;
     running.delete(delegation.childThreadId);
     const text = Option.isNone(child)
       ? "The delegated thread was deleted before it finished."
-      : yield* finalMessageOf(delegation.childThreadId, status);
+      : yield* finalMessageOf(delegation, status);
     yield* appendParentActivity(delegation.parentThreadId, {
-      id: completedActivityId(delegation.childThreadId),
+      id: delegation.completedActivityId,
       tone: status === "failed" ? "error" : "info",
       kind: "task.completed",
       summary: "Delegated task finished",
@@ -306,12 +348,16 @@ const make = Effect.gen(function* () {
       if (!activity.id.startsWith("delegation:") || typeof payload !== "object" || !payload) {
         continue;
       }
-      const { delegatedThreadId, parentThreadId, title, role } = payload;
+      const { delegatedThreadId, parentThreadId, title, role, followUp, requestedAt } = payload;
       if (typeof delegatedThreadId !== "string" || typeof parentThreadId !== "string") continue;
       const childThreadId = ThreadId.make(delegatedThreadId);
+      const ids = roundIds(
+        childThreadId,
+        typeof followUp === "string" ? MessageId.make(followUp) : null,
+      );
       const delivered = yield* snapshots.getTurnStartMessage({
         threadId: ThreadId.make(parentThreadId),
-        messageId: resultMessageId(childThreadId),
+        messageId: ids.result,
       });
       if (Option.isSome(delivered)) continue;
       running.set(childThreadId, {
@@ -319,6 +365,9 @@ const make = Effect.gen(function* () {
         parentThreadId: ThreadId.make(parentThreadId),
         title: typeof title === "string" ? title : "Delegated task",
         providerName: typeof role === "string" ? role : "The provider",
+        resultMessageId: ids.result,
+        completedActivityId: ids.completed,
+        since: typeof followUp === "string" && typeof requestedAt === "string" ? requestedAt : null,
       });
       yield* worker.enqueue(childThreadId);
     }
@@ -344,10 +393,127 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const delegate = Effect.fn("DelegationService.delegate")(function* (input: DelegateInput) {
-    const parent = yield* snapshots
-      .getThreadShellById(input.parentThreadId)
+  const readThread = (threadId: ThreadId) =>
+    snapshots
+      .getThreadShellById(threadId)
       .pipe(Effect.mapError(() => new DelegationError({ message: "Could not read this thread." })));
+
+  /** Sends a delegated thread a follow-up that reports back like the first request. */
+  const continueDelegation = Effect.fn("DelegationService.continueDelegation")(function* (
+    input: DelegateInput,
+    childThreadId: ThreadId,
+  ) {
+    const child = yield* readThread(childThreadId);
+    if (Option.isNone(child) || child.value.parentThreadId !== input.parentThreadId) {
+      return yield* failWith(
+        `Thread ${childThreadId} is not a task this thread delegated. Leave out threadId to start a new one.`,
+      );
+    }
+    if (child.value.archivedAt !== null) {
+      return yield* failWith(
+        "That delegated thread was archived. Leave out threadId to start a new task.",
+      );
+    }
+    const owesResult =
+      running.has(childThreadId) ||
+      (undelivered.get(input.parentThreadId) ?? []).some(
+        (outcome) => outcome.delegation.childThreadId === childThreadId,
+      );
+    if (owesResult) {
+      return yield* failWith(
+        "That thread has not reported back on your last request yet. End your turn; its result arrives as a new message.",
+      );
+    }
+    const now = yield* nowIso;
+    if (!canStartTurn(child.value, now)) {
+      return yield* failWith(
+        "That thread is busy with a turn or waiting for an answer. Try again once it is idle.",
+      );
+    }
+    const instanceId =
+      child.value.session?.providerInstanceId ?? child.value.modelSelection.instanceId;
+    const provider = (yield* providerRegistry.getProviders).find(
+      (candidate) => candidate.instanceId === instanceId,
+    );
+    const messageId = MessageId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
+    const ids = roundIds(childThreadId, messageId);
+    const delegation: Delegation = {
+      childThreadId,
+      parentThreadId: input.parentThreadId,
+      title: child.value.title,
+      providerName: provider
+        ? providerLabel(provider)
+        : (child.value.session?.providerName ?? "The delegated agent"),
+      resultMessageId: ids.result,
+      completedActivityId: ids.completed,
+      since: now,
+    };
+    yield* Effect.gen(function* () {
+      // Registered before the turn starts so its first events are not missed.
+      running.set(childThreadId, delegation);
+      yield* engine.dispatch({
+        type: "thread.turn.start",
+        commandId: yield* commandId("delegation-follow-up"),
+        threadId: childThreadId,
+        message: {
+          messageId,
+          role: "user",
+          text: `${input.prompt}\n\n---\n${FOLLOW_UP_PROMPT_FOOTER}`,
+          attachments: [],
+        },
+        runtimeMode: child.value.runtimeMode,
+        interactionMode: child.value.interactionMode,
+        createdAt: now,
+      });
+      yield* appendParentActivity(input.parentThreadId, {
+        id: ids.started,
+        tone: "info",
+        kind: "task.started",
+        summary: "Delegated task continued",
+        payload: {
+          // The same task id, so the Agents panel counts this as another run of that agent.
+          taskId: childThreadId,
+          title: delegation.title,
+          detail: delegation.title,
+          role: delegation.providerName,
+          model: child.value.modelSelection.model,
+          agentKind: "agent",
+          delegatedThreadId: childThreadId,
+          parentThreadId: input.parentThreadId,
+          followUp: messageId,
+          requestedAt: now,
+        },
+      });
+      // The Agents panel ignores a start row for a finished agent; only a status change
+      // reopens it as another run.
+      yield* appendParentActivity(input.parentThreadId, {
+        id: ids.resumed,
+        tone: "info",
+        kind: "task.updated",
+        summary: "Delegated task continued",
+        payload: { taskId: childThreadId, status: "running", delegatedThreadId: childThreadId },
+      });
+    }).pipe(
+      Effect.tapCause(() => Effect.sync(() => running.delete(childThreadId))),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause as Cause.Cause<never>)
+          : Effect.logWarning("delegation follow-up failed to start", {
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.andThen(failWith("The follow-up could not be sent."))),
+      ),
+    );
+    yield* worker.enqueue(childThreadId);
+    return {
+      threadId: childThreadId,
+      title: delegation.title,
+      provider: child.value.modelSelection.instanceId,
+      model: child.value.modelSelection.model,
+    };
+  });
+
+  const delegate = Effect.fn("DelegationService.delegate")(function* (input: DelegateInput) {
+    const parent = yield* readThread(input.parentThreadId);
     if (Option.isNone(parent)) {
       return yield* failWith(`Thread ${input.parentThreadId} was not found.`);
     }
@@ -356,6 +522,14 @@ const make = Effect.gen(function* () {
     if (parent.value.parentThreadId != null) {
       return yield* failWith(
         "This thread is itself a delegated task and cannot delegate further. Do the work here.",
+      );
+    }
+    if (input.threadId !== undefined) {
+      return yield* continueDelegation(input, ThreadId.make(input.threadId));
+    }
+    if (input.provider === undefined) {
+      return yield* failWith(
+        "Name a provider to start a new task, or pass threadId to continue one you delegated.",
       );
     }
     const providers = yield* providerRegistry.getProviders;
@@ -397,11 +571,15 @@ const make = Effect.gen(function* () {
     const childThreadId = ThreadId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
     const modelSelection = { instanceId: provider.instanceId, model };
     const createdAt = yield* nowIso;
+    const ids = roundIds(childThreadId, null);
     const delegation: Delegation = {
       childThreadId,
       parentThreadId: input.parentThreadId,
       title,
       providerName: providerLabel(provider),
+      resultMessageId: ids.result,
+      completedActivityId: ids.completed,
+      since: null,
     };
     yield* Effect.gen(function* () {
       yield* engine.dispatch({
@@ -437,7 +615,7 @@ const make = Effect.gen(function* () {
         createdAt,
       });
       yield* appendParentActivity(input.parentThreadId, {
-        id: startedActivityId(childThreadId),
+        id: ids.started,
         tone: "info",
         kind: "task.started",
         summary: "Delegated task started",
