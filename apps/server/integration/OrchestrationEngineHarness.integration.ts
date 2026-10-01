@@ -39,6 +39,7 @@ import { makeProviderRegistryLayer } from "../src/provider/testUtils/providerReg
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import * as AutomationService from "../src/automation/AutomationService.ts";
+import * as DelegationService from "../src/delegation/DelegationService.ts";
 import * as StorageCleanup from "../src/storageCleanup.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
@@ -386,6 +387,9 @@ export const makeOrchestrationIntegrationHarness = (
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
       Layer.provideMerge(
         Layer.mock(AutomationService.AutomationService)({ start: () => Effect.void }),
+      ),
+      Layer.provideMerge(
+        Layer.mock(DelegationService.DelegationService)({ start: () => Effect.void }),
       ),
       Layer.provideMerge(
         Layer.succeed(StorageCleanup.StorageCleanup, {

@@ -71,6 +71,8 @@ export interface RuntimeSubagent {
   readonly result: string | null;
   readonly error: string | null;
   readonly outputFile: string | null;
+  /** T3 Code thread the task runs in, when another agent was delegated it. */
+  readonly delegatedThreadId: string | null;
   readonly parentAgentId: string | null;
   readonly agentIndex: number | null;
   readonly phaseIndex: number | null;
@@ -240,6 +242,7 @@ interface MutableAgent {
   result: string | null;
   error: string | null;
   outputFile: string | null;
+  delegatedThreadId: string | null;
   parentAgentId: string | null;
   agentIndex: number | null;
   phaseIndex: number | null;
@@ -297,6 +300,7 @@ function getOrCreate(
     result: null,
     error: null,
     outputFile: null,
+    delegatedThreadId: null,
     parentAgentId: asString(payload.parentAgentId) ?? null,
     agentIndex: asCount(payload.agentIndex) ?? null,
     phaseIndex: asCount(payload.phaseIndex) ?? null,
@@ -356,6 +360,8 @@ function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): vo
   }
   const outputFile = asString(payload.outputFile);
   if (outputFile) agent.outputFile = outputFile;
+  const delegatedThreadId = asString(payload.delegatedThreadId);
+  if (delegatedThreadId) agent.delegatedThreadId = delegatedThreadId;
   if (Array.isArray(payload.phases)) {
     const phases: SubagentWorkflowPhase[] = [];
     for (const entry of payload.phases) {

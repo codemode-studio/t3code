@@ -11,6 +11,7 @@
  * - Static status dots, DOM-write elapsed timers, plain token counters.
  */
 import { useAtomValue } from "@effect/atom-react";
+import { Link } from "@tanstack/react-router";
 import type {
   AgentPanelModel,
   AgentPanelWorkflowGroup,
@@ -136,8 +137,17 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
   );
 }
 
-/** Flat, non-interactive agent status line. No unfold. */
-function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+/**
+ * Flat agent status line. No unfold. A delegated task links to the thread it
+ * runs in, which holds its full transcript.
+ */
+function AgentRow({
+  agent,
+  environmentId = null,
+}: {
+  agent: RuntimeSubagent;
+  environmentId?: EnvironmentId | null;
+}) {
   const visuals = STATUS_VISUALS[agent.status];
   const statusLabel =
     agent.kind === "subagent_batch" && agent.status === "idle" ? "Idle" : visuals.label;
@@ -154,8 +164,10 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
     agent.activationCount > 1 ? `run ${agent.activationCount}` : null,
   ].filter((value): value is string => value !== null);
 
-  return (
-    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
+  const rowClassName =
+    "grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1";
+  const content = (
+    <>
       <span className="col-start-1 row-start-1 flex items-center">
         <StatusDot status={agent.status} />
       </span>
@@ -187,8 +199,20 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
         {metadata.join(" · ")}
       </span>
       <span className="sr-only">{statusLabel}</span>
-    </div>
+    </>
   );
+  if (agent.delegatedThreadId !== null && environmentId !== null) {
+    return (
+      <Link
+        to="/$environmentId/$threadId"
+        params={{ environmentId, threadId: agent.delegatedThreadId }}
+        className={cn(rowClassName, "hover:bg-accent/40")}
+      >
+        {content}
+      </Link>
+    );
+  }
+  return <div className={rowClassName}>{content}</div>;
 }
 
 function workflowIsLive(group: AgentPanelWorkflowGroup): boolean {
@@ -561,7 +585,7 @@ export function AgentsPanel({
                 Direct spawns
               </div>
               {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
+                <AgentRow key={agent.id} agent={agent} environmentId={environmentId} />
               ))}
             </section>
           ) : null}
