@@ -235,6 +235,10 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/thread-nesting": {
+      "types": "./src/state/threadNesting.ts",
+      "default": "./src/state/threadNesting.ts"
+    },
     "./state/profile-scope": {
       "types": "./src/state/profileScope.ts",
       "default": "./src/state/profileScope.ts"

@@ -1459,6 +1459,8 @@ const delegateToCodex = (input: {
           prompt: "Review the uncommitted changes.",
           title: "Review changes",
         });
+        const childThread = yield* harness.waitForThread(child, () => true);
+        assert.strictEqual(childThread.parentThreadId, THREAD_ID);
 
         const resultId = asMessageId(`delegation:${child}`);
         const parent = yield* harness.waitForThread(THREAD_ID, (thread) =>

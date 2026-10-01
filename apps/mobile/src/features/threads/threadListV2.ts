@@ -10,6 +10,7 @@ import {
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { nestThreadsUnderParents } from "@t3tools/client-runtime/state/thread-nesting";
 import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
@@ -166,7 +167,7 @@ export function getThreadListV2OrderedSection(input: {
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
 }): EnvironmentThreadShell[] {
-  const threads = input.threads.filter((thread) => {
+  const cards = input.threads.filter((thread) => {
     if (thread.archivedAt !== null) return false;
     if (
       (input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
@@ -181,8 +182,15 @@ export function getThreadListV2OrderedSection(input: {
     ) {
       return false;
     }
-    return (thread.pinnedAt != null) === (input.section === "pinned");
+    return true;
   });
+  // A delegated thread rides under its parent's row and never moves on its own.
+  const { nestedKeys } = nestThreadsUnderParents(cards, cards);
+  const threads = cards.filter(
+    (thread) =>
+      (thread.pinnedAt != null) === (input.section === "pinned") &&
+      !nestedKeys.has(`${thread.environmentId}:${thread.id}`),
+  );
   const ordered =
     input.section === "pinned"
       ? sortPinnedThreadsByOrderKey(threads)
@@ -194,6 +202,8 @@ export function getThreadListV2OrderedSection(input: {
   return applyPendingThreadOrder(ordered, input.section, pending);
 }
 
+const NO_CHILDREN: ReadonlyArray<EnvironmentThreadShell> = [];
+
 export interface ThreadListV2Item {
   readonly thread: EnvironmentThreadShell;
   readonly variant: "card" | "slim";
@@ -202,6 +212,8 @@ export interface ThreadListV2Item {
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
   readonly isLast: boolean;
+  /** Threads this one delegated work to, rendered as compact rows beneath it. */
+  readonly children: ReadonlyArray<EnvironmentThreadShell>;
 }
 
 export interface ThreadListV2Layout {
@@ -253,6 +265,17 @@ export interface ThreadListV2ThreadListItem {
   readonly canMoveDown: boolean;
 }
 
+/** A delegated thread, drawn as a compact row under its parent's card. */
+export interface ThreadListV2ChildListItem {
+  readonly type: "v2-child";
+  readonly key: string;
+  readonly thread: EnvironmentThreadShell;
+  /** Precomputed for the same reason as the thread row's. */
+  readonly timeLabel: string;
+  /** Hairline under the last child of a parent; see the thread row's. */
+  readonly showTrailingDivider: boolean;
+}
+
 export interface ThreadListV2PendingListItem {
   readonly type: "v2-pending";
   readonly key: string;
@@ -287,6 +310,7 @@ export interface ThreadListV2SettledShelfListItem {
 
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
+  | ThreadListV2ChildListItem
   | ThreadListV2PendingListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
@@ -298,6 +322,7 @@ export function isThreadListV2ListItem(value: {
 }): value is ThreadListV2ListItem {
   return (
     value.type === "v2-thread" ||
+    value.type === "v2-child" ||
     value.type === "v2-pending" ||
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
@@ -331,6 +356,14 @@ export function threadListV2ListItemsAreEqual(
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
         previous.canMoveDown === item.canMoveDown
+      );
+    case "v2-child":
+      return (
+        previous.type === "v2-child" &&
+        previous.key === item.key &&
+        previous.thread === item.thread &&
+        previous.timeLabel === item.timeLabel &&
+        previous.showTrailingDivider === item.showTrailingDivider
       );
     case "v2-pending":
       return (
@@ -407,7 +440,9 @@ export function buildThreadListV2ListItems(input: {
       onto both shelf headers so the disabled state reaches recycled cells. */
   readonly shelfPreferencesLoading?: boolean;
 }): ThreadListV2ListItem[] {
-  const threadItems = input.items.map((item): ThreadListV2ListItem => {
+  // Each thread row is followed by its delegated children, so the groups are
+  // sliced into sections by thread index and flattened afterwards.
+  const threadGroups = input.items.map((item): ThreadListV2ListItem[] => {
     const snoozeWakeLabelText =
       item.snoozed && item.thread.snoozedUntil != null && input.snoozeLabelNow !== undefined
         ? snoozeWakeLabel(item.thread.snoozedUntil, { now: input.snoozeLabelNow })
@@ -428,20 +463,30 @@ export function buildThreadListV2ListItems(input: {
       item.variant === "card"
         ? input.moveAvailability?.get(`${item.thread.environmentId}:${item.thread.id}`)
         : undefined;
-    return {
-      type: "v2-thread",
-      key: `v2-thread:${item.thread.environmentId}:${item.thread.id}`,
-      item,
-      snoozeWakeLabelText,
-      timeLabel: resolveThreadListV2ItemTimeLabel(item, snoozeWakeLabelText !== undefined),
-      snoozePresetMinute,
-      showTrailingDivider: false,
-      hasQueuedMessages:
-        input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
-      canMoveUp: move?.canMoveUp === true,
-      canMoveDown: move?.canMoveDown === true,
-    };
+    return [
+      {
+        type: "v2-thread",
+        key: `v2-thread:${item.thread.environmentId}:${item.thread.id}`,
+        item,
+        snoozeWakeLabelText,
+        timeLabel: resolveThreadListV2ItemTimeLabel(item, snoozeWakeLabelText !== undefined),
+        snoozePresetMinute,
+        showTrailingDivider: false,
+        hasQueuedMessages:
+          input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
+        canMoveUp: move?.canMoveUp === true,
+        canMoveDown: move?.canMoveDown === true,
+      },
+      ...item.children.map((thread): ThreadListV2ListItem => ({
+        type: "v2-child",
+        key: `v2-child:${thread.environmentId}:${thread.id}`,
+        thread,
+        timeLabel: relativeTime(thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt),
+        showTrailingDivider: false,
+      })),
+    ];
   });
+  const threadItems = (start: number, end?: number) => threadGroups.slice(start, end).flat();
   const pendingItems = input.pendingTasks.map((pendingTask, index): ThreadListV2ListItem => ({
     type: "v2-pending",
     key: `v2-${pendingTask.key}`,
@@ -453,9 +498,9 @@ export function buildThreadListV2ListItems(input: {
   const snoozedShelfHeaderIndex = input.snoozedShelfHeaderIndex ?? null;
   const settledCount = input.settledCount ?? 0;
   const settledShelfHeaderIndex = input.settledShelfHeaderIndex ?? null;
-  const activeEnd = snoozedShelfHeaderIndex ?? settledShelfHeaderIndex ?? threadItems.length;
-  const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
-  const result: ThreadListV2ListItem[] = [...threadItems.slice(0, activeEnd), ...pendingItems];
+  const activeEnd = snoozedShelfHeaderIndex ?? settledShelfHeaderIndex ?? threadGroups.length;
+  const snoozedEnd = settledShelfHeaderIndex ?? threadGroups.length;
+  const result: ThreadListV2ListItem[] = [...threadItems(0, activeEnd), ...pendingItems];
   const shelfDisabled = input.shelfPreferencesLoading === true;
   if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
     result.push({
@@ -465,7 +510,7 @@ export function buildThreadListV2ListItems(input: {
       expanded: input.snoozedShelfExpanded === true,
       disabled: shelfDisabled,
     });
-    result.push(...threadItems.slice(snoozedShelfHeaderIndex, snoozedEnd));
+    result.push(...threadItems(snoozedShelfHeaderIndex, snoozedEnd));
   }
   if (settledShelfHeaderIndex !== null && settledCount > 0) {
     result.push({
@@ -475,12 +520,15 @@ export function buildThreadListV2ListItems(input: {
       expanded: input.settledShelfExpanded !== false,
       disabled: shelfDisabled,
     });
-    result.push(...threadItems.slice(settledShelfHeaderIndex));
+    result.push(...threadItems(settledShelfHeaderIndex));
   }
   // Hairlines depend on the final neighbour, so they are stamped after the
   // splice: a recycled cell only re-renders when its divider actually flips.
+  // A card keeps no hairline above its children, so they read as one group.
   return result.map((entry, index) => {
-    if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
+    if (entry.type !== "v2-thread" && entry.type !== "v2-child" && entry.type !== "v2-pending") {
+      return entry;
+    }
     const next = result[index + 1];
     const showTrailingDivider =
       next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
@@ -595,11 +643,28 @@ export function buildThreadListV2Items(input: {
     }
   }
 
-  const orderedActive = applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
-  const orderedSnoozed = [...snoozed].sort(
-    (left, right) =>
-      parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
+  // Delegated threads ride under a pinned or active parent's row; under a
+  // snoozed or settled parent they keep their own, so a collapsed shelf never
+  // hides one that needs attention.
+  const nesting = nestThreadsUnderParents(
+    [...pinned, ...active],
+    [...pinned, ...active, ...snoozed, ...settled],
   );
+  const isTopLevel = (thread: EnvironmentThreadShell) =>
+    !nesting.nestedKeys.has(`${thread.environmentId}:${thread.id}`);
+  const childrenOf = (thread: EnvironmentThreadShell) =>
+    nesting.childrenByParentKey.get(`${thread.environmentId}:${thread.id}`) ?? NO_CHILDREN;
+  const orderedActive = applyPendingThreadOrder(
+    sortThreadsForListV2(active.filter(isTopLevel)),
+    "active",
+    pending,
+  );
+  const orderedSnoozed = snoozed
+    .filter(isTopLevel)
+    .sort(
+      (left, right) =>
+        parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
+    );
   const selectedThreadKey = input.selectedThreadKey ?? null;
   const visibleSnoozed =
     input.snoozedShelfExpanded === true
@@ -607,7 +672,7 @@ export function buildThreadListV2Items(input: {
       : orderedSnoozed.filter(
           (thread) => `${thread.environmentId}:${thread.id}` === selectedThreadKey,
         );
-  const orderedSettled = sortSettledThreads(settled);
+  const orderedSettled = sortSettledThreads(settled.filter(isTopLevel));
   const settledLimit = input.settledLimit ?? Number.POSITIVE_INFINITY;
   const pagedSettled =
     orderedSettled.length > settledLimit ? orderedSettled.slice(0, settledLimit) : orderedSettled;
@@ -624,7 +689,7 @@ export function buildThreadListV2Items(input: {
 
   const items: ThreadListV2Item[] = [];
   for (const thread of applyPendingThreadOrder(
-    sortPinnedThreadsByOrderKey(pinned),
+    sortPinnedThreadsByOrderKey(pinned.filter(isTopLevel)),
     "pinned",
     pending,
   )) {
@@ -634,6 +699,7 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: true,
       isLast: false,
+      children: childrenOf(thread),
     });
   }
   for (const thread of orderedActive) {
@@ -643,6 +709,7 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       isLast: false,
+      children: childrenOf(thread),
     });
   }
   const snoozedShelfHeaderIndex = orderedSnoozed.length > 0 ? items.length : null;
@@ -653,6 +720,7 @@ export function buildThreadListV2Items(input: {
       snoozed: true,
       pinned: false,
       isLast: false,
+      children: NO_CHILDREN,
     });
   }
   const settledShelfHeaderIndex = orderedSettled.length > 0 ? items.length : null;
@@ -663,6 +731,7 @@ export function buildThreadListV2Items(input: {
       snoozed: false,
       pinned: false,
       isLast: false,
+      children: NO_CHILDREN,
     });
   }
   const last = items.at(-1);

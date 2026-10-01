@@ -192,6 +192,71 @@ describe("queued messages keep a settled thread active", () => {
   });
 });
 
+describe("delegated threads", () => {
+  // Newest first in the active block, so the parent leads.
+  const parent = makeThread({
+    id: ThreadId.make("parent"),
+    title: "Parent",
+    createdAt: "2026-06-01T02:00:00.000Z",
+  });
+  const child = makeThread({
+    id: ThreadId.make("child"),
+    title: "Child",
+    parentThreadId: ThreadId.make("parent"),
+    hasPendingUserInput: true,
+  });
+  const settledParent = makeThread({
+    id: ThreadId.make("settled-parent"),
+    title: "Settled parent",
+    settledOverride: "settled",
+  });
+  const orphan = makeThread({
+    id: ThreadId.make("orphan"),
+    title: "Orphan",
+    parentThreadId: ThreadId.make("settled-parent"),
+    createdAt: "2026-06-01T01:00:00.000Z",
+  });
+  const threads = [parent, child, settledParent, orphan];
+
+  it("render under an active parent, and on their own under a settled one", () => {
+    const layout = buildThreadListV2Items({
+      threads,
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+    });
+    const listItems = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      settledCount: layout.settledCount,
+      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+    });
+    expect(
+      listItems.map((item) =>
+        item.type === "v2-thread"
+          ? `thread:${item.item.thread.id}`
+          : item.type === "v2-child"
+            ? `child:${item.thread.id}`
+            : item.type,
+      ),
+    ).toEqual([
+      "thread:parent",
+      "child:child",
+      "thread:orphan",
+      "v2-settled-shelf",
+      "thread:settled-parent",
+    ]);
+  });
+
+  it("never move on their own", () => {
+    expect(
+      getThreadListV2OrderedSection({ threads, section: "active", now: NOW }).map(
+        (thread) => thread.id,
+      ),
+    ).toEqual(["parent", "orphan"]);
+  });
+});
+
 describe("resolveThreadListV2SwipeActions", () => {
   it("offers settle and snooze for an active snoozable thread", () => {
     expect(

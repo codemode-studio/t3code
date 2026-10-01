@@ -25,6 +25,7 @@ import {
   resolveSettledThreadTimestamp,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
+import { nestThreadsUnderParents } from "@t3tools/client-runtime/state/thread-nesting";
 import {
   threadSearchMatchKey,
   type EnvironmentThreadSearchMatch,
@@ -52,6 +53,7 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
+  CircleStopIcon,
   ClockIcon,
   EyeIcon,
   FolderIcon,
@@ -976,6 +978,149 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   ),
 };
 
+// Same hues as the card row's status label, so a delegated thread reads the
+// same color as it would on its own.
+const childStatusTone = {
+  working: {
+    Icon: CircleDashedIcon,
+    label: "Working",
+    className: "text-sky-600 dark:text-sky-400",
+  },
+  monitoring: { Icon: EyeIcon, label: "Monitoring", className: "text-foreground" },
+  approval: { Icon: ShieldQuestionIcon, label: "Approval", className: "text-warning-foreground" },
+  input: {
+    Icon: MessageCircleQuestionIcon,
+    label: "Input",
+    className: "text-indigo-600 dark:text-indigo-300",
+  },
+  failed: { Icon: CircleAlertIcon, label: "Failed", className: "text-red-700 dark:text-red-300" },
+  stopped: { Icon: CircleStopIcon, label: "Stopped", className: "text-muted-foreground/70" },
+  done: {
+    Icon: CircleCheckIcon,
+    label: "Done",
+    className: "text-emerald-700 dark:text-emerald-300",
+  },
+  read: { Icon: CircleCheckIcon, label: "Done", className: "text-muted-foreground/70" },
+} as const;
+
+/**
+ * One-line row for a thread another thread delegated work to. It renders
+ * inside the parent's list item, indented to the parent's text, so it moves
+ * with the parent when dragged. Click opens the thread; right-click gets the
+ * normal thread menu.
+ */
+const SidebarChildThreadRow = memo(function SidebarChildThreadRow(props: {
+  thread: SidebarThreadSummary;
+  isActive: boolean;
+  providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
+  onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
+  onThreadActivate: (threadRef: ScopedThreadRef) => void;
+  onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+}) {
+  const { thread, onThreadClick, onThreadActivate, onContextMenu } = props;
+  const threadRef = useMemo(
+    () => scopeThreadRef(thread.environmentId, thread.id),
+    [thread.environmentId, thread.id],
+  );
+  const threadKey = scopedThreadKey(threadRef);
+  const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
+  const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
+  const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
+  const status = resolveSidebarThreadStatus(thread);
+  const turnState = thread.latestTurn?.state ?? null;
+
+  const tone =
+    status === "failed" || turnState === "error"
+      ? "failed"
+      : status === "ready"
+        ? turnState === "interrupted"
+          ? "stopped"
+          : isUnread
+            ? "done"
+            : "read"
+        : status;
+  const { Icon, label, className: toneClassName } = childStatusTone[tone];
+  const statusIcon = <Icon aria-label={label} className={cn("size-3.5 shrink-0", toneClassName)} />;
+
+  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
+
+  const handleClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.stopPropagation();
+      onThreadClick(event, threadRef);
+    },
+    [onThreadClick, threadRef],
+  );
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onThreadActivate(threadRef);
+    },
+    [onThreadActivate, threadRef],
+  );
+  const handleContextMenu = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
+    },
+    [onContextMenu, threadRef],
+  );
+
+  return (
+    <li className="list-none">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`${thread.title}, delegated task`}
+        aria-current={props.isActive ? "page" : undefined}
+        data-testid="sidebar-row-child"
+        className={cn(
+          "group/sidebar-child flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md px-(--sidebar-row-content-inset) text-left text-xs outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          props.isActive
+            ? "bg-sidebar-row-active text-sidebar-foreground"
+            : isSelected
+              ? "bg-sidebar-row-selected text-sidebar-foreground"
+              : "text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+        )}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onContextMenu={handleContextMenu}
+      >
+        {statusIcon}
+        {providerEntry ? (
+          <ProviderInstanceIcon
+            driverKind={providerEntry.driverKind}
+            displayName={providerEntry.displayName}
+            accentColor={providerEntry.accentColor}
+            showBadge={false}
+            iconClassName="size-3.5 opacity-60"
+          />
+        ) : null}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            (props.isActive || isUnread || status === "input" || status === "approval") &&
+              "text-foreground",
+          )}
+        >
+          {thread.title}
+        </span>
+        <span className="shrink-0 tabular-nums text-secondary-label">
+          {status === "working" ? (
+            <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+          ) : (
+            threadTimeLabel(thread)
+          )}
+        </span>
+      </div>
+    </li>
+  );
+});
+
 const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
@@ -1036,6 +1181,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
    * composer. Absent when the sidebar cannot open server threads.
    */
   onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
+  /** Threads this one delegated work to, shown as one-line rows beneath it. */
+  childThreads: readonly SidebarThreadSummary[];
+  /** The routed child's key when the route is one of `childThreads`. */
+  activeChildKey: string | null;
 }) {
   const {
     isRenaming,
@@ -1761,6 +1910,30 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
 
   const diff = latestTurnDiff(thread);
 
+  const childRows =
+    props.childThreads.length > 0 ? (
+      <ul
+        aria-label="Delegated tasks"
+        // A short indent marks the rows as the parent's delegated tasks.
+        className="flex flex-col gap-px pt-px pl-2.5"
+      >
+        {props.childThreads.map((child) => {
+          const childKey = scopedThreadKey(scopeThreadRef(child.environmentId, child.id));
+          return (
+            <SidebarChildThreadRow
+              key={childKey}
+              thread={child}
+              isActive={props.activeChildKey === childKey}
+              providerEntryByInstanceId={props.providerEntryByInstanceId}
+              onThreadClick={onThreadClick}
+              onThreadActivate={onThreadActivate}
+              onContextMenu={onContextMenu}
+            />
+          );
+        })}
+      </ul>
+    ) : null;
+
   return (
     <li
       data-thread-item
@@ -2014,6 +2187,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         </TooltipTrigger>
         {detailsTooltip}
       </Tooltip>
+      {childRows}
     </li>
   );
 });
@@ -2591,6 +2765,7 @@ export default function Sidebar() {
     snoozedThreads,
     settledThreads,
     snoozeNow,
+    childThreadsByParentKey,
   } = useMemo(() => {
     // Snooze classification uses a REAL clock, not the quantized minute:
     // wake times are second-precise and a woken thread must not linger on
@@ -2653,13 +2828,18 @@ export default function Sidebar() {
         active.push(thread);
       }
     }
+    // Delegated threads ride along under a pinned or active parent's row, so
+    // they move with it; under a settled or snoozed parent they keep their own.
+    const nesting = nestThreadsUnderParents([...pinned, ...active], visible);
+    const isTopLevel = (thread: EnvironmentThreadShell) =>
+      !nesting.nestedKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
     // One shared rule on every platform (see sortPinnedThreadsByOrderKey):
     // user-arranged keys first, keyless threads in creation order below.
     // Server capability only gates DRAGGING — it must not influence the
     // sort, or mixed-version fleets would render different pinned orders on
     // web and mobile from the same data.
-    const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-    const sortedActive = sortThreadsForSidebar(active);
+    const sortedPinned = sortPinnedThreadsForSidebar(pinned.filter(isTopLevel));
+    const sortedActive = sortThreadsForSidebar(active.filter(isTopLevel));
     return {
       pinnedThreads:
         optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -2680,13 +2860,16 @@ export default function Sidebar() {
               getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
             }),
       // Soonest wake first: "what comes back next" is the shelf's question.
-      snoozedThreads: snoozed.toSorted(
-        (left, right) =>
-          firstValidTimestampMs(left.snoozedUntil ?? null) -
-          firstValidTimestampMs(right.snoozedUntil ?? null),
-      ),
-      settledThreads: sortSettledThreads(settled),
+      snoozedThreads: snoozed
+        .filter(isTopLevel)
+        .toSorted(
+          (left, right) =>
+            firstValidTimestampMs(left.snoozedUntil ?? null) -
+            firstValidTimestampMs(right.snoozedUntil ?? null),
+        ),
+      settledThreads: sortSettledThreads(settled.filter(isTopLevel)),
       snoozeNow: preciseNow,
+      childThreadsByParentKey: nesting.childrenByParentKey,
     };
   }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
 
@@ -4750,6 +4933,8 @@ export default function Sidebar() {
                         // not from the sidebar second-guessing what still matters.
                         const isCard = section === "active" || section === "pinned";
                         const rowVariant = isCard ? "card" : "slim";
+                        const childThreads =
+                          childThreadsByParentKey.get(threadKey) ?? EMPTY_THREADS;
                         return (
                           <SidebarThreadRow
                             // Fade between card and compact rows while the outer
@@ -4841,6 +5026,16 @@ export default function Sidebar() {
                             onUnpin={attemptUnpin}
                             onAcknowledgeWoke={acknowledgeWoke}
                             onFileDropThreads={handleThreadFileDrop}
+                            childThreads={childThreads}
+                            activeChildKey={
+                              childThreads.some(
+                                (child) =>
+                                  scopedThreadKey(scopeThreadRef(child.environmentId, child.id)) ===
+                                  routeThreadKey,
+                              )
+                                ? routeThreadKey
+                                : null
+                            }
                           />
                         );
                       };

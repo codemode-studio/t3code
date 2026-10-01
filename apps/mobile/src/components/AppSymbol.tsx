@@ -36,6 +36,7 @@ import IconChevronUp from "@tabler/icons-react-native/IconChevronUp";
 import IconCircle from "@tabler/icons-react-native/IconCircle";
 import IconCircleFilled from "@tabler/icons-react-native/IconCircleFilled";
 import IconCircleCheck from "@tabler/icons-react-native/IconCircleCheck";
+import IconCircleDashed from "@tabler/icons-react-native/IconCircleDashed";
 import IconCircleXFilled from "@tabler/icons-react-native/IconCircleXFilled";
 import IconTicket from "@tabler/icons-react-native/IconTicket";
 import IconClock from "@tabler/icons-react-native/IconClock";
@@ -74,6 +75,7 @@ import IconMicrophone from "@tabler/icons-react-native/IconMicrophone";
 import IconLink from "@tabler/icons-react-native/IconLink";
 import IconMenu2 from "@tabler/icons-react-native/IconMenu2";
 import IconMessage from "@tabler/icons-react-native/IconMessage";
+import IconMessageQuestion from "@tabler/icons-react-native/IconMessageQuestion";
 import IconMinus from "@tabler/icons-react-native/IconMinus";
 import IconMoon from "@tabler/icons-react-native/IconMoon";
 import IconNetwork from "@tabler/icons-react-native/IconNetwork";
@@ -83,7 +85,9 @@ import IconPhoto from "@tabler/icons-react-native/IconPhoto";
 import IconPin from "@tabler/icons-react-native/IconPin";
 import IconPinnedOff from "@tabler/icons-react-native/IconPinnedOff";
 import IconPlayerPlay from "@tabler/icons-react-native/IconPlayerPlay";
+import IconPlayerStop from "@tabler/icons-react-native/IconPlayerStop";
 import IconPlayerStopFilled from "@tabler/icons-react-native/IconPlayerStopFilled";
+import IconShieldQuestion from "@tabler/icons-react-native/IconShieldQuestion";
 import IconPlus from "@tabler/icons-react-native/IconPlus";
 import IconQrcode from "@tabler/icons-react-native/IconQrcode";
 import IconRefresh from "@tabler/icons-react-native/IconRefresh";
@@ -140,6 +144,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   checkmark: IconCheck,
   "checkmark.circle": IconCircleCheck,
   circle: IconCircle,
+  "circle.dashed": IconCircleDashed,
   "circle.fill": IconCircleFilled,
   clock: IconClock,
   timer: IconClock,
@@ -159,6 +164,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "ellipsis.circle": IconDotsCircleHorizontal,
   "exclamationmark.triangle": IconAlertTriangle,
   "exclamationmark.circle": IconAlertCircle,
+  "exclamationmark.shield": IconShieldQuestion,
   eye: IconEye,
   folder: IconFolder,
   "folder.badge.plus": IconFolderPlus,
@@ -206,10 +212,12 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   star: IconStar,
   "star.fill": IconStarFilled,
   "sun.max": IconSun,
+  "stop.circle": IconPlayerStop,
   "stop.fill": IconPlayerStopFilled,
   terminal: IconTerminal2,
   "text.alignleft": IconAlignLeft,
   "text.bubble": IconMessage,
+  "questionmark.bubble": IconMessageQuestion,
   "text.word.spacing": IconLetterSpacing,
   "textformat.size": IconTypography,
   "textformat.size.larger": IconTextIncrease,

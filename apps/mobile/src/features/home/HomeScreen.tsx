@@ -44,6 +44,7 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ChildRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -775,6 +776,17 @@ export function HomeScreen(props: HomeScreenProps) {
             disabled={item.disabled}
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
+          />
+        );
+      }
+      if (item.type === "v2-child") {
+        return (
+          <ThreadListV2ChildRow
+            thread={item.thread}
+            timeLabel={item.timeLabel}
+            providerInstance={resolveProviderInstance(item.thread)}
+            showTrailingDivider={item.showTrailingDivider}
+            onSelectThread={props.onSelectThread}
           />
         );
       }

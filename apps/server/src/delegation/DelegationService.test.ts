@@ -143,8 +143,6 @@ const withService = <A, E>(
     readonly startedActivities?: ReadonlyArray<OrchestrationThreadActivity>;
     /** User messages already in the projection, as thread and message id. */
     readonly userMessages?: ReadonlyArray<readonly [ThreadId, MessageId]>;
-    /** Threads a previous process created as delegated tasks. */
-    readonly delegatedThreads?: ReadonlyArray<ThreadId>;
     /** What every thread's detail holds; one final answer by default. */
     readonly messages?: ReadonlyArray<OrchestrationMessage>;
   } = {},
@@ -167,13 +165,6 @@ const withService = <A, E>(
     const userMessages = new Set(
       (options.userMessages ?? []).map(([threadId, messageId]) => `${threadId}/${messageId}`),
     );
-    /** The command id of each thread's creation event. */
-    const createdBy = new Map(
-      (options.delegatedThreads ?? []).map((threadId) => [
-        threadId,
-        CommandId.make(`server:delegation-thread-create:${threadId}`),
-      ]),
-    );
 
     const layer = DelegationService.layer.pipe(
       Layer.provide(
@@ -182,8 +173,12 @@ const withService = <A, E>(
             dispatch: (command) =>
               Effect.gen(function* () {
                 if (command.type === "thread.create") {
-                  createdBy.set(command.threadId, command.commandId);
-                  yield* setThread(shell(command.threadId, null, { title: command.title }));
+                  yield* setThread(
+                    shell(command.threadId, null, {
+                      title: command.title,
+                      parentThreadId: command.parentThreadId ?? null,
+                    }),
+                  );
                 }
                 if (command.type === "thread.turn.start") {
                   userMessages.add(`${command.threadId}/${command.message.messageId}`);
@@ -191,11 +186,6 @@ const withService = <A, E>(
                 yield* Queue.offer(commands, command);
                 return { sequence: 1 };
               }),
-            // Only the first event's command id is read.
-            readThreadEvents: ({ threadId }) => {
-              const commandId = createdBy.get(threadId);
-              return commandId ? Stream.make({ ...sessionSet(threadId), commandId }) : Stream.empty;
-            },
             streamDomainEvents: Stream.unwrap(
               PubSub.subscribe(events).pipe(
                 Effect.tap(() => Deferred.succeed(subscribed, undefined)),
@@ -272,6 +262,7 @@ describe("DelegationService", () => {
         const create = yield* nextCommand;
         assert(create.type === "thread.create");
         assert.strictEqual(create.threadId, result.threadId);
+        assert.strictEqual(create.parentThreadId, PARENT_ID);
         assert.strictEqual(create.worktreePath, "/tmp/worktree");
         assert.strictEqual(create.branch, "feature");
         assert.deepStrictEqual(create.modelSelection, {
@@ -353,7 +344,12 @@ describe("DelegationService", () => {
         assert.include((yield* nested).message, "cannot delegate further");
 
         // Finished and reported, then continued by the user.
-        yield* setThread(shell(child, "completed", { session: session(child, "ready") }));
+        yield* setThread(
+          shell(child, "completed", {
+            session: session(child, "ready"),
+            parentThreadId: PARENT_ID,
+          }),
+        );
         yield* publish(sessionSet(child));
         yield* nextCommand;
         assert.include((yield* nested).message, "cannot delegate further");
@@ -375,10 +371,12 @@ describe("DelegationService", () => {
       {
         threads: [
           shell(PARENT_ID, "completed", { session: session(PARENT_ID, "ready") }),
-          shell(child, "completed", { session: session(child, "ready") }),
+          shell(child, "completed", {
+            session: session(child, "ready"),
+            parentThreadId: PARENT_ID,
+          }),
         ],
         userMessages: [[PARENT_ID, MessageId.make(`delegation:${child}`)]],
-        delegatedThreads: [child],
         messages: [],
       },
     );
