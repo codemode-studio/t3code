@@ -175,6 +175,10 @@ the list after changing skill files. Personal skills appear across projects.
 The switches control visibility in this client's T3 skill pickers and persist
 separately for each environment. Providers manage automatic skill discovery.
 
+After you add or change skills, plugins, or MCP servers, use **Restart agent
+session** in the command palette on web and desktop. The conversation continues,
+and your next message starts the agent again with the new setup.
+
 Provider commands must start the message to run. T3 Code commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 

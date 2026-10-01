@@ -2626,7 +2626,7 @@ const makeWsRpcLayer = (
                 ? providerRegistry.refreshWorkspaceSnapshot({
                     instanceId: input.instanceId,
                     cwd: input.cwd,
-                    ...(input.refreshWorkspace ? { force: true } : {}),
+                    fresh: input.fresh === true || input.refreshWorkspace === true,
                   })
                 : input.instanceId !== undefined
                   ? providerRegistry.refreshInstance(input.instanceId)
