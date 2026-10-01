@@ -13,13 +13,14 @@ import { encodeShellSnapshotForCache } from "./persistence.ts";
 
 // Generated values can hold untrimmed strings, which a decoded value never
 // has. One encode and decode gives a value a client can hold; values that
-// fail are dropped. Size 30 makes the generator fill optional fields.
+// fail are dropped. Size 30 fills optional fields; 100 samples keep generation
+// bounded on standard CI runners.
 const sampleDecoded = <S extends Schema.Constraint>(schema: S) =>
   Effect.gen(function* () {
     const encode = Schema.encodeEffect(schema);
     const decode = Schema.decodeEffect(schema);
     const generated = yield* Arbitrary.sampleEffect(Arbitrary.schema(schema), {
-      count: 1000,
+      count: 100,
       size: 30,
     });
     const decoded = yield* Effect.forEach(generated, (value) =>

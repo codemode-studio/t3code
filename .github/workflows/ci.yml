@@ -19,7 +19,7 @@ jobs:
   # passes only when every other job does.
   lint:
     name: Lint
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -57,7 +57,7 @@ jobs:
 
   typecheck:
     name: Typecheck
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -83,7 +83,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -99,7 +99,7 @@ jobs:
       # Runs in the background while Vite+ installs; the step before the build waits for it.
       - name: Start installing browser secret helper build libraries
         run: |
-          sudo sed -i 's|http://|https://|g' /etc/apt/blacksmith-ubuntu-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+          sudo sed -i 's|http://|https://|g' /etc/apt/ubuntu-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
           (
             set +e
             sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
@@ -133,11 +133,11 @@ jobs:
   # below. `--parallel` drops the package dependency ordering that `vp run`
   # applies by default: these `test` tasks declare no `dependsOn` and resolve
   # workspace deps from source, so ordering only bought us idle runners between
-  # dependency layers. The concurrency limit stays at the default 4 so peak load
-  # per runner is unchanged.
+  # dependency layers. Limit this four-core runner to two package suites to
+  # leave room for each suite's Vitest workers.
   test:
     name: Test
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -154,7 +154,7 @@ jobs:
       # the background while Vite+ installs; the step before the tests waits for it.
       - name: Start installing browser secret helper build libraries
         run: |
-          sudo sed -i 's|http://|https://|g' /etc/apt/blacksmith-ubuntu-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+          sudo sed -i 's|http://|https://|g' /etc/apt/ubuntu-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
           (
             set +e
             sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
@@ -180,6 +180,9 @@ jobs:
       - name: Test fork release checks
         run: node --test .github/scripts/check-fork-release.test.cjs
 
+      - name: Test persistent release checkout
+        run: node --test .github/scripts/release-desktop-checkout.test.cjs
+
       - name: Finish installing browser secret helper build libraries
         timeout-minutes: 5
         run: |
@@ -188,13 +191,13 @@ jobs:
           exit "$(cat "$RUNNER_TEMP/apt-status")"
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
+        run: vp run --parallel --concurrency-limit 2 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
 
   # The web suite is the largest outside the server. In the shared Test job it
   # started last and ran alone for about 40s after everything else finished.
   test_web:
     name: Test Web
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -223,7 +226,7 @@ jobs:
   # split files by recorded duration (apps/server/src/testUtils/weightedShardSequencer.ts).
   test_server:
     name: Test Server ${{ matrix.shard }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -290,7 +293,7 @@ jobs:
   # for checks that take under 3s, on the critical path of every PR.
   rust:
     name: Rust
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -324,7 +327,7 @@ jobs:
   # the diff cannot be resolved, the lint runs.
   mobile_native_changes:
     name: Mobile Native Changes
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -402,7 +405,8 @@ jobs:
     # Skip only on an explicit "no": a gate job that failed or errored leaves the
     # output empty, and that must run the lint rather than silently skip it.
     if: ${{ !cancelled() && needs.mobile_native_changes.outputs.changed != 'false' }}
-    runs-on: blacksmith-6vcpu-macos-26
+    # This executes PR code, including fork PRs. Keep it off the release Mac.
+    runs-on: macos-26
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -430,7 +434,7 @@ jobs:
 
   release_smoke:
     name: Release Smoke
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -474,7 +478,7 @@ jobs:
         mobile_native_static_analysis,
         release_smoke,
       ]
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every job to pass
