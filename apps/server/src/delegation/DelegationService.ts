@@ -120,7 +120,7 @@ export function delegatedThreadStatus(
 }
 
 /** Whether a message can start a new turn on the parent without steering or blocking one. */
-export function parentCanReceive(thread: OrchestrationThreadShell, now: string): boolean {
+function parentCanReceive(thread: OrchestrationThreadShell, now: string): boolean {
   return !(
     thread.hasPendingApprovals ||
     thread.hasPendingUserInput ||
@@ -130,7 +130,7 @@ export function parentCanReceive(thread: OrchestrationThreadShell, now: string):
   );
 }
 
-export function resultMessageText(outcome: Outcome): string {
+function resultMessageText(outcome: Outcome): string {
   const { delegation, status } = outcome;
   const heading =
     status === "completed"
@@ -151,7 +151,7 @@ const titleFrom = (input: DelegateInput) => {
 };
 
 /** Matches an instance id first, then a driver kind or display name, preferring ready instances. */
-export function findProvider(
+function findProvider(
   providers: ReadonlyArray<ServerProvider>,
   query: string,
 ): ServerProvider | undefined {

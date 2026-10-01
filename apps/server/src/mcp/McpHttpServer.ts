@@ -649,7 +649,7 @@ export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequest
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
-export const DelegationToolkitRegistrationLive = McpServer.toolkit(DelegationToolkit).pipe(
+const DelegationToolkitRegistrationLive = McpServer.toolkit(DelegationToolkit).pipe(
   Layer.provide(DelegationToolkitHandlersLive),
 );
 
