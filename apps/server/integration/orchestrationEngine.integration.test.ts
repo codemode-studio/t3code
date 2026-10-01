@@ -16,6 +16,7 @@ import {
   ThreadId,
   ModelSelection,
   ProviderInstanceId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
@@ -1415,4 +1416,119 @@ it.live("reverts claudeAgent turns and rolls back provider conversation state", 
       }),
     CLAUDE_AGENT_PROVIDER,
   ),
+);
+
+const delegateToCodex = (input: {
+  readonly childEvents: TestTurnResponse["events"];
+  readonly expectedResult: ReadonlyArray<string>;
+}) =>
+  Effect.acquireUseRelease(
+    makeOrchestrationIntegrationHarness({
+      provider: CODEX_PROVIDER,
+      providers: [
+        {
+          instanceId: defaultInstanceIdForDriver(CODEX_PROVIDER),
+          driver: CODEX_PROVIDER,
+          displayName: "Codex",
+          enabled: true,
+          installed: true,
+          status: "ready",
+          models: [
+            {
+              slug: DEFAULT_MODEL_BY_PROVIDER[CODEX_PROVIDER] ?? DEFAULT_MODEL,
+              name: "Default",
+              isCustom: false,
+              isDefault: true,
+            },
+          ],
+        } as unknown as ServerProvider,
+      ],
+    }),
+    (harness) =>
+      Effect.gen(function* () {
+        yield* seedProjectAndThread(harness);
+        yield* harness.adapterHarness!.queueTurnResponseForNextSession({
+          events: input.childEvents,
+        });
+        // The caller's turn that reads the result.
+        yield* harness.adapterHarness!.queueTurnResponseForNextSession({ events: [] });
+
+        const { threadId: child } = yield* harness.delegation.delegate({
+          parentThreadId: THREAD_ID,
+          provider: "codex",
+          prompt: "Review the uncommitted changes.",
+          title: "Review changes",
+        });
+
+        const resultId = asMessageId(`delegation:${child}`);
+        const parent = yield* harness.waitForThread(THREAD_ID, (thread) =>
+          thread.messages.some((message) => message.id === resultId),
+        );
+        const result = parent.messages.find((message) => message.id === resultId)!;
+        for (const expected of input.expectedResult) {
+          assert.include(result.text, expected);
+        }
+        assert.notInclude(result.text, "It produced no final message.");
+      }),
+    (harness) => harness.dispose,
+  ).pipe(Effect.provide(NodeServices.layer));
+
+it.live("delegation reports a buffered final message once the delegated turn completes", () =>
+  delegateToCodex({
+    childEvents: [
+      {
+        type: "turn.started",
+        ...runtimeBase("evt-delegate-done-1", "2026-02-24T11:00:00.000Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+      },
+      {
+        // No paragraph break, so the text stays buffered until the turn ends.
+        type: "message.delta",
+        ...runtimeBase("evt-delegate-done-2", "2026-02-24T11:00:00.100Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        delta: "Found two bugs.",
+      },
+      {
+        type: "turn.completed",
+        ...runtimeBase("evt-delegate-done-3", "2026-02-24T11:00:00.200Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        status: "completed",
+      },
+    ],
+    expectedResult: ['Codex finished the delegated task "Review changes".', "Found two bugs."],
+  }),
+);
+
+it.live("delegation reports the buffered partial message of an aborted delegated turn", () =>
+  delegateToCodex({
+    childEvents: [
+      {
+        type: "turn.started",
+        ...runtimeBase("evt-delegate-abort-1", "2026-02-24T11:01:00.000Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+      },
+      {
+        type: "message.delta",
+        ...runtimeBase("evt-delegate-abort-2", "2026-02-24T11:01:00.100Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        delta: "One bug so far.",
+      },
+      {
+        type: "turn.aborted",
+        ...runtimeBase("evt-delegate-abort-3", "2026-02-24T11:01:00.200Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        payload: { reason: "Interrupted" },
+      },
+    ],
+    expectedResult: [
+      'Codex was stopped before finishing the delegated task "Review changes".',
+      "One bug so far.",
+    ],
+  }),
 );

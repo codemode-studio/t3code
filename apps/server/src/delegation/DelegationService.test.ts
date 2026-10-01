@@ -130,7 +130,8 @@ const withService = <A, E>(
   options: {
     readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
     readonly startedActivities?: ReadonlyArray<OrchestrationThreadActivity>;
-    readonly deliveredMessages?: ReadonlyArray<MessageId>;
+    /** User messages already in the projection, as thread and message id. */
+    readonly userMessages?: ReadonlyArray<readonly [ThreadId, MessageId]>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -148,7 +149,9 @@ const withService = <A, E>(
     const subscribed = yield* Deferred.make<void>();
     const setThread = (thread: OrchestrationThreadShell) =>
       Ref.update(threads, (current) => new Map(current).set(thread.id, thread));
-    const delivered = new Set(options.deliveredMessages ?? []);
+    const userMessages = new Set(
+      (options.userMessages ?? []).map(([threadId, messageId]) => `${threadId}/${messageId}`),
+    );
 
     const layer = DelegationService.layer.pipe(
       Layer.provide(
@@ -158,6 +161,9 @@ const withService = <A, E>(
               Effect.gen(function* () {
                 if (command.type === "thread.create") {
                   yield* setThread(shell(command.threadId, null, { title: command.title }));
+                }
+                if (command.type === "thread.turn.start") {
+                  userMessages.add(`${command.threadId}/${command.message.messageId}`);
                 }
                 yield* Queue.offer(commands, command);
                 return { sequence: 1 };
@@ -198,9 +204,9 @@ const withService = <A, E>(
                 ),
               ),
             listActivitiesByKind: () => Effect.succeed(options.startedActivities ?? []),
-            getTurnStartMessage: ({ messageId }) =>
+            getTurnStartMessage: ({ threadId, messageId }) =>
               Effect.succeed(
-                delivered.has(messageId)
+                userMessages.has(`${threadId}/${messageId}`)
                   ? Option.some({
                       message: {
                         id: messageId,
@@ -314,19 +320,81 @@ describe("DelegationService", () => {
     ),
   );
 
-  it.effect("a delegated thread cannot delegate further", () =>
-    withService(({ service }) =>
+  it.effect("a delegated thread cannot delegate further, even after its task finished", () =>
+    withService(({ service, setThread, publish, nextCommand }) =>
       Effect.gen(function* () {
         const { threadId: child } = yield* service.delegate({
           parentThreadId: PARENT_ID,
           provider: "codex",
           prompt: "Review.",
         });
-        const error = yield* service
+        for (let i = 0; i < 3; i++) yield* nextCommand;
+        const nested = service
           .delegate({ parentThreadId: child, provider: "codex", prompt: "Review again." })
           .pipe(Effect.flip);
-        assert.include(error.message, "cannot delegate further");
+        assert.include((yield* nested).message, "cannot delegate further");
+
+        // Finished and reported, then continued by the user.
+        yield* setThread(shell(child, "completed", { session: session(child, "ready") }));
+        yield* publish(sessionSet(child));
+        yield* nextCommand;
+        assert.include((yield* nested).message, "cannot delegate further");
       }),
+    ),
+  );
+
+  it.effect("a delegated thread cannot delegate after a restart", () => {
+    const child = ThreadId.make("reported-child");
+    return withService(
+      ({ service }) =>
+        Effect.gen(function* () {
+          const error = yield* service
+            .delegate({ parentThreadId: child, provider: "codex", prompt: "Review again." })
+            .pipe(Effect.flip);
+          assert.include(error.message, "cannot delegate further");
+        }),
+      {
+        threads: [
+          shell(PARENT_ID, "completed", { session: session(PARENT_ID, "ready") }),
+          shell(child, "completed", { session: session(child, "ready") }),
+        ],
+        userMessages: [
+          [child, MessageId.make(`delegation-task:${child}`)],
+          [PARENT_ID, MessageId.make(`delegation:${child}`)],
+        ],
+      },
+    );
+  });
+
+  it.effect("reports a task stopped before its turn started", () =>
+    withService(
+      ({ service, setThread, publish, nextCommand }) =>
+        Effect.gen(function* () {
+          const { threadId: child } = yield* service.delegate({
+            parentThreadId: PARENT_ID,
+            provider: "codex",
+            prompt: "Review.",
+            title: "Review changes",
+          });
+          for (let i = 0; i < 3; i++) yield* nextCommand;
+
+          yield* setThread(shell(child, null, { session: session(child, "stopped") }));
+          yield* publish(sessionSet(child));
+          const completed = yield* nextCommand;
+          assert(completed.type === "thread.activity.append");
+          assert.deepInclude(completed.activity.payload as object, {
+            taskId: child,
+            status: "stopped",
+          });
+          const result = yield* nextCommand;
+          assert(result.type === "thread.turn.start");
+          assert.strictEqual(result.threadId, PARENT_ID);
+          assert.include(
+            result.message.text,
+            'Codex was stopped before finishing the delegated task "Review changes".',
+          );
+        }),
+      { threads: [shell(PARENT_ID, "completed", { session: session(PARENT_ID, "ready") })] },
     ),
   );
 
@@ -382,7 +450,7 @@ describe("DelegationService", () => {
           shell(reported, "completed", { session: session(reported, "ready") }),
         ],
         startedActivities: [startedActivity(finished), startedActivity(reported)],
-        deliveredMessages: [MessageId.make(`delegation:${reported}`)],
+        userMessages: [[PARENT_ID, MessageId.make(`delegation:${reported}`)]],
       },
     );
   });
@@ -400,6 +468,10 @@ describe("delegatedThreadStatus", () => {
     );
     assert.strictEqual(
       DelegationService.delegatedThreadStatus(shell(id, "interrupted")),
+      "stopped",
+    );
+    assert.strictEqual(
+      DelegationService.delegatedThreadStatus(shell(id, null, { session: session(id, "stopped") })),
       "stopped",
     );
     assert.strictEqual(

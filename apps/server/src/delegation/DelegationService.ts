@@ -98,6 +98,8 @@ interface Outcome {
 const startedActivityId = (child: ThreadId) => EventId.make(`delegation:${child}:started`);
 const completedActivityId = (child: ThreadId) => EventId.make(`delegation:${child}:completed`);
 const resultMessageId = (child: ThreadId) => MessageId.make(`delegation:${child}`);
+/** The task message that opens a delegated thread; its presence marks the thread as delegated. */
+const taskMessageId = (child: ThreadId) => MessageId.make(`delegation-task:${child}`);
 
 /** How a delegated thread stands; `null` while its turn has not finished. */
 export function delegatedThreadStatus(
@@ -114,8 +116,16 @@ export function delegatedThreadStatus(
     case "running":
       return null;
     default:
-      // No turn yet: still starting, unless the session failed before it could.
-      return thread.session?.status === "error" ? "failed" : null;
+      // No turn yet: still starting, unless the session failed or stopped before it could.
+      switch (thread.session?.status) {
+        case "error":
+          return "failed";
+        case "stopped":
+        case "interrupted":
+          return "stopped";
+        default:
+          return null;
+      }
   }
 }
 
@@ -339,7 +349,15 @@ const make = Effect.gen(function* () {
   });
 
   const delegate = Effect.fn("DelegationService.delegate")(function* (input: DelegateInput) {
-    if (running.has(input.parentThreadId)) {
+    // Read from the thread itself, so the rule holds after the task finishes, when the
+    // user continues it, and across restarts.
+    const delegated = yield* snapshots
+      .getTurnStartMessage({
+        threadId: input.parentThreadId,
+        messageId: taskMessageId(input.parentThreadId),
+      })
+      .pipe(Effect.mapError(() => new DelegationError({ message: "Could not read this thread." })));
+    if (Option.isSome(delegated)) {
       return yield* failWith(
         "This thread is itself a delegated task and cannot delegate further. Do the work here.",
       );
@@ -416,7 +434,7 @@ const make = Effect.gen(function* () {
         commandId: yield* commandId("delegation-turn-start"),
         threadId: childThreadId,
         message: {
-          messageId: MessageId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie)),
+          messageId: taskMessageId(childThreadId),
           role: "user",
           text: `${input.prompt}\n\n---\n${CHILD_PROMPT_FOOTER}`,
           attachments: [],

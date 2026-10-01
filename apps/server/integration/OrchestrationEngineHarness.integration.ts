@@ -9,6 +9,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationThread,
   type ProviderApprovalDecision,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -189,6 +190,7 @@ export interface OrchestrationIntegrationHarness {
   readonly engine: OrchestrationEngineShape;
   readonly snapshotQuery: ProjectionSnapshotQuery["Service"];
   readonly providerService: ProviderService["Service"];
+  readonly delegation: DelegationService.DelegationService["Service"];
   readonly checkpointStore: CheckpointStore.CheckpointStore["Service"];
   readonly pendingApprovalRepository: ProjectionPendingApprovalRepository["Service"];
   readonly waitForThread: (
@@ -234,6 +236,8 @@ export interface OrchestrationIntegrationHarness {
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  /** What the provider registry reports, for flows that pick a provider themselves. */
+  readonly providers?: ReadonlyArray<ServerProvider>;
   /** Tracer for every fiber the harness runtime runs, including reactors. */
   readonly tracer?: Tracer.Tracer;
 }
@@ -306,7 +310,7 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(AnalyticsService.layerTest),
           Layer.provide(providerEventLoggersLayer),
         );
-    const providerRegistryLayer = makeProviderRegistryLayer();
+    const providerRegistryLayer = makeProviderRegistryLayer(options?.providers);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
     const projectionSnapshotQueryLayer = OrchestrationProjectionSnapshotQueryLive;
@@ -388,9 +392,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(
         Layer.mock(AutomationService.AutomationService)({ start: () => Effect.void }),
       ),
-      Layer.provideMerge(
-        Layer.mock(DelegationService.DelegationService)({ start: () => Effect.void }),
-      ),
+      Layer.provideMerge(DelegationService.layer),
       Layer.provideMerge(
         Layer.succeed(StorageCleanup.StorageCleanup, {
           start: () => Effect.void,
@@ -466,6 +468,9 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
     const providerService = yield* tryRuntimePromise("load ProviderService service", () =>
       runtime.runPromise(Effect.service(ProviderService)),
+    ).pipe(Effect.orDie);
+    const delegation = yield* tryRuntimePromise("load DelegationService service", () =>
+      runtime.runPromise(Effect.service(DelegationService.DelegationService)),
     ).pipe(Effect.orDie);
     const checkpointStore = yield* tryRuntimePromise("load CheckpointStore service", () =>
       runtime.runPromise(Effect.service(CheckpointStore.CheckpointStore)),
@@ -614,6 +619,7 @@ export const makeOrchestrationIntegrationHarness = (
       engine,
       snapshotQuery,
       providerService,
+      delegation,
       checkpointStore,
       pendingApprovalRepository,
       waitForThread,
