@@ -1593,9 +1593,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const session = yield* projectionThreadSessionRepository.getByThreadId({
             threadId: event.payload.threadId,
           });
+          // A reconnecting session reports "starting" but still owns its turn.
           const turnStillRunning =
             Option.isSome(session) &&
-            session.value.status === "running" &&
+            (session.value.status === "running" || session.value.status === "starting") &&
             session.value.activeTurnId === event.payload.turnId;
           const settlesTurn = !event.payload.streaming && !turnStillRunning;
           const existingTurn = yield* projectionTurnRepository.getByTurnId({

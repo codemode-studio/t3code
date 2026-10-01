@@ -17,6 +17,7 @@ import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 import { StorageCleanup } from "../../storageCleanup.ts";
 import { AutomationService } from "../../automation/AutomationService.ts";
+import { DelegationService } from "../../delegation/DelegationService.ts";
 
 describe("OrchestrationReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<OrchestrationReactor, never> | null = null;
@@ -37,6 +38,14 @@ describe("OrchestrationReactor", () => {
           Layer.mock(AutomationService)({
             start: () => {
               started.push("automations");
+              return Effect.void;
+            },
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.mock(DelegationService)({
+            start: () => {
+              started.push("delegations");
               return Effect.void;
             },
           }),
@@ -142,6 +151,7 @@ describe("OrchestrationReactor", () => {
       "agent-awareness-relay",
       "storage-cleanup",
       "automations",
+      "delegations",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));
