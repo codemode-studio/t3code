@@ -1418,32 +1418,61 @@ it.live("reverts claudeAgent turns and rolls back provider conversation state", 
   ),
 );
 
+const makeDelegationHarness = () =>
+  makeOrchestrationIntegrationHarness({
+    provider: CODEX_PROVIDER,
+    providers: [
+      {
+        instanceId: defaultInstanceIdForDriver(CODEX_PROVIDER),
+        driver: CODEX_PROVIDER,
+        displayName: "Codex",
+        enabled: true,
+        installed: true,
+        status: "ready",
+        models: [
+          {
+            slug: DEFAULT_MODEL_BY_PROVIDER[CODEX_PROVIDER] ?? DEFAULT_MODEL,
+            name: "Default",
+            isCustom: false,
+            isDefault: true,
+          },
+        ],
+      } as unknown as ServerProvider,
+    ],
+  });
+
+/** A delegated turn that answers `text` and completes. */
+const delegatedAnswer = (key: string, turnId: string, text: string): TestTurnResponse => ({
+  events: [
+    {
+      type: "turn.started",
+      ...runtimeBase(`evt-${key}-1`, "2026-02-24T11:00:00.000Z"),
+      threadId: THREAD_ID,
+      turnId,
+    },
+    {
+      type: "message.delta",
+      ...runtimeBase(`evt-${key}-2`, "2026-02-24T11:00:00.100Z"),
+      threadId: THREAD_ID,
+      turnId,
+      delta: text,
+    },
+    {
+      type: "turn.completed",
+      ...runtimeBase(`evt-${key}-3`, "2026-02-24T11:00:00.200Z"),
+      threadId: THREAD_ID,
+      turnId,
+      status: "completed",
+    },
+  ],
+});
+
 const delegateToCodex = (input: {
   readonly childEvents: TestTurnResponse["events"];
   readonly expectedResult: ReadonlyArray<string>;
 }) =>
   Effect.acquireUseRelease(
-    makeOrchestrationIntegrationHarness({
-      provider: CODEX_PROVIDER,
-      providers: [
-        {
-          instanceId: defaultInstanceIdForDriver(CODEX_PROVIDER),
-          driver: CODEX_PROVIDER,
-          displayName: "Codex",
-          enabled: true,
-          installed: true,
-          status: "ready",
-          models: [
-            {
-              slug: DEFAULT_MODEL_BY_PROVIDER[CODEX_PROVIDER] ?? DEFAULT_MODEL,
-              name: "Default",
-              isCustom: false,
-              isDefault: true,
-            },
-          ],
-        } as unknown as ServerProvider,
-      ],
-    }),
+    makeDelegationHarness(),
     (harness) =>
       Effect.gen(function* () {
         yield* seedProjectAndThread(harness);
@@ -1474,6 +1503,56 @@ const delegateToCodex = (input: {
       }),
     (harness) => harness.dispose,
   ).pipe(Effect.provide(NodeServices.layer));
+
+it.live("a delegation follow-up runs in the same thread and reports only its own answer", () =>
+  Effect.acquireUseRelease(
+    makeDelegationHarness(),
+    (harness) =>
+      Effect.gen(function* () {
+        yield* seedProjectAndThread(harness);
+        const adapter = harness.adapterHarness!;
+        yield* adapter.queueTurnResponseForNextSession(
+          delegatedAnswer("follow-up-first", FIXTURE_TURN_ID, "Found two bugs."),
+        );
+        // Only the child gets responses: every queued next-session response goes to the
+        // first session that starts, and the results land in the caller either way.
+        const { threadId: child } = yield* harness.delegation.delegate({
+          parentThreadId: THREAD_ID,
+          provider: "codex",
+          prompt: "Review the uncommitted changes.",
+          title: "Review changes",
+        });
+        yield* harness.waitForThread(THREAD_ID, (thread) =>
+          thread.messages.some((message) => message.id === `delegation:${child}`),
+        );
+
+        yield* adapter.queueTurnResponse(
+          child,
+          delegatedAnswer("follow-up-second", "follow-up-turn", "No issues left."),
+        );
+        const again = yield* harness.delegation.delegate({
+          parentThreadId: THREAD_ID,
+          threadId: child,
+          prompt: "Fixed both bugs. Please re-review.",
+        });
+        assert.strictEqual(again.threadId, child);
+
+        const isFollowUpResult = (id: string) => id.startsWith(`delegation:${child}:`);
+        const parent = yield* harness.waitForThread(THREAD_ID, (thread) =>
+          thread.messages.some((message) => isFollowUpResult(message.id)),
+        );
+        const result = parent.messages.find((message) => isFollowUpResult(message.id))!;
+        assert.include(result.text, "No issues left.");
+        assert.notInclude(result.text, "Found two bugs.");
+        const childThread = yield* harness.waitForThread(child, () => true);
+        assert.strictEqual(
+          childThread.messages.filter((message) => message.role === "user").length,
+          2,
+        );
+      }),
+    (harness) => harness.dispose,
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.live("delegation reports a buffered final message once the delegated turn completes", () =>
   delegateToCodex({
