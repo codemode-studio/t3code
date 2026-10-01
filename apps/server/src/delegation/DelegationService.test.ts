@@ -8,6 +8,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationLatestTurn,
+  type OrchestrationMessage,
   type OrchestrationSession,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
@@ -116,6 +117,16 @@ const sessionSet = (threadId: ThreadId): OrchestrationEvent => ({
   payload: { threadId, session: session(threadId, "ready") },
 });
 
+const assistantMessage = (id: string, text: string): OrchestrationMessage => ({
+  id: MessageId.make(id),
+  role: "assistant",
+  text,
+  turnId: TurnId.make("turn-1"),
+  streaming: false,
+  createdAt: AT,
+  updatedAt: AT,
+});
+
 interface Harness {
   readonly service: DelegationService.DelegationService["Service"];
   readonly setThread: (thread: OrchestrationThreadShell) => Effect.Effect<void>;
@@ -132,6 +143,10 @@ const withService = <A, E>(
     readonly startedActivities?: ReadonlyArray<OrchestrationThreadActivity>;
     /** User messages already in the projection, as thread and message id. */
     readonly userMessages?: ReadonlyArray<readonly [ThreadId, MessageId]>;
+    /** Threads a previous process created as delegated tasks. */
+    readonly delegatedThreads?: ReadonlyArray<ThreadId>;
+    /** What every thread's detail holds; one final answer by default. */
+    readonly messages?: ReadonlyArray<OrchestrationMessage>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -152,6 +167,13 @@ const withService = <A, E>(
     const userMessages = new Set(
       (options.userMessages ?? []).map(([threadId, messageId]) => `${threadId}/${messageId}`),
     );
+    /** The command id of each thread's creation event. */
+    const createdBy = new Map(
+      (options.delegatedThreads ?? []).map((threadId) => [
+        threadId,
+        CommandId.make(`server:delegation-thread-create:${threadId}`),
+      ]),
+    );
 
     const layer = DelegationService.layer.pipe(
       Layer.provide(
@@ -160,6 +182,7 @@ const withService = <A, E>(
             dispatch: (command) =>
               Effect.gen(function* () {
                 if (command.type === "thread.create") {
+                  createdBy.set(command.threadId, command.commandId);
                   yield* setThread(shell(command.threadId, null, { title: command.title }));
                 }
                 if (command.type === "thread.turn.start") {
@@ -168,6 +191,11 @@ const withService = <A, E>(
                 yield* Queue.offer(commands, command);
                 return { sequence: 1 };
               }),
+            // Only the first event's command id is read.
+            readThreadEvents: ({ threadId }) => {
+              const commandId = createdBy.get(threadId);
+              return commandId ? Stream.make({ ...sessionSet(threadId), commandId }) : Stream.empty;
+            },
             streamDomainEvents: Stream.unwrap(
               PubSub.subscribe(events).pipe(
                 Effect.tap(() => Deferred.succeed(subscribed, undefined)),
@@ -185,17 +213,7 @@ const withService = <A, E>(
                     Option.map((thread): OrchestrationThread => ({
                       ...thread,
                       deletedAt: null,
-                      messages: [
-                        {
-                          id: MessageId.make("final"),
-                          role: "assistant",
-                          text: "Found two bugs.",
-                          turnId: TurnId.make("turn-1"),
-                          streaming: false,
-                          createdAt: AT,
-                          updatedAt: AT,
-                        },
-                      ],
+                      messages: options.messages ?? [assistantMessage("final", "Found two bugs.")],
                       proposedPlans: [],
                       activities: [],
                       checkpoints: [],
@@ -343,7 +361,8 @@ describe("DelegationService", () => {
     ),
   );
 
-  it.effect("a delegated thread cannot delegate after a restart", () => {
+  // Its messages are gone too, as after a rewind to the start.
+  it.effect("a delegated thread cannot delegate after a restart or a rewind", () => {
     const child = ThreadId.make("reported-child");
     return withService(
       ({ service }) =>
@@ -358,13 +377,75 @@ describe("DelegationService", () => {
           shell(PARENT_ID, "completed", { session: session(PARENT_ID, "ready") }),
           shell(child, "completed", { session: session(child, "ready") }),
         ],
-        userMessages: [
-          [child, MessageId.make(`delegation-task:${child}`)],
-          [PARENT_ID, MessageId.make(`delegation:${child}`)],
-        ],
+        userMessages: [[PARENT_ID, MessageId.make(`delegation:${child}`)]],
+        delegatedThreads: [child],
+        messages: [],
       },
     );
   });
+
+  const settleChild = (
+    service: Harness["service"],
+    harness: Pick<Harness, "setThread" | "publish" | "nextCommand">,
+    latestTurn: OrchestrationLatestTurn["state"],
+    childSession: OrchestrationSession["status"],
+    lastError: string | null = null,
+  ) =>
+    Effect.gen(function* () {
+      const { threadId: child } = yield* service.delegate({
+        parentThreadId: PARENT_ID,
+        provider: "codex",
+        prompt: "Review.",
+        title: "Review changes",
+      });
+      for (let i = 0; i < 3; i++) yield* harness.nextCommand;
+      yield* harness.setThread(
+        shell(child, latestTurn, { session: { ...session(child, childSession), lastError } }),
+      );
+      yield* harness.publish(sessionSet(child));
+      yield* harness.nextCommand;
+      const result = yield* harness.nextCommand;
+      assert(result.type === "thread.turn.start");
+      return result.message.text;
+    });
+
+  it.effect("reports the turn's last message even when the turn points at earlier commentary", () =>
+    withService(
+      ({ service, ...harness }) =>
+        Effect.gen(function* () {
+          const text = yield* settleChild(service, harness, "completed", "ready");
+          assert.include(text, "Found two bugs.");
+          assert.notInclude(text, "Looking at the diff.");
+        }),
+      {
+        threads: [shell(PARENT_ID, "completed", { session: session(PARENT_ID, "ready") })],
+        // The shell's turn points at "final"; here that id is the commentary.
+        messages: [
+          assistantMessage("final", "Looking at the diff."),
+          assistantMessage("answer", "Found two bugs."),
+        ],
+      },
+    ),
+  );
+
+  it.effect("a failed task reports its partial message with the error", () =>
+    withService(
+      ({ service, ...harness }) =>
+        Effect.gen(function* () {
+          const text = yield* settleChild(
+            service,
+            harness,
+            "error",
+            "error",
+            "Usage limit reached.",
+          );
+          assert.include(text, 'Codex could not finish the delegated task "Review changes".');
+          assert.include(text, "Found two bugs.");
+          assert.include(text, "Error: Usage limit reached.");
+        }),
+      { threads: [shell(PARENT_ID, "completed", { session: session(PARENT_ID, "ready") })] },
+    ),
+  );
 
   it.effect("reports a task stopped before its turn started", () =>
     withService(

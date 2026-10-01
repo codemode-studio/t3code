@@ -1532,3 +1532,81 @@ it.live("delegation reports the buffered partial message of an aborted delegated
     ],
   }),
 );
+
+it.live("delegation reports an aborted turn as stopped when the session was reconnecting", () =>
+  delegateToCodex({
+    childEvents: [
+      {
+        type: "turn.started",
+        ...runtimeBase("evt-delegate-reconnect-1", "2026-02-24T11:02:00.000Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+      },
+      {
+        type: "message.delta",
+        ...runtimeBase("evt-delegate-reconnect-2", "2026-02-24T11:02:00.100Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        delta: "One bug so far.",
+      },
+      {
+        // Codex reports a reconnect as "starting" while the turn stays active.
+        type: "session.state.changed",
+        ...runtimeBase("evt-delegate-reconnect-3", "2026-02-24T11:02:00.150Z"),
+        threadId: THREAD_ID,
+        payload: { state: "starting" },
+      },
+      {
+        type: "turn.aborted",
+        ...runtimeBase("evt-delegate-reconnect-4", "2026-02-24T11:02:00.200Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        payload: { reason: "Interrupted" },
+      },
+    ],
+    expectedResult: [
+      'Codex was stopped before finishing the delegated task "Review changes".',
+      "One bug so far.",
+    ],
+  }),
+);
+
+it.live("delegation reports buffered output when an error precedes the failed completion", () =>
+  delegateToCodex({
+    childEvents: [
+      {
+        type: "turn.started",
+        ...runtimeBase("evt-delegate-error-1", "2026-02-24T11:03:00.000Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+      },
+      {
+        type: "message.delta",
+        ...runtimeBase("evt-delegate-error-2", "2026-02-24T11:03:00.100Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        delta: "Found one bug.",
+      },
+      {
+        // Codex queues the usage-limit error ahead of the failed turn/completed.
+        type: "runtime.error",
+        ...runtimeBase("evt-delegate-error-3", "2026-02-24T11:03:00.150Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        payload: { message: "Usage limit reached.", class: "provider_error" },
+      },
+      {
+        type: "turn.completed",
+        ...runtimeBase("evt-delegate-error-4", "2026-02-24T11:03:00.200Z"),
+        threadId: THREAD_ID,
+        turnId: FIXTURE_TURN_ID,
+        status: "failed",
+      },
+    ],
+    expectedResult: [
+      'Codex could not finish the delegated task "Review changes".',
+      "Found one bug.",
+      "Usage limit reached.",
+    ],
+  }),
+);

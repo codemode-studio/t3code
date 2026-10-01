@@ -2440,6 +2440,19 @@ const make = Effect.gen(function* () {
           : activeTurnId === null || eventTurnId === undefined || sameId(activeTurnId, eventTurnId);
 
         if (shouldApplyRuntimeError) {
+          // The error session ends the turn for readers, and Codex sends its
+          // turn.completed only after this. Flush, not finalize: if the
+          // provider carries on, the message keeps streaming.
+          const erroredTurnId = eventTurnId ?? activeTurnId;
+          if (erroredTurnId !== null) {
+            yield* flushBufferedAssistantMessagesForTurn({
+              event,
+              threadId: thread.id,
+              turnId: erroredTurnId,
+              createdAt: now,
+              commandTag: "assistant-delta-flush-on-runtime-error",
+            });
+          }
           yield* orchestrationEngine.dispatch({
             type: "thread.session.set",
             commandId: yield* providerCommandId(event, "runtime-error-session-set"),
