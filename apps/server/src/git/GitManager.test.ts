@@ -312,6 +312,7 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    generateRunSummary: () => Effect.die("generateRunSummary is not used by git tests"),
     ...overrides,
   };
 
@@ -360,6 +361,7 @@ function createTextGeneration(
             }),
         ),
       ),
+    generateRunSummary: (input) => implementation.generateRunSummary(input),
   };
 }
 

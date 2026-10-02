@@ -16,6 +16,7 @@ import {
   type ProjectionThreadMessageRepositoryShape,
   DeleteProjectionThreadMessagesInput,
   ListProjectionThreadMessagesInput,
+  ListProjectionTurnAssistantTextsInput,
   ProjectionThreadMessage,
 } from "../Services/ProjectionThreadMessages.ts";
 
@@ -226,6 +227,20 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       `,
   });
 
+  const listTurnAssistantTextRows = SqlSchema.findAll({
+    Request: ListProjectionTurnAssistantTextsInput,
+    Result: Schema.Struct({ text: Schema.String }),
+    execute: ({ threadId, turnId }) =>
+      sql`
+        SELECT text
+        FROM projection_thread_messages
+        WHERE thread_id = ${threadId}
+          AND turn_id = ${turnId}
+          AND role = 'assistant'
+        ORDER BY created_at ASC, message_id ASC
+      `,
+  });
+
   const getLatestUserMessageAtRow = SqlSchema.findOne({
     Request: ListProjectionThreadMessagesInput,
     Result: Schema.Struct({
@@ -287,6 +302,15 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       Effect.map((rows) => rows.map(toProjectionThreadMessage)),
     );
 
+  const listAssistantTextsByTurn: ProjectionThreadMessageRepositoryShape["listAssistantTextsByTurn"] =
+    (input) =>
+      listTurnAssistantTextRows(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlError("ProjectionThreadMessageRepository.listAssistantTextsByTurn:query"),
+        ),
+        Effect.map((rows) => rows.map((row) => row.text)),
+      );
+
   const getLatestUserMessageAt: ProjectionThreadMessageRepositoryShape["getLatestUserMessageAt"] = (
     input,
   ) =>
@@ -310,6 +334,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     getByMessageId,
     hasAssistantMessageForTurn,
     listByThreadId,
+    listAssistantTextsByTurn,
     getLatestUserMessageAt,
     deleteByThreadId,
   } satisfies ProjectionThreadMessageRepositoryShape;

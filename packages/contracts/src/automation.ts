@@ -84,6 +84,12 @@ export const AutomationRun = Schema.Struct({
   error: Schema.NullOr(Schema.String),
   /** Set once the run's thread was deleted, by `deleteThreadWhenDone` or by hand. */
   threadDeleted: Schema.optional(Schema.Boolean),
+  /**
+   * What the run's agent did, saved once its turn ends so it outlives the thread: the agent's last
+   * message, replaced by a summary from the text generation model when that succeeds. Capped at
+   * `AUTOMATION_RUN_SUMMARY_MAX_LENGTH`.
+   */
+  summary: Schema.optional(Schema.String),
 });
 export type AutomationRun = typeof AutomationRun.Type;
 
@@ -91,6 +97,8 @@ const AUTOMATION_NAME_MAX_LENGTH = 200;
 const AUTOMATION_PROMPT_MAX_LENGTH = 50_000;
 const AUTOMATION_MAX_TRIGGERS = 20;
 export const AUTOMATION_MAX_RUNS = 20;
+/** Every snapshot carries every run's summary, so a long final message is cut short. */
+export const AUTOMATION_RUN_SUMMARY_MAX_LENGTH = 2_000;
 export const DEFAULT_AUTOMATION_CATCH_UP_MINUTES = 60;
 
 /** Everything a user edits. The server owns ids, timestamps and run history. */
