@@ -75,6 +75,20 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
+export interface RunSummaryGenerationInput {
+  cwd: string;
+  /** The automation's instructions the run's agent received. */
+  instructions: string;
+  /** The agent's messages from the run, oldest first. */
+  agentMessages: ReadonlyArray<string>;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
+export interface RunSummaryGenerationResult {
+  summary: string;
+}
+
 /**
  * TextGeneration - Service tag for commit and change request text generation.
  */
@@ -106,6 +120,11 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+    /** Summarize what an automation run's agent did, from its messages. */
+    readonly generateRunSummary: (
+      input: RunSummaryGenerationInput,
+    ) => Effect.Effect<RunSummaryGenerationResult, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
@@ -113,7 +132,8 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle";
+  | "generateThreadTitle"
+  | "generateRunSummary";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -165,6 +185,10 @@ export const make = Effect.gen(function* () {
             return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
           }),
         ),
+      ),
+    generateRunSummary: (input) =>
+      resolveInstance(registry, "generateRunSummary", input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateRunSummary(input)),
       ),
   });
 });

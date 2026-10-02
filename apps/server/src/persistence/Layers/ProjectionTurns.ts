@@ -12,6 +12,7 @@ import {
   ClearCheckpointTurnConflictInput,
   DeleteProjectionTurnsByThreadInput,
   GetProjectionPendingTurnStartInput,
+  GetProjectionTurnByPendingMessageIdInput,
   GetProjectionTurnByTurnIdInput,
   ListProjectionTurnsByThreadInput,
   ProjectionPendingTurnStart,
@@ -229,6 +230,34 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       `,
   });
 
+  const getProjectionTurnByPendingMessageId = SqlSchema.findOneOption({
+    Request: GetProjectionTurnByPendingMessageIdInput,
+    Result: ProjectionTurnByIdDbRowSchema,
+    execute: ({ threadId, messageId }) =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          turn_id AS "turnId",
+          pending_message_id AS "pendingMessageId",
+          source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
+          source_proposed_plan_id AS "sourceProposedPlanId",
+          assistant_message_id AS "assistantMessageId",
+          state,
+          requested_at AS "requestedAt",
+          started_at AS "startedAt",
+          completed_at AS "completedAt",
+          checkpoint_turn_count AS "checkpointTurnCount",
+          checkpoint_ref AS "checkpointRef",
+          checkpoint_status AS "checkpointStatus",
+          checkpoint_files_json AS "checkpointFiles"
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+          AND pending_message_id = ${messageId}
+          AND turn_id IS NOT NULL
+        LIMIT 1
+      `,
+  });
+
   const clearCheckpointTurnConflictRow = SqlSchema.void({
     Request: ClearCheckpointTurnConflictInput,
     execute: ({ threadId, turnId, checkpointTurnCount }) =>
@@ -323,6 +352,17 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       ),
     );
 
+  const getByPendingMessageId: ProjectionTurnRepositoryShape["getByPendingMessageId"] = (input) =>
+    getProjectionTurnByPendingMessageId(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionTurnRepository.getByPendingMessageId:query",
+          "ProjectionTurnRepository.getByPendingMessageId:decodeRow",
+        ),
+      ),
+      Effect.map(Option.map((row) => row as Schema.Schema.Type<typeof ProjectionTurnById>)),
+    );
+
   const clearCheckpointTurnConflict: ProjectionTurnRepositoryShape["clearCheckpointTurnConflict"] =
     (input) =>
       clearCheckpointTurnConflictRow(input).pipe(
@@ -343,6 +383,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
     deletePendingTurnStartByThreadId,
     listByThreadId,
     getByTurnId,
+    getByPendingMessageId,
     clearCheckpointTurnConflict,
     deleteByThreadId,
   } satisfies ProjectionTurnRepositoryShape;

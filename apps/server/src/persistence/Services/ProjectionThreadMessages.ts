@@ -61,6 +61,13 @@ export const HasProjectionThreadAssistantMessageInput = Schema.Struct({
 export type HasProjectionThreadAssistantMessageInput =
   typeof HasProjectionThreadAssistantMessageInput.Type;
 
+export const ListProjectionTurnAssistantTextsInput = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
+});
+export type ListProjectionTurnAssistantTextsInput =
+  typeof ListProjectionTurnAssistantTextsInput.Type;
+
 export const DeleteProjectionThreadMessagesInput = Schema.Struct({
   threadId: ThreadId,
 });
@@ -106,6 +113,11 @@ export interface ProjectionThreadMessageRepositoryShape {
   readonly listByThreadId: (
     input: ListProjectionThreadMessagesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
+
+  /** Read the text of a turn's assistant messages, oldest first, without the rest of the thread. */
+  readonly listAssistantTextsByTurn: (
+    input: ListProjectionTurnAssistantTextsInput,
+  ) => Effect.Effect<ReadonlyArray<string>, ProjectionRepositoryError>;
 
   /** Read the latest user-message timestamp without loading message bodies. */
   readonly getLatestUserMessageAt: (

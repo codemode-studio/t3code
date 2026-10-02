@@ -44,7 +44,7 @@ import {
   XIcon,
   ZapIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -71,6 +71,7 @@ import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import ChatMarkdown from "../ChatMarkdown";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { TraitsPicker } from "../chat/TraitsPicker";
@@ -595,7 +596,7 @@ function AutomationEditor({
     }
   };
 
-  const openThread = (threadId: NonNullable<EnvironmentAutomation["runs"][number]["threadId"]>) => {
+  const openThread = (threadId: AutomationRunThreadId) => {
     if (!existing) return;
     void navigate({
       to: "/$environmentId/$threadId",
@@ -1427,12 +1428,14 @@ function AutomationInstructions({
   );
 }
 
+type AutomationRunThreadId = NonNullable<EnvironmentAutomation["runs"][number]["threadId"]>;
+
 function RunHistory({
   automation,
   onOpenThread,
 }: {
   automation: EnvironmentAutomation;
-  onOpenThread: (threadId: NonNullable<EnvironmentAutomation["runs"][number]["threadId"]>) => void;
+  onOpenThread: (threadId: AutomationRunThreadId) => void;
 }) {
   return (
     <EditorSection title="Recent runs">
@@ -1440,38 +1443,90 @@ function RunHistory({
         <p className="px-1 text-sm text-muted-foreground">No runs yet.</p>
       ) : (
         <div className="divide-y rounded-lg border">
-          {automation.runs.map((run) => {
-            const threadId = run.threadId;
-            return (
-              <div key={run.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                <span
-                  aria-hidden
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    run.error ? "bg-destructive" : "bg-success",
-                  )}
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="min-w-0 truncate">{run.cause}</span>
-                  {run.error ? (
-                    <span className="text-xs text-destructive-foreground">{run.error}</span>
-                  ) : null}
-                </div>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {formatRelativeTimeLabel(run.startedAt)}
-                </span>
-                {run.threadDeleted ? (
-                  <span className="shrink-0 text-xs text-muted-foreground">Thread deleted</span>
-                ) : threadId ? (
-                  <Button size="xs" variant="ghost" onClick={() => onOpenThread(threadId)}>
-                    Open thread
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
+          {automation.runs.map((run) => (
+            <RunRow
+              key={run.id}
+              run={run}
+              environmentId={automation.environmentId}
+              onOpenThread={onOpenThread}
+            />
+          ))}
         </div>
       )}
     </EditorSection>
+  );
+}
+
+/** Expands to the run's summary once its turn has ended and the server saved one. */
+function RunRow({
+  run,
+  environmentId,
+  onOpenThread,
+}: {
+  run: EnvironmentAutomation["runs"][number];
+  environmentId: EnvironmentId;
+  onOpenThread: (threadId: AutomationRunThreadId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const labelId = useId();
+  const threadId = run.threadId;
+  const summary = run.summary;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="relative flex items-center gap-3 px-4 py-2.5 text-sm">
+        {summary === undefined ? null : (
+          // Covers the row so a click anywhere toggles it; "Open thread" sits above it.
+          <CollapsibleTrigger
+            aria-labelledby={`${labelId}-cause ${labelId}-time`}
+            className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          />
+        )}
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            run.error ? "bg-destructive" : "bg-success",
+          )}
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span id={`${labelId}-cause`} className="min-w-0 truncate">
+            {run.cause}
+          </span>
+          {run.error ? (
+            <span className="text-xs text-destructive-foreground">{run.error}</span>
+          ) : null}
+        </div>
+        <span id={`${labelId}-time`} className="shrink-0 text-xs text-muted-foreground">
+          {formatRelativeTimeLabel(run.startedAt)}
+        </span>
+        {run.threadDeleted ? (
+          <span className="shrink-0 text-xs text-muted-foreground">Thread deleted</span>
+        ) : threadId ? (
+          <span className="relative shrink-0">
+            <Button size="xs" variant="ghost" onClick={() => onOpenThread(threadId)}>
+              Open thread
+            </Button>
+          </span>
+        ) : null}
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          {summary === undefined ? null : (
+            <ChevronDownIcon
+              className={cn(
+                "size-4 text-muted-foreground transition-transform",
+                open && "rotate-180",
+              )}
+            />
+          )}
+        </span>
+      </div>
+      {summary === undefined ? null : (
+        <CollapsiblePanel>
+          <div className="flex flex-col gap-1.5 border-t px-4 py-3">
+            <span className="text-xs text-muted-foreground">Run summary</span>
+            <ChatMarkdown text={summary} cwd={undefined} environmentId={environmentId} />
+          </div>
+        </CollapsiblePanel>
+      )}
+    </Collapsible>
   );
 }

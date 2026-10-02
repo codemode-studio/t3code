@@ -24,6 +24,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildRunSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
@@ -102,7 +103,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateRunSummary",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -132,7 +134,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateRunSummary";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -185,9 +188,9 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     );
 
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* () {
-      // Titles need only the supplied prompt, not configuration from the checkout.
+      // Titles and run summaries need only the supplied prompt, not configuration from the checkout.
       const workingDirectory =
-        operation === "generateThreadTitle"
+        operation === "generateThreadTitle" || operation === "generateRunSummary"
           ? yield* fileSystem
               .makeTempDirectoryScoped({ prefix: "t3code-claude-title-" })
               .pipe(
@@ -410,10 +413,29 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateRunSummary: TextGeneration.TextGeneration["Service"]["generateRunSummary"] =
+    Effect.fn("ClaudeTextGeneration.generateRunSummary")(function* (input) {
+      const { prompt, outputSchema } = buildRunSummaryPrompt({
+        instructions: input.instructions,
+        agentMessages: input.agentMessages,
+      });
+
+      const generated = yield* runClaudeJson({
+        operation: "generateRunSummary",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return { summary: generated.summary.trim() };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateRunSummary,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

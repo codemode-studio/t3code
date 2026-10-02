@@ -324,4 +324,45 @@ layer("ProjectionThreadMessageRepository", (it) => {
       );
     }),
   );
+
+  it.effect("lists one turn's assistant text in order, leaving out other turns and users", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-turn-assistant-texts");
+      const turnId = TurnId.make("turn-assistant-texts");
+      const message = (
+        id: string,
+        role: "user" | "assistant",
+        turn: TurnId | null,
+        text: string,
+        createdAt: string,
+      ) =>
+        repository.upsert({
+          messageId: MessageId.make(id),
+          threadId,
+          turnId: turn,
+          role,
+          text,
+          isStreaming: false,
+          createdAt,
+          updatedAt: createdAt,
+        });
+
+      yield* message("texts-later", "assistant", turnId, "Done.", "2026-03-01T00:00:03.000Z");
+      yield* message("texts-user", "user", turnId, "Run it.", "2026-03-01T00:00:00.000Z");
+      yield* message("texts-earlier", "assistant", turnId, "Working.", "2026-03-01T00:00:01.000Z");
+      yield* message(
+        "texts-other-turn",
+        "assistant",
+        TurnId.make("turn-assistant-texts-other"),
+        "Another run.",
+        "2026-03-01T00:00:02.000Z",
+      );
+
+      assert.deepStrictEqual(yield* repository.listAssistantTextsByTurn({ threadId, turnId }), [
+        "Working.",
+        "Done.",
+      ]);
+    }),
+  );
 });

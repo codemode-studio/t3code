@@ -32,6 +32,11 @@ earlier runs stay on the old server.
 An automation without triggers only runs when you press **Run now**. Turn off **Active** to pause
 every trigger without deleting the automation.
 
+Once a run's agent finishes, its row in **Recent runs** expands to show a short summary of what it
+did, which stays there after the run's thread is deleted. The project's text generation model,
+under **Settings → Source Control**, writes the summary. Until it does, or if it can't, the row shows
+the agent's final message.
+
 ## Sessions
 
 **Working copy** chooses between a fresh worktree for each run and the project checkout itself.
@@ -42,7 +47,8 @@ linked to the pull request. To review newer commits, ask the agent to run
 `gh pr checkout <number> --detach`.
 
 **Conversation** chooses between a new thread for each run and continuing the previous run's
-thread.
+thread. When continuing, a run that comes due while the previous one is still going, or waiting
+for you in the thread, doesn't start; it shows up as failed in **Recent runs** with the reason.
 
 **Delete thread when done** deletes each run's thread once the agent finishes, for automations
 whose results live elsewhere, such as a pushed branch or a pull request comment. A run that fails

@@ -18,6 +18,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildRunSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import * as TextGeneration from "./TextGeneration.ts";
@@ -34,6 +35,7 @@ const OpenCodeTextGenerationOperation = Schema.Literals([
   "generatePrContent",
   "generateBranchName",
   "generateThreadTitle",
+  "generateRunSummary",
 ]);
 
 type OpenCodeTextGenerationOperation = typeof OpenCodeTextGenerationOperation.Type;
@@ -453,10 +455,29 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       };
     });
 
+  const generateRunSummary: TextGeneration.TextGeneration["Service"]["generateRunSummary"] =
+    Effect.fn("OpenCodeTextGeneration.generateRunSummary")(function* (input) {
+      const { prompt, outputSchema } = buildRunSummaryPrompt({
+        instructions: input.instructions,
+        agentMessages: input.agentMessages,
+      });
+
+      const generated = yield* runOpenCodeJson({
+        operation: "generateRunSummary",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return { summary: generated.summary.trim() };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateRunSummary,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

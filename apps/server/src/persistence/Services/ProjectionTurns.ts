@@ -89,6 +89,13 @@ export const GetProjectionTurnByTurnIdInput = Schema.Struct({
 });
 export type GetProjectionTurnByTurnIdInput = typeof GetProjectionTurnByTurnIdInput.Type;
 
+export const GetProjectionTurnByPendingMessageIdInput = Schema.Struct({
+  threadId: ThreadId,
+  messageId: MessageId,
+});
+export type GetProjectionTurnByPendingMessageIdInput =
+  typeof GetProjectionTurnByPendingMessageIdInput.Type;
+
 export const GetProjectionPendingTurnStartInput = Schema.Struct({
   threadId: ThreadId,
 });
@@ -147,6 +154,11 @@ export interface ProjectionTurnRepositoryShape {
    */
   readonly getByTurnId: (
     input: GetProjectionTurnByTurnIdInput,
+  ) => Effect.Effect<Option.Option<ProjectionTurnById>, ProjectionRepositoryError>;
+
+  /** Looks up the concrete turn a user message started; none while it waits or if it never did. */
+  readonly getByPendingMessageId: (
+    input: GetProjectionTurnByPendingMessageIdInput,
   ) => Effect.Effect<Option.Option<ProjectionTurnById>, ProjectionRepositoryError>;
 
   /**
