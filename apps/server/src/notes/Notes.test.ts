@@ -1,14 +1,13 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
 import {
   CommandId,
   ComposerContextId,
+  EventId,
   MessageId,
   ProjectId,
-  ProviderInstanceId,
   ThreadId,
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
@@ -16,14 +15,20 @@ import {
   formatComposerContextReference,
   projectComposerContextForProvider,
 } from "@t3tools/shared/composerContextReferences";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
-import { layerTest as testServerConfig } from "../config.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import {
+  makeOrchestrationV2TestLayer,
+  seedProject,
+  testModelSelection,
+} from "../testUtils/orchestrationV2.ts";
 import {
   createNote,
   deleteNote,
@@ -38,10 +43,65 @@ import {
 const projectId = ProjectId.make("notes-project");
 const threadId = ThreadId.make("notes-thread");
 const messageId = MessageId.make("notes-message");
-const testLayer = Layer.mergeAll(
-  SqlitePersistenceMemory,
-  testServerConfig(process.cwd(), { prefix: "t3-notes-test-" }),
-).pipe(Layer.provideMerge(NodeServices.layer));
+const testLayer = makeOrchestrationV2TestLayer("t3-notes-test-");
+
+const createThread = (id: ThreadId) =>
+  Effect.flatMap(ThreadManagementService.ThreadManagementService, (threads) =>
+    threads.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make(`create:${id}`),
+      createdBy: "user",
+      creationSource: "web",
+      threadId: id,
+      projectId,
+      title: "Thread",
+      modelSelection: testModelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+    }),
+  );
+
+/** An agent reply the way provider ingestion records it. */
+const writeReply = (thread: ThreadId, id: MessageId, streaming: boolean) =>
+  Effect.gen(function* () {
+    const eventSink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make(`reply:${id}`),
+          type: "message.updated",
+          threadId: thread,
+          occurredAt: now,
+          payload: {
+            createdBy: "agent",
+            creationSource: "provider",
+            id,
+            threadId: thread,
+            runId: null,
+            nodeId: null,
+            role: "assistant",
+            text: "Source",
+            attachments: [],
+            streaming,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+      ],
+    });
+  });
+
+const sourced = (sourceThreadId: ThreadId | null, sourceMessageId: MessageId | null) => ({
+  title: "Sourced",
+  body: "",
+  tags: [],
+  projectId,
+  sourceThreadId,
+  sourceMessageId,
+});
 
 it.layer(testLayer)("notes", (it) => {
   it.effect(
@@ -149,16 +209,9 @@ it.layer(testLayer)("notes", (it) => {
 
   it.effect("stores project and transcript provenance, then searches, edits, and deletes", () =>
     Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const now = "2026-09-24T00:00:00.000Z";
-      yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
-        VALUES (${projectId}, 'Project', '/tmp/notes', '[]', ${now}, ${now})`;
-      yield* sql`INSERT INTO orchestration_v2_projection_threads
-        (thread_id, project_id, title, default_provider, runtime_mode, interaction_mode, created_at, updated_at, payload_json)
-        VALUES (${threadId}, ${projectId}, 'Thread', 'codex', 'full-access', 'default', ${now}, ${now}, '{}')`;
-      yield* sql`INSERT INTO orchestration_v2_projection_messages
-        (message_id, thread_id, role, streaming, created_at, updated_at, payload_json)
-        VALUES (${messageId}, ${threadId}, 'assistant', 0, ${now}, ${now}, '{}')`;
+      yield* seedProject(projectId, "/tmp/notes");
+      yield* createThread(threadId);
+      yield* writeReply(threadId, messageId, false);
 
       const note = yield* createNote({
         title: "First note",
@@ -185,7 +238,7 @@ it.layer(testLayer)("notes", (it) => {
         messageId: MessageId.make("notes-outgoing"),
         text,
         attachments: [],
-        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        modelSelection: testModelSelection,
         dispatchMode: { type: "start_immediately" },
       };
       const sent = yield* snapshotNotesInCommand(command);
@@ -225,35 +278,178 @@ it.layer(testLayer)("notes", (it) => {
     }),
   );
 
-  it.effect("accepts a source thread and message that only exist from before V2", () =>
+  it.effect("saves a note from a pre-V2 transcript nobody opened since the upgrade", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
+      const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+      const threads = yield* ThreadManagementService.ThreadManagementService;
       const now = "2026-09-24T00:00:00.000Z";
       const legacyThreadId = ThreadId.make("notes-legacy-thread");
       const legacyMessageId = MessageId.make("notes-legacy-message");
-      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, created_at, updated_at)
-        VALUES (${legacyThreadId}, ${projectId}, 'Legacy', '{}', ${now}, ${now})`;
-      yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
-        VALUES (${legacyMessageId}, ${legacyThreadId}, 'assistant', 'Old', 0, ${now}, ${now})`;
+      yield* seedProject(projectId, "/tmp/notes");
+      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at)
+        VALUES (${legacyThreadId}, ${projectId}, 'Legacy', '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access', 'default', ${now}, ${now})`;
+      yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, attachments_json, is_streaming, created_at, updated_at)
+        VALUES
+          (${legacyMessageId}, ${legacyThreadId}, 'assistant', 'Old', '[]', 0, ${now}, ${now}),
+          ('notes-legacy-latest', ${legacyThreadId}, 'assistant', 'Newer', '[]', 0, '2026-09-25T00:00:00.000Z', '2026-09-25T00:00:00.000Z')`;
+      // Startup imports the thread's shell with its latest message; the rest of the transcript
+      // waits until something reads it.
+      yield* importer.reconcileShells;
+      const sourceInV2 = () =>
+        sql<{ readonly message_id: string }>`
+          SELECT message_id FROM orchestration_v2_projection_messages WHERE message_id = ${legacyMessageId}
+        `.pipe(Effect.map((rows) => rows.length === 1));
+      expect(yield* sourceInV2()).toBe(false);
+
       const note = yield* createNote({
+        ...sourced(legacyThreadId, legacyMessageId),
         title: "From the old transcript",
-        body: "Old",
-        tags: [],
-        projectId: null,
-        sourceThreadId: legacyThreadId,
-        sourceMessageId: legacyMessageId,
       });
       expect(note.sourceMessageId).toBe(legacyMessageId);
-      const stray = yield* createNote({
-        title: "Unknown source",
-        body: "",
-        tags: [],
-        projectId: null,
-        sourceThreadId: ThreadId.make("notes-missing-thread"),
-        sourceMessageId: null,
-      }).pipe(Effect.result);
-      expect(stray._tag).toBe("Failure");
+      expect(yield* sourceInV2()).toBe(true);
+
+      // The note keeps the source it was saved from even after that thread goes away.
+      yield* threads.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("notes-legacy-delete"),
+        threadId: legacyThreadId,
+      });
+      expect((yield* getNote(note.id)).sourceThreadId).toBe(legacyThreadId);
       yield* deleteNote(note.id);
+    }),
+  );
+
+  it.effect("rejects sources that are unknown, deleted, unfinished, or from another project", () =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const otherProjectId = ProjectId.make("notes-other-project");
+      const liveThreadId = ThreadId.make("notes-source-live");
+      const deletedThreadId = ThreadId.make("notes-source-deleted");
+      const finishedId = MessageId.make("notes-source-finished");
+      const streamingId = MessageId.make("notes-source-streaming");
+      yield* seedProject(projectId, "/tmp/notes");
+      yield* seedProject(otherProjectId, "/tmp/notes-other");
+      yield* createThread(liveThreadId);
+      yield* createThread(deletedThreadId);
+      yield* writeReply(liveThreadId, finishedId, false);
+      yield* writeReply(liveThreadId, streamingId, true);
+      yield* writeReply(deletedThreadId, MessageId.make("notes-source-gone"), false);
+      yield* threads.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("notes-source-delete"),
+        threadId: deletedThreadId,
+      });
+
+      const failure = (input: ReturnType<typeof sourced>) =>
+        createNote(input).pipe(
+          Effect.flip,
+          Effect.map((error) => error.message),
+        );
+      const wrongThread = "Source thread does not belong to this project and environment.";
+      const unfinished = "Source message is not complete on this environment.";
+      expect(yield* failure(sourced(ThreadId.make("notes-source-unknown"), null))).toBe(
+        wrongThread,
+      );
+      expect(yield* failure(sourced(deletedThreadId, MessageId.make("notes-source-gone")))).toBe(
+        wrongThread,
+      );
+      expect(
+        yield* failure({ ...sourced(liveThreadId, finishedId), projectId: otherProjectId }),
+      ).toBe(wrongThread);
+      expect(yield* failure(sourced(liveThreadId, streamingId))).toBe(unfinished);
+      expect(yield* failure(sourced(liveThreadId, MessageId.make("notes-source-none")))).toBe(
+        unfinished,
+      );
+      expect(yield* failure(sourced(null, finishedId))).toBe(unfinished);
+
+      const saved = yield* createNote(sourced(liveThreadId, finishedId));
+      yield* deleteNote(saved.id);
+    }),
+  );
+
+  it.effect("keeps a queued message's other context when a text-only edit adds a note", () =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const queuedThreadId = ThreadId.make("notes-queued-thread");
+      yield* seedProject(projectId, "/tmp/notes");
+      yield* createThread(queuedThreadId);
+      const note = yield* createNote({
+        ...sourced(null, null),
+        projectId: null,
+        title: "Release checklist",
+        body: "Bump the version.",
+      });
+      const mention = {
+        version: 1 as const,
+        kind: "mention" as const,
+        contextId: ComposerContextId.make("mention_readme"),
+        label: "README.md",
+        path: "README.md",
+      };
+      const mentionRef = formatComposerContextReference(mention);
+      const noteRef = formatComposerContextReference({
+        kind: "note",
+        contextId: ComposerContextId.make(`note_${note.id}`),
+        label: note.title,
+      });
+      const send = (id: string, text: string, records?: ReadonlyArray<typeof mention>) => {
+        const command: OrchestrationV2Command = {
+          type: "message.dispatch",
+          commandId: CommandId.make(id),
+          createdBy: "user",
+          creationSource: "web",
+          threadId: queuedThreadId,
+          messageId: MessageId.make(id),
+          text,
+          attachments: [],
+          ...(records === undefined ? {} : { context: { version: 1, records: [...records] } }),
+          modelSelection: testModelSelection,
+          dispatchMode: { type: "start_immediately" },
+        };
+        return threads.dispatch(command);
+      };
+      yield* send("notes-queued-first", "Start");
+      // The first run is still starting, so this one waits in the queue.
+      yield* send("notes-queued-second", `Read ${mentionRef}`, [mention]);
+      const queuedRun = (yield* threads.getThreadRecords(queuedThreadId, ["runs"])).runs.find(
+        (run) => run.userMessageId === MessageId.make("notes-queued-second"),
+      )!;
+      expect(queuedRun.status).toBe("queued");
+
+      // The client sends no context with an edit that has no attachments.
+      const editCommand = {
+        type: "queued-run.edit" as const,
+        commandId: CommandId.make("notes-queued-edit"),
+        threadId: queuedThreadId,
+        runId: queuedRun.id,
+        text: `Read ${mentionRef} and follow ${noteRef}`,
+      };
+      const edit = yield* snapshotNotesInCommand(editCommand);
+      yield* threads.dispatch(edit);
+      const edited = (yield* threads.getThreadRecords(queuedThreadId, ["messages"], {
+        messageIds: [MessageId.make("notes-queued-second")],
+      })).messages[0]!;
+      expect(edited.context?.records).toEqual([
+        mention,
+        expect.objectContaining({ kind: "note", content: "Bump the version." }),
+      ]);
+      const prompt = projectComposerContextForProvider({
+        text: edited.text,
+        records: edited.context!.records,
+      });
+      expect(prompt).toContain("path: README.md");
+      expect(prompt).toContain("content:\nBump the version.");
+      expect(prompt).not.toContain('unavailable="true"');
+
+      // Context the client does send stays authoritative.
+      const explicit = yield* snapshotNotesInCommand({
+        ...editCommand,
+        context: { version: 1, records: [] },
+      });
+      expect(explicit.type === "queued-run.edit" && explicit.context?.records).toEqual([
+        expect.objectContaining({ kind: "note" }),
+      ]);
     }),
   );
 

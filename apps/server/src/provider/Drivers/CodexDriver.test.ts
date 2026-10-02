@@ -25,6 +25,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
 import * as ResetCreditCoordinator from "../Layers/resetCreditCoordinator.ts";
 import * as ProviderEventLoggers from "../Layers/ProviderEventLoggers.ts";
 import * as ModelManifest from "../ModelManifest.ts";
@@ -306,6 +307,96 @@ it.layer(testLayer)("CodexDriver", (it) => {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
         Effect.scoped,
       ),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "keeps project gh logins out of the shared app-server but gives each text request its own",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const tempDir = yield* fs
+          .makeTempDirectoryScoped({ prefix: "t3-codex-driver-gh-" })
+          .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
+        const binaryPath = NodePath.join(tempDir, "bin", "codex");
+        yield* fs.makeDirectory(NodePath.dirname(binaryPath), { recursive: true });
+        yield* fs.writeFileString(binaryPath, "#!/bin/sh\n");
+        yield* fs.chmod(binaryPath, 0o755);
+        const projectA = NodePath.join(tempDir, "project-a");
+        const projectB = NodePath.join(tempDir, "project-b");
+        const tokens: Record<string, string> = { [projectA]: "token-a", [projectB]: "token-b" };
+        const launches: Array<NodeJS.ProcessEnv> = [];
+        const commands: Array<{ cwd: string | undefined; token: string | undefined }> = [];
+        const instanceId = ProviderInstanceId.make("codex-shared-gh");
+        const instance = yield* CodexDriver.create({
+          instanceId,
+          displayName: "Codex test",
+          enabled: true,
+          environment: [],
+          config: {
+            ...CodexDriver.defaultConfig(),
+            binaryPath,
+            homePath: NodePath.join(tempDir, "codex-home"),
+          },
+        }).pipe(
+          Effect.provideService(GitHubCliAccountEnvironment, {
+            forCwd: (cwd) => {
+              const token = tokens[cwd];
+              return Effect.succeed(token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {});
+            },
+          }),
+          Effect.provideService(
+            CodexAdapterV2.CodexAppServerClientFactory,
+            CodexAdapterV2.CodexAppServerClientFactory.of({
+              open: (launch) =>
+                Effect.sync(() => launches.push(launch.environment)).pipe(
+                  Effect.andThen(Effect.die("The fixture stops after recording the launch")),
+                ),
+            }),
+          ),
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) =>
+              Effect.sync(() => {
+                if (command._tag === "StandardCommand") {
+                  commands.push({ cwd: command.options.cwd, token: command.options.env?.GH_TOKEN });
+                }
+              }).pipe(Effect.andThen(Effect.die("The fixture stops after recording the spawn"))),
+            ),
+          ),
+        );
+
+        // Codex serves every thread of an instance from one app-server, so the
+        // checkout that happens to open it must not lend its login to the rest.
+        for (const [index, cwd] of [projectA, projectB].entries()) {
+          yield* instance.orchestrationAdapter
+            .openSession({
+              threadId: ThreadId.make(`gh-thread-${index}`),
+              providerSessionId: ProviderSessionId.make(`gh-session-${index}`),
+              modelSelection: { instanceId, model: "gpt-5.4" },
+              runtimePolicy: ProviderAdapterV2RuntimePolicy.make({
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                cwd,
+              }),
+            })
+            .pipe(Effect.scoped, Effect.exit);
+        }
+        expect(launches).toHaveLength(2);
+        for (const environment of launches) {
+          expect(environment.GH_TOKEN).not.toMatch(/^token-/);
+          expect(environment.GITHUB_TOKEN).not.toMatch(/^token-/);
+        }
+
+        // `codex exec` runs once per request in that request's checkout.
+        yield* instance.textGeneration
+          .generateThreadTitle({
+            cwd: projectB,
+            message: "Name this thread",
+            modelSelection: { instanceId, model: "gpt-5.4" },
+          })
+          .pipe(Effect.exit);
+        expect(commands).toContainEqual({ cwd: projectB, token: "token-b" });
+      }).pipe(Effect.scoped),
   );
 
   it.effect("stays manual-only when the configured executable does not exist", () =>

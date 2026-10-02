@@ -2,7 +2,6 @@ import * as Effect from "effect/Effect";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
-import { CodexAppServerClientFactory } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { ClaudeAgentSdkQueryRunner } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
 import { OpenCodeRuntime } from "./opencodeRuntime.ts";
@@ -17,8 +16,10 @@ import { OpenCodeRuntime } from "./opencodeRuntime.ts";
  * The selection is read when the driver instance is created: sessions open on
  * orchestrator fibers that do not carry it.
  *
- * Cursor runs its agent inside the server process and OpenCode 2 shares one
- * server per instance, so neither can take a per-checkout login.
+ * Codex and OpenCode 2 share one agent server across every thread of an
+ * instance and Cursor runs its agent inside the server process, so none of
+ * them can take a per-checkout login. Codex text generation still does: each
+ * request spawns its own `codex exec` in the request's checkout.
  */
 type GitHubAccounts = (typeof GitHubCliAccountEnvironment)["Service"];
 
@@ -65,27 +66,6 @@ export const withGitHubAccountSpawner = <A, E, R>(effect: Effect.Effect<A, E, R>
           Effect.flatMap(withCommandAccount(accounts, command), (next) => spawner.spawn(next)),
         ),
       ),
-    );
-  });
-
-/** Codex starts one app-server per session. */
-export const withGitHubAccountCodexClients = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    const factory = yield* CodexAppServerClientFactory;
-    const accounts = yield* GitHubCliAccountEnvironment;
-    return yield* effect.pipe(
-      Effect.provideService(CodexAppServerClientFactory, {
-        open: (input) =>
-          accountEnvironment(accounts, input.runtimePolicy.cwd).pipe(
-            Effect.flatMap((environment) =>
-              factory.open(
-                hasEntries(environment)
-                  ? { ...input, environment: { ...input.environment, ...environment } }
-                  : input,
-              ),
-            ),
-          ),
-      }),
     );
   });
 

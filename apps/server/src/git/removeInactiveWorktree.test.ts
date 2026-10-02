@@ -4,6 +4,8 @@ import {
   ProviderInstanceId,
   RunId,
   ThreadId,
+  type OrchestrationV2Run,
+  type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -15,7 +17,10 @@ import * as Result from "effect/Result";
 
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
-import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import {
+  ThreadManagementProjectionLoadError,
+  ThreadManagementService,
+} from "../orchestration-v2/ThreadManagementService.ts";
 import { GitWorkflowService } from "./GitWorkflowService.ts";
 import { removeInactiveWorktree } from "./removeInactiveWorktree.ts";
 
@@ -77,6 +82,9 @@ function setup(
 ) {
   let current = initial;
   let snapshotFailed = false;
+  let recordsFailed = false;
+  const runStatuses = new Map<ThreadId, ReadonlyArray<OrchestrationV2Run["status"]>>();
+  const recordReads: ThreadId[] = [];
   const removed: string[] = [];
   const layer = Layer.mergeAll(
     Layer.mock(ThreadManagementService)({
@@ -91,6 +99,23 @@ function setup(
                 archivedThreads: archived,
               }),
         ),
+      getProjectThreadRecords: (input) =>
+        Effect.suspend(() => {
+          recordReads.push(input.threadId);
+          if (recordsFailed) {
+            return Effect.fail(
+              new ThreadManagementProjectionLoadError({
+                projectId: input.projectId,
+                threadId: input.threadId,
+                cause: "projection unavailable",
+              }),
+            );
+          }
+          return Effect.succeed({
+            thread: thread({ id: input.threadId }),
+            runs: (runStatuses.get(input.threadId) ?? []).map((status) => ({ status })),
+          } as unknown as OrchestrationV2ThreadProjection);
+        }),
     }),
     Layer.mock(ProjectStoreV2)({
       list: () =>
@@ -125,8 +150,15 @@ function setup(
   return {
     layer,
     removed,
+    recordReads,
     failSnapshot: () => {
       snapshotFailed = true;
+    },
+    failRecords: () => {
+      recordsFailed = true;
+    },
+    setRuns: (threadId: ThreadId, statuses: ReadonlyArray<OrchestrationV2Run["status"]>) => {
+      runStatuses.set(threadId, statuses);
     },
     setThreads: (threads: OrchestrationV2ThreadShell[]) => {
       current = threads;
@@ -200,6 +232,42 @@ describe("removeInactiveWorktree", () => {
       const result = yield* removeInactiveWorktree(input).pipe(Effect.result);
       assert.equal(result._tag, "Failure");
       assert.deepEqual(state.removed, ["/linked"]);
+    }).pipe(Effect.provide(state.layer));
+  });
+
+  it.effect("protects a worktree whose queue restart recovery is holding", () => {
+    const held = thread({ worktreePath: "/linked", status: "completed" });
+    const state = setup([held]);
+    state.setRuns(held.id, ["completed", "queued"]);
+    return Effect.gen(function* () {
+      const result = yield* removeInactiveWorktree(input).pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      if (Result.isFailure(result)) assert.include(result.failure.message, "A thread is running");
+      assert.deepEqual(state.removed, []);
+    }).pipe(Effect.provide(state.layer));
+  });
+
+  it.effect("keeps the worktree when a matching thread's runs cannot be read", () => {
+    const state = setup([thread({ worktreePath: "/linked" })]);
+    state.failRecords();
+    return Effect.gen(function* () {
+      const result = yield* removeInactiveWorktree(input).pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      if (Result.isFailure(result)) assert.include(result.failure.message, "Could not check");
+      assert.deepEqual(state.removed, []);
+    }).pipe(Effect.provide(state.layer));
+  });
+
+  it.effect("removes an idle worktree, reading runs only for its own threads", () => {
+    const linked = thread({ id: ThreadId.make("linked"), worktreePath: "/linked" });
+    const elsewhere = thread({ id: ThreadId.make("elsewhere"), worktreePath: "/other" });
+    const state = setup([linked, elsewhere]);
+    state.setRuns(linked.id, ["completed", "cancelled"]);
+    state.setRuns(elsewhere.id, ["queued"]);
+    return Effect.gen(function* () {
+      yield* removeInactiveWorktree(input);
+      assert.deepEqual(state.removed, ["/linked"]);
+      assert.deepEqual(state.recordReads, [linked.id]);
     }).pipe(Effect.provide(state.layer));
   });
 });

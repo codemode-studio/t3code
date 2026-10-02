@@ -14,7 +14,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import Notes from "./ForkMigrations/001_Notes.ts";
 
-export const forkMigrationEntries = [[1, "Notes", Notes]] as const;
+const forkMigrationEntries = [[1, "Notes", Notes]] as const;
 
 /**
  * Rows earlier fork builds wrote into the upstream ledger, with the fork migration that now owns

@@ -40,10 +40,7 @@ import {
   type CodexAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import {
-  withGitHubAccountCodexClients,
-  withGitHubAccountSpawner,
-} from "../ProviderGitHubAccountEnvironment.ts";
+import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import * as ResetCreditCoordinator from "../Layers/resetCreditCoordinator.ts";
 import {
@@ -206,7 +203,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         },
         { onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
       ).pipe(
-        withGitHubAccountCodexClients,
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({

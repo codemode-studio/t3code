@@ -21,6 +21,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { planAttachmentClaim } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 
 interface NoteRow {
   readonly id: string;
@@ -139,42 +140,30 @@ const validateAssociation = (
       if (projects.length === 0)
         return yield* new NoteError({ message: "Project was not found on this environment." });
     }
-    if (input.sourceThreadId !== null) {
-      // Threads imported from before orchestration V2 keep their rows in the legacy table.
-      const threads = yield* sql<{ project_id: string }>`
-        SELECT project_id FROM orchestration_v2_projection_threads
-        WHERE thread_id = ${input.sourceThreadId} AND deleted_at IS NULL
-        UNION ALL
-        SELECT project_id FROM projection_threads
-        WHERE thread_id = ${input.sourceThreadId} AND deleted_at IS NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM orchestration_v2_projection_threads WHERE thread_id = ${input.sourceThreadId}
-          )
-      `;
-      if (
-        threads.length === 0 ||
-        (input.projectId !== null && threads[0]?.project_id !== input.projectId)
-      ) {
-        return yield* new NoteError({
-          message: "Source thread does not belong to this project and environment.",
-        });
-      }
+    if (input.sourceThreadId === null) {
+      if (input.sourceMessageId === null) return;
+      return yield* new NoteError({
+        message: "Source message is not complete on this environment.",
+      });
     }
-    if (input.sourceMessageId !== null) {
-      // A legacy transcript is copied into V2 only once its thread is opened.
-      const messages = yield* sql<{ message_id: string }>`
-        SELECT message_id FROM orchestration_v2_projection_messages
-        WHERE message_id = ${input.sourceMessageId} AND thread_id = ${input.sourceThreadId}
-          AND streaming = 0
-        UNION ALL
-        SELECT message_id FROM projection_thread_messages
-        WHERE message_id = ${input.sourceMessageId} AND thread_id = ${input.sourceThreadId}
-          AND is_streaming = 0
-      `;
-      if (messages.length === 0)
-        return yield* new NoteError({
-          message: "Source message is not complete on this environment.",
-        });
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    // Null for unknown and deleted threads alike.
+    const shell = yield* threads.getThreadShell(input.sourceThreadId);
+    if (shell === null || (input.projectId !== null && shell.projectId !== input.projectId)) {
+      return yield* new NoteError({
+        message: "Source thread does not belong to this project and environment.",
+      });
+    }
+    if (input.sourceMessageId === null) return;
+    // Reading records first copies a thread imported from before V2 into V2, so a note can
+    // come from a transcript nobody has opened since the upgrade.
+    const { messages } = yield* threads.getThreadRecords(input.sourceThreadId, ["messages"], {
+      messageIds: [input.sourceMessageId],
+    });
+    if (!messages.some((message) => message.id === input.sourceMessageId && !message.streaming)) {
+      return yield* new NoteError({
+        message: "Source message is not complete on this environment.",
+      });
     }
   });
 
@@ -302,12 +291,31 @@ export const snapshotNotesInMessage = (message: {
     return { version: 1, records } satisfies OrchestrationMessageContext;
   });
 
-/** Applies `snapshotNotesInMessage` to the client commands that carry message text. */
+/**
+ * Applies `snapshotNotesInMessage` to the client commands that carry message text. A queued-run
+ * edit without context keeps the queued message's own records, which the edit would otherwise
+ * replace with only the notes; context the client does send is authoritative.
+ */
 export const snapshotNotesInCommand = (command: OrchestrationV2Command) =>
-  command.type === "message.dispatch" || command.type === "queued-run.edit"
-    ? snapshotNotesInMessage(command).pipe(
-        Effect.map((context): OrchestrationV2Command =>
-          context === undefined ? command : { ...command, context },
-        ),
-      )
-    : Effect.succeed(command);
+  Effect.gen(function* () {
+    if (command.type !== "message.dispatch" && command.type !== "queued-run.edit") {
+      return command;
+    }
+    let base = command.context;
+    if (command.type === "queued-run.edit" && base === undefined) {
+      if (!hasNoteReference(command.text)) return command;
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const queued = yield* threads.getThreadRecords(command.threadId, ["runs", "messages"], {
+        runIds: [command.runId],
+        messageRunIds: [command.runId],
+      });
+      const run = queued.runs.find((candidate) => candidate.id === command.runId);
+      base = queued.messages.find((message) => message.id === run?.userMessageId)?.context;
+    }
+    const context = yield* snapshotNotesInMessage({ text: command.text, context: base });
+    return context === undefined ? command : ({ ...command, context } as OrchestrationV2Command);
+  });
+
+function hasNoteReference(text: string): boolean {
+  return collectComposerContextReferences(text).some((reference) => reference.kind === "note");
+}

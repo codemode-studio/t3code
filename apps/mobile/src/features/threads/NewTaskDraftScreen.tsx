@@ -45,7 +45,7 @@ import {
   composerContextImportsAtom,
   insertComposerDraftContext,
 } from "../../state/use-composer-drafts";
-import { clearPendingNoteForChat, pendingNoteForChat } from "../notes/pendingNoteForChat";
+import { attachPendingNoteToDraft } from "../notes/pendingNoteForChat";
 import {
   composerContextSendBlockReason,
   type ComposerDocumentAttachment,
@@ -200,30 +200,40 @@ export function NewTaskDraftScreen(props: {
 }) {
   const projects = useProjects();
   const flow = useNewTaskFlow();
+  // Alert once per request; a refused note stays queued for a later attempt.
+  const refusedNoteRequestRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!flow.draftKey || !flow.selectedProject) return;
-    const note = pendingNoteForChat(flow.selectedProject.environmentId, props.noteRequestId);
-    if (!note) return;
-    const contextId = ComposerContextId.make(`note_${note.id}`);
-    const inserted = insertComposerDraftContext(flow.draftKey, {
-      text: `${formatComposerContextReference({ kind: "note", contextId, label: note.title })} `,
-      context: {
-        version: 1,
-        records: [
-          {
+    if (!flow.draftKey) return;
+    const outcome = attachPendingNoteToDraft({
+      draftKey: flow.draftKey,
+      selectedProject: flow.selectedProject,
+      routeProject: props.initialProjectRef,
+      requestId: props.noteRequestId,
+      insert: (draftKey, note) => {
+        const contextId = ComposerContextId.make(`note_${note.id}`);
+        return insertComposerDraftContext(draftKey, {
+          text: `${formatComposerContextReference({ kind: "note", contextId, label: note.title })} `,
+          context: {
             version: 1,
-            kind: "note",
-            contextId,
-            noteId: note.id,
-            label: note.title,
-            title: note.title,
-            content: "",
+            records: [
+              {
+                version: 1,
+                kind: "note",
+                contextId,
+                noteId: note.id,
+                label: note.title,
+                title: note.title,
+                content: "",
+              },
+            ],
           },
-        ],
+        });
       },
     });
-    if (inserted) clearPendingNoteForChat(flow.selectedProject.environmentId, note.id);
-  }, [flow.draftKey, flow.selectedProject, props.noteRequestId]);
+    if (outcome !== "rejected" || refusedNoteRequestRef.current === props.noteRequestId) return;
+    refusedNoteRequestRef.current = props.noteRequestId ?? null;
+    Alert.alert("Note not added", "Remove some context from this draft, then add the note again.");
+  }, [flow.draftKey, flow.selectedProject, props.initialProjectRef, props.noteRequestId]);
   const navigation = useNavigation();
   const {
     consumeShare,

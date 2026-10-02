@@ -76,6 +76,7 @@ import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as AutomationService from "./automation/AutomationService.ts";
+import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -487,7 +488,11 @@ const ThreadSettlementWorkerLive = Layer.effectDiscard(
 // message paths a user does; ws.ts serves the service for the automations page.
 const AutomationServiceLive = Layer.effectDiscard(
   AutomationService.AutomationService.pipe(Effect.flatMap((service) => service.start())),
-).pipe(Layer.provideMerge(AutomationService.layer));
+).pipe(
+  // Its own reader of the durable outbox: settling a run checks for a restart continuation the
+  // effect worker still owes it.
+  Layer.provideMerge(AutomationService.layer.pipe(Layer.provide(EffectOutbox.layer))),
+);
 
 const ThreadPullRequestWorkerLive = Layer.effectDiscard(
   ThreadPullRequestService.make.pipe(Effect.flatMap((service) => service.start())),

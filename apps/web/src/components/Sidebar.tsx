@@ -2630,9 +2630,14 @@ export default function Sidebar() {
   });
   // Scope flips drop the selection: rows selected under the old scope may be
   // hidden now, and bulk actions must never count or touch invisible rows.
+  // Fork (profiles): keyed by membership, not the Set, which is rebuilt on unrelated updates.
+  const profileScopeSignature = useMemo(
+    () => (profileProjectKeys === null ? null : [...profileProjectKeys].toSorted().join("\n")),
+    [profileProjectKeys],
+  );
   useEffect(() => {
     clearSelection();
-  }, [clearSelection, projectScopeKey]);
+  }, [clearSelection, projectScopeKey, profileScopeSignature]);
 
   const openProjectSettings = useCallback(
     (projectGroup: SidebarProjectSnapshot) => {

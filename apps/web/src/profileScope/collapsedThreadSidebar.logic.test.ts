@@ -25,7 +25,16 @@ function thread(id: string, overrides: Partial<RailThread> = {}): RailThread {
     latestUserMessageAt: null,
     runtime: null,
     latestRun: null,
+    lineage: { rootThreadId: ThreadId.make(id), parentThreadId: null, relationshipToParent: null },
     ...overrides,
+  };
+}
+
+function childOf(parent: string, relationshipToParent: "fork" | "subagent") {
+  return {
+    rootThreadId: ThreadId.make(parent),
+    parentThreadId: ThreadId.make(parent),
+    relationshipToParent,
   };
 }
 
@@ -42,6 +51,24 @@ describe("partitionRailThreads", () => {
   });
 
   const now = new Date("2026-09-01T12:00:00.000Z");
+
+  it("leaves subagents to their parent's Agents panel but keeps forks", () => {
+    const result = partitionRailThreads({
+      threads: [
+        thread("parent", { pinnedAt: "2026-09-01T09:00:00.000Z" }),
+        thread("pinned-subagent", {
+          pinnedAt: "2026-09-01T09:30:00.000Z",
+          lineage: childOf("parent", "subagent"),
+        }),
+        thread("subagent", { lineage: childOf("parent", "subagent") }),
+        thread("fork", { lineage: childOf("parent", "fork") }),
+      ],
+      scopedProjectKeys: null,
+      now,
+    });
+    expect(result.pinned.map((entry) => entry.id)).toEqual(["parent"]);
+    expect(result.active.map((entry) => entry.id)).toEqual(["fork"]);
+  });
 
   it("keeps a thread snoozed until its UTC wake time outside UTC", () => {
     const result = partitionRailThreads({

@@ -616,7 +616,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         },
       });
       if (!source) {
-        toastManager.add({ type: "error", title: "Wait for the message to finish saving" });
+        toastManager.add({
+          type: "error",
+          title: messageRow
+            ? "Wait for the message to finish saving"
+            : "This message is no longer shown",
+        });
         return;
       }
       const body = text.trim();

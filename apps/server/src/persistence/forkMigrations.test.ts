@@ -105,4 +105,19 @@ describe("fork migration ledger", () => {
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
+
+  it.effect("leaves rows alone unless both the id and the name are a known fork row", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 54 });
+      // A fork migration name under another id, and another name under a fork id.
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (55, 'NotesV2')`;
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (57, 'Notes')`;
+      const before = yield* upstreamLedger;
+
+      yield* runMigrations();
+      assert.deepStrictEqual(yield* upstreamLedger, before);
+      assert.isFalse(yield* tableExists("orchestration_v2_events"));
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
 });

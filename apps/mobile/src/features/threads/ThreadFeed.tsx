@@ -53,11 +53,7 @@ import { videoMimeType } from "@t3tools/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { notesEnvironment } from "../../state/notes";
 import { readThreadShell } from "../../state/entities";
-import {
-  resolveNoteSource,
-  transcriptNoteTitle,
-  type TranscriptNoteTarget,
-} from "../notes/transcriptNote";
+import { saveTranscriptNote, type TranscriptNoteTarget } from "../notes/transcriptNote";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
@@ -1802,7 +1798,7 @@ function renderFeedEntry(
                 <SymbolView name="pencil" size={14} tintColor={iconSubtleColor} />
               </Pressable>
             ) : null}
-            {!entry.pendingMessage && !message.streaming && message.text.trim().length > 0 ? (
+            {message.projectedItem && !message.streaming && message.text.trim().length > 0 ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Save as note"
@@ -1903,15 +1899,17 @@ function renderFeedEntry(
                 sourceTitle={props.threadTitle}
               />
             ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Save as note"
-              hitSlop={8}
-              className="size-7 items-center justify-center"
-              onPress={() => props.onSaveAsNote(message, renderedText)}
-            >
-              <SymbolView name="doc.text" size={14} tintColor={iconSubtleColor} />
-            </Pressable>
+            {message.projectedItem ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Save as note"
+                hitSlop={8}
+                className="size-7 items-center justify-center"
+                onPress={() => props.onSaveAsNote(message, renderedText)}
+              >
+                <SymbolView name="doc.text" size={14} tintColor={iconSubtleColor} />
+              </Pressable>
+            ) : null}
             <CopyTextButton
               accessibilityLabel="Copy message"
               text={renderedText}
@@ -2139,41 +2137,56 @@ function ThreadFeedPlaceholder(props: {
 /** What Save as note needs from a feed message: persisted ones carry their owning thread. */
 type SavableNoteMessage = Pick<ThreadFeedMessage, "id" | "projectedItem">;
 
+/** A live thread's project, read once without subscribing; undefined when unknown or deleted. */
+function liveThreadProjectId(environmentId: EnvironmentId, threadId: ThreadId) {
+  const shell = readThreadShell({ environmentId, threadId });
+  return shell && shell.deletedAt === null ? shell.projectId : undefined;
+}
+
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
-  const createNote = useAtomCommand(notesEnvironment.create);
+  // Failures are shown in an alert; an association refusal is retried without one.
+  const createNote = useAtomCommand(notesEnvironment.create, { reportFailure: false });
   const [noteSelection, setNoteSelection] = useState<{
     readonly target: TranscriptNoteTarget;
     readonly text: string;
     readonly start: number;
     readonly end: number;
   } | null>(null);
-  // A selection belongs to the thread it was opened on; hide it once the feed shows another.
-  const visibleNoteSelection =
+  // A selection belongs to the thread it was opened on; drop it once the feed shows another.
+  if (
     noteSelection !== null &&
-    noteSelection.target.environmentId === props.environmentId &&
-    noteSelection.target.displayedThreadId === props.threadId
-      ? noteSelection
-      : null;
+    (noteSelection.target.environmentId !== props.environmentId ||
+      noteSelection.target.displayedThreadId !== props.threadId)
+  ) {
+    setNoteSelection(null);
+  }
   const saveNoteText = useCallback(
     (target: TranscriptNoteTarget, text: string) => {
-      const body = text.trim();
-      if (!body) return;
-      // Projects are read when saving, so no thread list subscription is needed.
-      const source = resolveNoteSource(target, (threadId) => {
-        const shell = readThreadShell({ environmentId: target.environmentId, threadId });
-        return shell && shell.deletedAt === null ? shell.projectId : undefined;
-      });
-      if (!source) {
-        Alert.alert("Not saved yet", "Wait for the message to finish saving, then try again.");
-        return;
-      }
-      const title = transcriptNoteTitle(body);
-      void createNote({
-        environmentId: target.environmentId,
-        input: { title, body, tags: [], ...source },
-      }).then((result) => {
-        if (result._tag === "Success") Alert.alert("Saved as note", title);
+      if (!text.trim()) return;
+      void saveTranscriptNote({
+        target,
+        text,
+        // Projects are read when saving, so no thread list subscription is needed.
+        threadProjectId: (threadId) => liveThreadProjectId(target.environmentId, threadId),
+        create: (input) => createNote({ environmentId: target.environmentId, input }),
+      }).then((outcome) => {
+        switch (outcome._tag) {
+          case "saved":
+            Alert.alert("Saved as note", outcome.title);
+            return;
+          case "not-persisted":
+            Alert.alert("Not saved yet", "Wait for the message to finish saving, then try again.");
+            return;
+          case "too-long":
+            Alert.alert("Too long for a note", "Select a shorter part of the message to save.");
+            return;
+          case "failed":
+            Alert.alert("Couldn't save note", outcome.detail);
+            return;
+          case "interrupted":
+            return;
+        }
       });
     },
     [createNote],
@@ -2183,6 +2196,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       const target: TranscriptNoteTarget = {
         environmentId: props.environmentId,
         displayedThreadId: props.threadId,
+        displayedProjectId: liveThreadProjectId(props.environmentId, props.threadId) ?? null,
         messageId: message.id,
         messageThreadId: message.projectedItem?.sourceThreadId,
       };
@@ -3244,7 +3258,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <Modal
           transparent
           animationType="slide"
-          visible={visibleNoteSelection !== null}
+          visible={noteSelection !== null}
           onRequestClose={() => setNoteSelection(null)}
         >
           <View className="flex-1 justify-end bg-black/40">
@@ -3253,7 +3267,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               <TextInput
                 multiline
                 accessibilityLabel="Select transcript text"
-                value={visibleNoteSelection?.text ?? ""}
+                value={noteSelection?.text ?? ""}
                 onSelectionChange={(event) =>
                   setNoteSelection((current) =>
                     current
@@ -3274,23 +3288,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{
-                    disabled:
-                      !visibleNoteSelection ||
-                      visibleNoteSelection.start === visibleNoteSelection.end,
+                    disabled: !noteSelection || noteSelection.start === noteSelection.end,
                   }}
                   onPress={() => {
-                    if (
-                      !visibleNoteSelection ||
-                      visibleNoteSelection.start === visibleNoteSelection.end
-                    ) {
+                    if (!noteSelection || noteSelection.start === noteSelection.end) {
                       return;
                     }
                     saveNoteText(
-                      visibleNoteSelection.target,
-                      visibleNoteSelection.text.slice(
-                        visibleNoteSelection.start,
-                        visibleNoteSelection.end,
-                      ),
+                      noteSelection.target,
+                      noteSelection.text.slice(noteSelection.start, noteSelection.end),
                     );
                     setNoteSelection(null);
                   }}

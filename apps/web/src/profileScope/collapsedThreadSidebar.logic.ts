@@ -2,7 +2,11 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { profileScopeProjectKey } from "@t3tools/client-runtime/state/profile-scope";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 
-import { sortPinnedThreadsForSidebar, sortThreadsForSidebar } from "../components/Sidebar.logic";
+import {
+  isSidebarSubagentThread,
+  sortPinnedThreadsForSidebar,
+  sortThreadsForSidebar,
+} from "../components/Sidebar.logic";
 
 /** The thread fields the rail sorts, filters and snoozes by. */
 export type RailThread = Pick<
@@ -24,6 +28,7 @@ export type RailThread = Pick<
   | "latestUserMessageAt"
   | "runtime"
   | "latestRun"
+  | "lineage"
 >;
 
 /**
@@ -43,6 +48,8 @@ export function partitionRailThreads<T extends RailThread>(input: {
   let nextWakeAtMs: number | null = null;
   for (const thread of input.threads) {
     if (thread.archivedAt !== null || thread.settledOverride === "settled") continue;
+    // Subagents belong to their parent's Agents panel, as in the expanded sidebar.
+    if (isSidebarSubagentThread(thread)) continue;
     if (
       input.scopedProjectKeys !== null &&
       !input.scopedProjectKeys.has(profileScopeProjectKey(thread.environmentId, thread.projectId))

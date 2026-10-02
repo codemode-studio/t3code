@@ -1,26 +1,21 @@
-import { CodexSettings, ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
+import { ProviderSessionId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { ClaudeAgentSdkQueryRunner } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { CodexAppServerClientFactory } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
-import { ProviderAdapterV2RuntimePolicy } from "../orchestration-v2/ProviderAdapter.ts";
 import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
 import { OpenCodeRuntime } from "./opencodeRuntime.ts";
 import {
   withGitHubAccountClaudeQueries,
-  withGitHubAccountCodexClients,
   withGitHubAccountOpenCodeServers,
   withGitHubAccountSpawner,
 } from "./ProviderGitHubAccountEnvironment.ts";
 
 const checkout = "/work/selected";
 const selected = { GH_TOKEN: "selected", GITHUB_TOKEN: "selected" };
-const defaultCodexSettings = Schema.decodeSync(CodexSettings)({});
 const accounts = Effect.provideService(GitHubCliAccountEnvironment, {
   forCwd: (cwd) => Effect.succeed(cwd === checkout ? selected : {}),
 });
@@ -60,39 +55,6 @@ describe("ProviderGitHubAccountEnvironment", () => {
         { env: selected, extendEnv: true },
         { env: { PATH: "/bin" }, extendEnv: undefined },
       ]);
-    }),
-  );
-
-  it.effect("starts Codex app-servers as the session checkout's selected login", () =>
-    Effect.gen(function* () {
-      const environments: Array<NodeJS.ProcessEnv> = [];
-      yield* withGitHubAccountCodexClients(
-        Effect.gen(function* () {
-          const factory = yield* CodexAppServerClientFactory;
-          yield* factory
-            .open({
-              instanceId: ProviderInstanceId.make("codex"),
-              threadId: ThreadId.make("thread-codex"),
-              providerSessionId: ProviderSessionId.make("session-codex"),
-              runtimePolicy: ProviderAdapterV2RuntimePolicy.make({
-                runtimeMode: "full-access",
-                interactionMode: "default",
-                cwd: checkout,
-              }),
-              settings: defaultCodexSettings,
-              environment: { CODEX_HOME: "/codex" },
-            })
-            .pipe(Effect.scoped, Effect.exit);
-        }),
-      ).pipe(
-        accounts,
-        Effect.provide(
-          Layer.mock(CodexAppServerClientFactory)({
-            open: (input) => recorded(environments, input.environment),
-          }),
-        ),
-      );
-      expect(environments).toEqual([{ CODEX_HOME: "/codex", ...selected }]);
     }),
   );
 

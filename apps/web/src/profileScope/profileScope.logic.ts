@@ -4,6 +4,7 @@ import { profileScopeProjectKey } from "@t3tools/client-runtime/state/profile-sc
 
 import {
   hasUnseenCompletion,
+  isSidebarSubagentThread,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
 } from "../components/Sidebar.logic";
@@ -23,6 +24,7 @@ export type AttentionThread = Pick<
   | "runtime"
   | "latestRun"
   | "lastVisitedAt"
+  | "lineage"
 >;
 
 /**
@@ -34,6 +36,8 @@ export function threadNeedsAttention(
   localLastVisitedAt: string | undefined,
 ): boolean {
   if (thread.archivedAt !== null || thread.settledOverride === "settled") return false;
+  // Subagents surface through their parent, which the sidebar lists; they are never visited.
+  if (isSidebarSubagentThread(thread)) return false;
   const status = resolveSidebarThreadStatus(thread);
   if (status === "approval" || status === "input" || status === "failed") return true;
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);

@@ -7,10 +7,7 @@ import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneratio
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { chatGptModels } from "../CodexChatGptModels.ts";
 import { makeCodexManagedRuntime } from "../CodexManagedRuntime.ts";
-import {
-  withGitHubAccountCodexClients,
-  withGitHubAccountSpawner,
-} from "../ProviderGitHubAccountEnvironment.ts";
+import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { createCodexAdapterV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import {
@@ -225,7 +222,6 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     resolveRuntime: runtime.resolve,
   }).pipe(
-    withGitHubAccountCodexClients,
     Effect.mapError(
       (cause) =>
         new ProviderDriverError({
