@@ -119,6 +119,10 @@ messages, review titles, and descriptions from your changes.
 Choose the writing style and model in **Settings → Source Control**. **Repository conventions**
 uses the project's instructions and recent commit subjects.
 
+To open pull requests as drafts, turn on **Open PR as draft** in the Git actions menu. The choice
+is saved for the project and applies on every device, including the mobile app. GitLab and Forgejo
+have no draft flag at creation, so T3 Code marks the title with `Draft:` or `WIP:` instead.
+
 ## Review and merge
 
 Open **Pull requests** to review changes and comments, request reviewers, check out a branch,

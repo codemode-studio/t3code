@@ -1102,6 +1102,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "sourceControlWriterModelSelection",
   "sourceControlWritingStyle",
   "pullRequestMergeMethod",
+  "createPullRequestsAsDraft",
   "githubCliAccount",
   "sidebarAutoSettleOnMerge",
   "sidebarAutoSettleAfterDays",
@@ -1131,6 +1132,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
+  createPullRequestsAsDraft: Schema.optionalKey(Schema.Boolean),
   githubCliAccount: Schema.optionalKey(Schema.NullOr(GitHubCliAccount)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
@@ -1350,6 +1352,8 @@ export const ServerSettings = Schema.Struct({
   pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /** Whether pull requests the Git actions create open as drafts. */
+  createPullRequestsAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * The `gh` login GitHub commands run as, by passing that login's token to
    * each command. `null` uses whichever login is active in the CLI. The CLI's
@@ -1644,6 +1648,7 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
+  createPullRequestsAsDraft: Schema.optionalKey(Schema.Boolean),
   githubCliAccount: Schema.optionalKey(Schema.NullOr(GitHubCliAccount)),
   observability: Schema.optionalKey(
     Schema.Struct({

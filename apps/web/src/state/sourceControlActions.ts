@@ -217,6 +217,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
       action: GitStackedAction;
       commitMessage?: string;
       featureBranch?: boolean;
+      draft?: boolean;
       filePaths?: string[];
       threadId?: ThreadId;
       onProgress?: (event: GitActionProgressEvent) => void;
@@ -237,6 +238,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
         action: input.action,
         ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
         ...(input.featureBranch ? { featureBranch: true } : {}),
+        ...(input.draft !== undefined ? { draft: input.draft } : {}),
         ...(input.filePaths?.length ? { filePaths: input.filePaths } : {}),
         ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
         ...(input.onProgress ? { onProgress: input.onProgress } : {}),

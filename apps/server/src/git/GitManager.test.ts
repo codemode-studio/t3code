@@ -573,6 +573,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             input.title,
             "--body-file",
             input.bodyFile,
+            ...(input.draft ? ["--draft"] : []),
           ],
         }).pipe(Effect.asVoid),
       getDefaultBranch: (input) =>
@@ -629,6 +630,7 @@ function runStackedAction(
     actionId?: string;
     commitMessage?: string;
     featureBranch?: boolean;
+    draft?: boolean;
     filePaths?: readonly string[];
   },
   options?: Parameters<GitManager.GitManager["Service"]["runStackedAction"]>[1],
@@ -3417,6 +3419,48 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           call.includes("pr create --base main --head feature/create-pr-only"),
         ),
       ).toBe(true);
+    }),
+  );
+
+  it.effect("create_pr opens a draft by default only when the request does not say otherwise", () =>
+    Effect.gen(function* () {
+      const createdPullRequest = (headRefName: string, number: number) =>
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        JSON.stringify([
+          {
+            number,
+            title: "Draft default",
+            url: `https://github.com/pingdotgg/codething-mvp/pull/${number}`,
+            baseRefName: "main",
+            headRefName,
+          },
+        ]);
+      const createCall = (draft: boolean | undefined) =>
+        Effect.gen(function* () {
+          const repoDir = yield* makeTempDir("t3code-git-manager-");
+          yield* initRepo(repoDir);
+          yield* runGit(repoDir, ["checkout", "-b", "feature/draft-default"]);
+          const remoteDir = yield* createBareRemote();
+          yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+          NodeFS.writeFileSync(NodePath.join(repoDir, "draft.txt"), "draft\n");
+          yield* runGit(repoDir, ["add", "draft.txt"]);
+          yield* runGit(repoDir, ["commit", "-m", "Draft default"]);
+          const { manager, ghCalls } = yield* makeManager({
+            ghScenario: {
+              prListSequence: ["[]", createdPullRequest("feature/draft-default", 505)],
+            },
+            serverSettings: { createPullRequestsAsDraft: true },
+          });
+          yield* runStackedAction(manager, {
+            cwd: repoDir,
+            action: "create_pr",
+            ...(draft !== undefined ? { draft } : {}),
+          });
+          return ghCalls.find((call) => call.startsWith("pr create")) ?? "";
+        });
+
+      expect(yield* createCall(undefined)).toContain("--draft");
+      expect(yield* createCall(false)).not.toContain("--draft");
     }),
   );
 
