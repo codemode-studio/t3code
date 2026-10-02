@@ -3425,7 +3425,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
   it.effect("create_pr opens a draft by default only when the request does not say otherwise", () =>
     Effect.gen(function* () {
       const createdPullRequest = (headRefName: string, number: number) =>
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         JSON.stringify([
           {
             number,
