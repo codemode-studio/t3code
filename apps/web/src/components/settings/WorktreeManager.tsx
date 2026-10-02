@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { VcsListedWorktree } from "@t3tools/contracts";
 import {
@@ -9,14 +10,17 @@ import {
   RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
+import { Atom } from "effect/unstable/reactivity";
 import { useState, type FormEvent } from "react";
 
+import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
+import { Spinner } from "../ui/spinner";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
   Dialog,
@@ -189,6 +193,26 @@ function worktreeName(tree: VcsListedWorktree) {
   return tree.path.split(/[\\/]/).at(-1) ?? tree.path;
 }
 
+function removalKey(target: WorktreeDeletionTarget) {
+  return JSON.stringify([target.environmentId, target.worktree.path]);
+}
+
+// Removal key → when its removal settled, or null while it runs. A settled row keeps its
+// spinner until the refreshed list arrives, so it doesn't flash back to a trash button.
+// Lives outside the component because a batch keeps running after Settings unmounts.
+const worktreeRemovalsAtom = Atom.make<ReadonlyMap<string, number | null>>(new Map()).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("settings:worktree-removals"),
+);
+
+function updateWorktreeRemovals(update: (removals: Map<string, number | null>) => void) {
+  appAtomRegistry.update(worktreeRemovalsAtom, (current) => {
+    const next = new Map(current);
+    update(next);
+    return next;
+  });
+}
+
 export function WorktreeManager() {
   const { scope, connectedEnvironments } = useSettingsScope();
   const [selectedMemberKey, setSelectedMemberKey] = useState<string | null>(null);
@@ -198,7 +222,7 @@ export function WorktreeManager() {
   // Keep the targets through the close animation.
   const [shownDeleting, setShownDeleting] = useState(deleting);
   if (deleting !== null && deleting !== shownDeleting) setShownDeleting(deleting);
-  const [busy, setBusy] = useState(false);
+  const removing = useAtomValue(worktreeRemovalsAtom);
   const [error, setError] = useState<string | null>(null);
   const threads = useThreadShells();
   const projects = useProjects();
@@ -221,6 +245,14 @@ export function WorktreeManager() {
         }),
   );
   const selectedPaths = selectedWorktreePaths(selection, member);
+  const isRemoving = (target: WorktreeDeletionTarget) => {
+    const settledAt = removing.get(removalKey(target));
+    if (settledAt === null) return true;
+    // A failed refresh clears dataUpdatedAt; stop spinning and let the error show instead.
+    return (
+      settledAt !== undefined && query.dataUpdatedAt !== null && query.dataUpdatedAt <= settledAt
+    );
+  };
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const worktrees = query.data?.worktrees.filter((tree) => !tree.isMain) ?? [];
   const threadsByWorktree = member
@@ -240,11 +272,12 @@ export function WorktreeManager() {
           target,
           usedBy,
           blocked: worktreeDeletionBlockReason(target, member, usedBy),
+          removing: isRemoving(target),
         };
       })
     : [];
   const selectedTargets = rows
-    .filter((row) => !row.blocked && selectedPaths.has(row.tree.path))
+    .filter((row) => !row.blocked && !row.removing && selectedPaths.has(row.tree.path))
     .map((row) => row.target);
   const deletingThreadsByWorktree = shownDeleting?.[0]
     ? worktreeThreads(threads, projects, shownDeleting[0].environmentId)
@@ -269,35 +302,37 @@ export function WorktreeManager() {
     return null;
   })();
   const deleteWorktrees = async () => {
-    if (!deleting || deletionBlocked || busy) return;
-    setBusy(true);
+    if (!deleting || deletionBlocked) return;
+    const targets = deleting;
+    const paths = new Set(targets.map((target) => target.worktree.path));
+    setDeleting(null);
     setError(null);
-    const failed: Array<{ target: WorktreeDeletionTarget; message: string }> = [];
-    const removed = new Set<string>();
-    // One at a time: each removal rewrites the repository's shared worktree metadata.
-    for (const target of deleting) {
-      const result = await removeWorktree({
-        environmentId: target.environmentId,
-        input: { cwd: target.cwd, path: target.worktree.path, force: true },
-      });
-      if (result._tag === "Success") removed.add(target.worktree.path);
-      else failed.push({ target, message: commandError(result) });
-    }
-    setBusy(false);
     setSelection(
       (current) =>
         current && {
           ...current,
-          paths: new Set([...current.paths].filter((path) => !removed.has(path))),
+          paths: new Set([...current.paths].filter((path) => !paths.has(path))),
         },
     );
-    if (failed.length === 0) {
-      setDeleting(null);
-      return;
+    updateWorktreeRemovals((removals) => {
+      for (const target of targets) removals.set(removalKey(target), null);
+    });
+    const failed: Array<{ target: WorktreeDeletionTarget; message: string }> = [];
+    // One at a time: each removal rewrites the repository's shared worktree metadata.
+    for (const target of targets) {
+      const result = await removeWorktree({
+        environmentId: target.environmentId,
+        input: { cwd: target.cwd, path: target.worktree.path, force: true },
+      });
+      if (result._tag === "Failure") failed.push({ target, message: commandError(result) });
+      updateWorktreeRemovals((removals) => {
+        if (result._tag === "Success") removals.set(removalKey(target), Date.now());
+        else removals.delete(removalKey(target));
+      });
     }
-    setDeleting(failed.map((failure) => failure.target));
+    if (failed.length === 0) return;
     setError(
-      deleting.length === 1
+      targets.length === 1
         ? failed[0]!.message
         : failed
             .map((failure) => `${worktreeName(failure.target.worktree)}: ${failure.message}`)
@@ -389,8 +424,13 @@ export function WorktreeManager() {
           uncommitted changes.
         </p>
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="whitespace-pre-line text-sm text-destructive">
             {error}
+          </p>
+        )}
+        {query.error && query.data && (
+          <p role="alert" className="text-sm text-destructive">
+            Couldn&apos;t refresh worktrees: {query.error}
           </p>
         )}
         {!projectKey ? (
@@ -428,7 +468,7 @@ export function WorktreeManager() {
             className="group/worktrees divide-y rounded-lg border"
             data-selecting={selectedTargets.length > 0 ? "" : undefined}
           >
-            {rows.map(({ tree, target, usedBy, blocked }) => {
+            {rows.map(({ tree, target, usedBy, blocked, removing: rowRemoving }) => {
               const name = worktreeName(tree);
               return (
                 <div key={tree.path} className="group/worktree flex items-start gap-3 p-4">
@@ -438,8 +478,8 @@ export function WorktreeManager() {
                       <Checkbox
                         aria-label={`Select ${name}`}
                         title={blocked ?? undefined}
-                        checked={!blocked && selectedPaths.has(tree.path)}
-                        disabled={!!blocked}
+                        checked={!blocked && !rowRemoving && selectedPaths.has(tree.path)}
+                        disabled={!!blocked || rowRemoving}
                         onCheckedChange={(checked) => toggleSelected(tree.path, checked)}
                       />
                     </span>
@@ -461,14 +501,14 @@ export function WorktreeManager() {
                     size="icon-sm"
                     variant="ghost"
                     aria-label={`Delete ${tree.branch ?? tree.path}`}
-                    title={blocked ?? "Delete worktree"}
-                    disabled={!!blocked}
+                    title={rowRemoving ? "Deleting…" : (blocked ?? "Delete worktree")}
+                    disabled={!!blocked || rowRemoving}
                     onClick={() => {
                       setError(null);
                       setDeleting([target]);
                     }}
                   >
-                    <Trash2Icon />
+                    {rowRemoving ? <Spinner aria-hidden /> : <Trash2Icon />}
                   </Button>
                 </div>
               );
@@ -489,7 +529,7 @@ export function WorktreeManager() {
       <AlertDialog
         open={deleting !== null}
         onOpenChange={(open) => {
-          if (!open && !busy) setDeleting(null);
+          if (!open) setDeleting(null);
         }}
       >
         <AlertDialogPopup>
@@ -550,28 +590,21 @@ export function WorktreeManager() {
               )}
             </ul>
           )}
-          {(error || deletionBlocked) && (
-            <p
-              role="alert"
-              className="whitespace-pre-line px-6 pb-6 text-sm text-destructive max-sm:pb-4"
-            >
-              {deletionBlocked ?? error}
+          {deletionBlocked && (
+            <p role="alert" className="px-6 pb-6 text-sm text-destructive max-sm:pb-4">
+              {deletionBlocked}
             </p>
           )}
           <AlertDialogFooter>
-            <AlertDialogClose render={<Button variant="outline" />} disabled={busy}>
-              Cancel
-            </AlertDialogClose>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
             <Button
               variant="destructive"
-              disabled={busy || !!deletionBlocked}
+              disabled={!!deletionBlocked}
               onClick={() => void deleteWorktrees()}
             >
-              {busy
-                ? "Deleting…"
-                : deleting && deleting.length > 1
-                  ? `Delete ${deleting.length} worktrees`
-                  : "Delete worktree"}
+              {shownDeleting && shownDeleting.length > 1
+                ? `Delete ${shownDeleting.length} worktrees`
+                : "Delete worktree"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>
