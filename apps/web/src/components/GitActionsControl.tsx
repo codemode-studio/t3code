@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, type ProjectId, type ScopedThreadRef } from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -81,9 +82,11 @@ import { Group, GroupSeparator } from "~/components/ui/group";
 import { Input } from "~/components/ui/input";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuItem,
   MenuItemLabel,
   MenuPopup,
+  MenuSeparator,
   MenuSub,
   MenuSubTrigger,
   MenuSubPopup,
@@ -120,6 +123,8 @@ interface GitActionsControlProps {
   presentation?: "toolbar" | "menu";
   gitCwd: string | null;
   activeThreadRef: ScopedThreadRef | null;
+  /** The project whose settings, such as opening pull requests as drafts, the actions use. */
+  projectId?: ProjectId | undefined;
   draftId?: DraftId;
   /**
    * Opens the thread's own change request beside it. Absent when the thread has no project to
@@ -946,6 +951,7 @@ export default function GitActionsControl({
   presentation = "toolbar",
   gitCwd,
   activeThreadRef,
+  projectId,
   draftId,
   onOpenPullRequest,
 }: GitActionsControlProps) {
@@ -982,6 +988,33 @@ export default function GitActionsControl({
   const [pendingDefaultBranchAction, setPendingDefaultBranchAction] =
     useState<PendingDefaultBranchAction | null>(null);
   const activeGitActionProgressRef = useRef<ActiveGitActionProgress | null>(null);
+  const updateEnvironmentSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "pull request draft default update",
+  );
+  const environmentSettings = serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS;
+  const canSetProjectDraftDefault =
+    projectId !== undefined &&
+    activeEnvironmentId !== null &&
+    serverConfig?.environment.capabilities.projectSettingsOverrides === true;
+  const openPrAsDraft = resolveProjectSettings(environmentSettings, projectId ?? null).settings
+    .createPullRequestsAsDraft;
+  const setOpenPrAsDraft = (enabled: boolean) => {
+    if (!canSetProjectDraftDefault) return;
+    void updateEnvironmentSettings({
+      environmentId: activeEnvironmentId,
+      input: {
+        patch: {
+          projectSettingsOverrides: {
+            [projectId]: {
+              ...environmentSettings.projectSettingsOverrides[projectId],
+              createPullRequestsAsDraft: enabled,
+            },
+          },
+        },
+      },
+    });
+  };
   const sourceControlScope = useMemo(
     () => ({ environmentId: activeEnvironmentId, cwd: gitCwd }),
     [activeEnvironmentId, gitCwd],
@@ -1372,6 +1405,11 @@ export default function GitActionsControl({
         action,
         ...(commitMessage ? { commitMessage } : {}),
         ...(featureBranch ? { featureBranch } : {}),
+        // Sent explicitly so the request matches the toggle the user just saw; without the
+        // toggle the server applies the project's default.
+        ...(canSetProjectDraftDefault && (action === "create_pr" || action === "commit_push_pr")
+          ? { draft: openPrAsDraft }
+          : {}),
         ...(filePaths ? { filePaths } : {}),
         // A pull request the action opens is linked to the thread it ran beside. Drafts
         // have no server thread yet, so there is nothing to link to.
@@ -1707,6 +1745,18 @@ export default function GitActionsControl({
           </MenuItem>
         );
       })}
+      {canSetProjectDraftDefault && hasPrimaryRemote && gitStatusForActions?.refName != null ? (
+        <>
+          <MenuSeparator />
+          <MenuCheckboxItem
+            variant="switch"
+            checked={openPrAsDraft}
+            onCheckedChange={(checked) => setOpenPrAsDraft(checked)}
+          >
+            Open {changeRequestTerminology.shortLabel} as draft
+          </MenuCheckboxItem>
+        </>
+      ) : null}
       {canPublishRepository ? (
         <MenuItem
           density={presentation === "menu" ? "touch" : "default"}

@@ -101,6 +101,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
+  const mixedDraft = useScopedSettingsMixed(["createPullRequestsAsDraft"]);
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const unavailable = connectedEnvironments.length === 0;
@@ -566,6 +567,36 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                   <SelectItem value="rebase">{PULL_REQUEST_MERGE_METHOD_LABELS.rebase}</SelectItem>
                 </SelectPopup>
               </Select>
+            }
+          />
+          <SettingsRow
+            serverScoped
+            settingKeys={["createPullRequestsAsDraft"]}
+            mixed={mixedDraft}
+            {...searchableSetting("pull-request-draft")}
+            description={
+              isProjectScope
+                ? "Pull requests created from this project's Git actions open as drafts."
+                : "Pull requests created from Git actions open as drafts. Projects can override it."
+            }
+            resetAction={
+              settings.createPullRequestsAsDraft ? (
+                <SettingResetButton
+                  label="default draft pull requests"
+                  tooltip="Reset draft pull requests to off"
+                  onClick={() => updateSettings({ createPullRequestsAsDraft: false })}
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                aria-label="Open pull requests as drafts"
+                mixed={mixedDraft}
+                checked={mixedDraft ? false : settings.createPullRequestsAsDraft}
+                onCheckedChange={(enabled) =>
+                  updateSettings({ createPullRequestsAsDraft: enabled })
+                }
+              />
             }
           />
         </>
