@@ -2,9 +2,9 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
-  type OrchestrationThreadShell,
-  type OrchestrationShellSnapshot,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -13,73 +13,103 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { PersistenceSqlError } from "../persistence/Errors.ts";
+import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import { GitWorkflowService } from "./GitWorkflowService.ts";
 import { removeInactiveWorktree } from "./removeInactiveWorktree.ts";
 
 const projectId = ProjectId.make("linked-project");
 const updatedAt = "2026-09-01T00:00:00.000Z";
 const input = { cwd: "/repo", path: "/linked", force: true };
-function thread(overrides: Partial<OrchestrationThreadShell> = {}): OrchestrationThreadShell {
+function thread(overrides: Partial<OrchestrationV2ThreadShell> = {}): OrchestrationV2ThreadShell {
+  const at = DateTime.makeUnsafe(updatedAt);
   return {
     id: ThreadId.make("thread"),
     projectId,
     title: "Thread",
+    providerInstanceId: ProviderInstanceId.make("codex"),
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
     runtimeMode: "full-access",
     interactionMode: "default",
-    pullRequests: [],
-    branch: "feature",
     worktreePath: null,
-    latestTurn: null,
-    createdAt: updatedAt,
-    updatedAt,
+    activeProviderThreadId: null,
+    lineage: {
+      rootThreadId: ThreadId.make("thread"),
+      parentThreadId: null,
+      relationshipToParent: null,
+    },
+    forkedFrom: null,
+    createdBy: "user",
+    creationSource: "web",
+    activeRunId: null,
+    latestVisibleMessage: null,
+    hasActionableProposedPlan: false,
+    itemCount: 0,
+    visibleItemCount: 0,
+    lastVisitedAt: null,
+    deletedAt: null,
+    branch: "feature",
+    linkedPullRequest: null,
+    status: "idle",
+    activityRunStatus: null,
+    pendingRuntimeRequest: null,
+    pendingBackgroundTasks: [],
+    latestRunId: null,
+    latestRunRequestedAt: null,
+    latestRunStartedAt: null,
+    latestRunCompletedAt: null,
+    latestUserMessageAt: null,
+    createdAt: at,
+    updatedAt: at,
     archivedAt: null,
     settledOverride: null,
     settledAt: null,
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
+    snoozedUntil: null,
+    snoozedAt: null,
+    pinnedAt: null,
     ...overrides,
   };
 }
-function snapshot(threads: ReadonlyArray<OrchestrationThreadShell>): OrchestrationShellSnapshot {
-  return {
-    snapshotSequence: 1,
-    updatedAt,
-    threads,
-    projects: [
-      {
-        id: projectId,
-        title: "Linked",
-        workspaceRoot: "/linked",
-        defaultModelSelection: null,
-        scripts: [],
-        createdAt: updatedAt,
-        updatedAt,
-      },
-    ],
-  };
-}
 function setup(
-  initial: OrchestrationThreadShell[] = [],
-  archived: OrchestrationThreadShell[] = [],
+  initial: OrchestrationV2ThreadShell[] = [],
+  archived: OrchestrationV2ThreadShell[] = [],
 ) {
   let current = initial;
   let snapshotFailed = false;
   const removed: string[] = [];
   const layer = Layer.mergeAll(
-    Layer.mock(ProjectionSnapshotQuery)({
+    Layer.mock(ThreadManagementService)({
       getShellSnapshot: () =>
         Effect.suspend(() =>
           snapshotFailed
-            ? Effect.fail(new PersistenceSqlError({ operation: "snapshot" }))
-            : Effect.succeed(snapshot(current)),
+            ? Effect.fail(new OrchestratorProjectionError({ threadId: ThreadId.make("thread") }))
+            : Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 1,
+                threads: current,
+                archivedThreads: archived,
+              }),
         ),
-      getArchivedShellSnapshot: () => Effect.succeed(snapshot(archived)),
+    }),
+    Layer.mock(ProjectStoreV2)({
+      list: () =>
+        Effect.succeed([
+          {
+            projectId,
+            title: "Linked",
+            workspaceRoot: "/linked",
+            defaultModelSelection: null,
+            defaultThreadEnvMode: null,
+            autoPull: false,
+            faviconPath: null,
+            projectIcon: null,
+            scripts: [],
+            createdAt: updatedAt,
+            updatedAt,
+            deletedAt: null,
+          },
+        ]),
     }),
     Layer.mock(GitWorkflowService)({
       removeWorktree: (request) =>
@@ -98,7 +128,7 @@ function setup(
     failSnapshot: () => {
       snapshotFailed = true;
     },
-    setThreads: (threads: OrchestrationThreadShell[]) => {
+    setThreads: (threads: OrchestrationV2ThreadShell[]) => {
       current = threads;
     },
   };
@@ -119,7 +149,7 @@ describe("removeInactiveWorktree", () => {
   it.effect("protects a queued turn before its provider reports running", () => {
     const state = setup();
     return Effect.gen(function* () {
-      state.setThreads([thread({ latestUserMessageAt: DateTime.formatIso(yield* DateTime.now) })]);
+      state.setThreads([thread({ latestUserMessageAt: yield* DateTime.now })]);
       const result = yield* removeInactiveWorktree({ ...input, path: "../linked" }).pipe(
         Effect.result,
       );
@@ -133,17 +163,7 @@ describe("removeInactiveWorktree", () => {
     return Effect.gen(function* () {
       yield* removeInactiveWorktree(input);
       state.setThreads([
-        thread({
-          session: {
-            threadId: ThreadId.make("thread"),
-            status: "running",
-            providerName: "codex",
-            runtimeMode: "full-access",
-            activeTurnId: null,
-            lastError: null,
-            updatedAt,
-          },
-        }),
+        thread({ status: "running", activeRunId: RunId.make("run"), activityRunStatus: "running" }),
       ]);
       const result = yield* removeInactiveWorktree(input).pipe(Effect.result);
       assert.equal(result._tag, "Failure");
@@ -154,7 +174,9 @@ describe("removeInactiveWorktree", () => {
 
   for (const archived of [false, true]) {
     it.effect(`protects active project-root threads${archived ? " in the archive" : ""}`, () => {
-      const active = thread({ backgroundLiveness: "working" });
+      const active = thread({
+        pendingBackgroundTasks: [{ taskId: "task", kind: "command" }],
+      });
       const state = setup(archived ? [] : [active], archived ? [active] : []);
       return Effect.gen(function* () {
         const result = yield* removeInactiveWorktree({ ...input, path: "/alias" }).pipe(
@@ -167,10 +189,14 @@ describe("removeInactiveWorktree", () => {
   }
 
   it.effect("protects explicit worktree threads and lets unrelated activity continue", () => {
-    const state = setup([thread({ worktreePath: "/other", backgroundLiveness: "working" })]);
+    const state = setup([
+      thread({ worktreePath: "/other", status: "running", activityRunStatus: "running" }),
+    ]);
     return Effect.gen(function* () {
       yield* removeInactiveWorktree(input);
-      state.setThreads([thread({ worktreePath: "/linked", hasPendingUserInput: true })]);
+      state.setThreads([
+        thread({ worktreePath: "/linked", status: "waiting", activityRunStatus: "waiting" }),
+      ]);
       const result = yield* removeInactiveWorktree(input).pipe(Effect.result);
       assert.equal(result._tag, "Failure");
       assert.deepEqual(state.removed, ["/linked"]);

@@ -45,6 +45,10 @@ const DEFINITIONS = [
     capabilities: { details: "tooltip", expanded: "none", defaultDraftView: "compact" },
   },
   {
+    kind: "thread",
+    capabilities: { details: "tooltip", expanded: "none", defaultDraftView: "compact" },
+  },
+  {
     kind: "note",
     capabilities: { details: "tooltip", expanded: "none", defaultDraftView: "compact" },
   },

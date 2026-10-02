@@ -20,6 +20,7 @@ import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
+import { Route as SettingsScheduledTasksRouteImport } from './routes/settings.scheduled-tasks'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsProfilesRouteImport } from './routes/settings.profiles'
@@ -90,6 +91,11 @@ const SettingsSnapShotRoute = SettingsSnapShotRouteImport.update({
 const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsScheduledTasksRoute = SettingsScheduledTasksRouteImport.update({
+  id: '/scheduled-tasks',
+  path: '/scheduled-tasks',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/settings/profiles': typeof SettingsProfilesRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/settings/profiles': typeof SettingsProfilesRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -261,6 +269,7 @@ export interface FileRoutesById {
   '/settings/profiles': typeof SettingsProfilesRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
   '/settings/skills': typeof SettingsSkillsRoute
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -293,6 +302,7 @@ export interface FileRouteTypes {
     | '/settings/profiles'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/scheduled-tasks'
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
@@ -321,6 +331,7 @@ export interface FileRouteTypes {
     | '/settings/profiles'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/scheduled-tasks'
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
@@ -351,6 +362,7 @@ export interface FileRouteTypes {
     | '/settings/profiles'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/scheduled-tasks'
     | '/settings/skills'
     | '/settings/snap-shot'
     | '/settings/source-control'
@@ -447,6 +459,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/settings/skills'
       preLoaderRoute: typeof SettingsSkillsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/scheduled-tasks': {
+      id: '/settings/scheduled-tasks'
+      path: '/scheduled-tasks'
+      fullPath: '/settings/scheduled-tasks'
+      preLoaderRoute: typeof SettingsScheduledTasksRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/providers': {
@@ -603,6 +622,7 @@ interface SettingsRouteChildren {
   SettingsProfilesRoute: typeof SettingsProfilesRoute
   SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsScheduledTasksRoute: typeof SettingsScheduledTasksRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
   SettingsSnapShotRoute: typeof SettingsSnapShotRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
@@ -621,6 +641,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsProfilesRoute: SettingsProfilesRoute,
   SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsScheduledTasksRoute: SettingsScheduledTasksRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
   SettingsSnapShotRoute: SettingsSnapShotRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,

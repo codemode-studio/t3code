@@ -10,7 +10,8 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import { DEFAULT_RUNTIME_MODE, ModelSelection, RuntimeMode } from "./orchestration.ts";
+import { ModelSelection } from "./modelSelection.ts";
+import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 
 export const AutomationScheduleCadence = Schema.Literals(["hourly", "daily", "weekdays", "weekly"]);
 export type AutomationScheduleCadence = typeof AutomationScheduleCadence.Type;

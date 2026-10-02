@@ -7,7 +7,8 @@ import type {
   NoteListInput,
   NoteSummary,
   NoteUpdateInput,
-  OrchestrationCommand,
+  OrchestrationMessageContext,
+  OrchestrationV2Command,
 } from "@t3tools/contracts";
 import { NoteContextRecord, NoteError, NoteId as NoteIdSchema } from "@t3tools/contracts";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
@@ -34,6 +35,8 @@ interface NoteRow {
 }
 
 const TagsJson = Schema.fromJsonString(Schema.Array(Schema.String));
+const decodeTagsJson = Schema.decodeSync(TagsJson);
+const encodeTagsJson = Schema.encodeEffect(TagsJson);
 const isNoteError = Schema.is(NoteError);
 
 const imageReference = /t3-note-image:\/\/(pending-[a-f0-9-]{36}(?:-[a-z0-9]{1,10})?)/gi;
@@ -82,7 +85,7 @@ function fromRow(row: NoteRow): Note {
     id: NoteIdSchema.make(row.id),
     title: row.title,
     body: row.body,
-    tags: Schema.decodeSync(TagsJson)(row.tags_json),
+    tags: decodeTagsJson(row.tags_json),
     projectId: row.project_id as Note["projectId"],
     sourceThreadId: row.source_thread_id as Note["sourceThreadId"],
     sourceMessageId: row.source_message_id as Note["sourceMessageId"],
@@ -137,8 +140,16 @@ const validateAssociation = (
         return yield* new NoteError({ message: "Project was not found on this environment." });
     }
     if (input.sourceThreadId !== null) {
+      // Threads imported from before orchestration V2 keep their rows in the legacy table.
       const threads = yield* sql<{ project_id: string }>`
-        SELECT project_id FROM projection_threads WHERE thread_id = ${input.sourceThreadId} AND deleted_at IS NULL
+        SELECT project_id FROM orchestration_v2_projection_threads
+        WHERE thread_id = ${input.sourceThreadId} AND deleted_at IS NULL
+        UNION ALL
+        SELECT project_id FROM projection_threads
+        WHERE thread_id = ${input.sourceThreadId} AND deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM orchestration_v2_projection_threads WHERE thread_id = ${input.sourceThreadId}
+          )
       `;
       if (
         threads.length === 0 ||
@@ -150,7 +161,12 @@ const validateAssociation = (
       }
     }
     if (input.sourceMessageId !== null) {
+      // A legacy transcript is copied into V2 only once its thread is opened.
       const messages = yield* sql<{ message_id: string }>`
+        SELECT message_id FROM orchestration_v2_projection_messages
+        WHERE message_id = ${input.sourceMessageId} AND thread_id = ${input.sourceThreadId}
+          AND streaming = 0
+        UNION ALL
         SELECT message_id FROM projection_thread_messages
         WHERE message_id = ${input.sourceMessageId} AND thread_id = ${input.sourceThreadId}
           AND is_streaming = 0
@@ -168,7 +184,7 @@ export const createNote = (input: NoteCreateInput) =>
     const sql = yield* SqlClient.SqlClient;
     const id = NoteIdSchema.make(NodeCrypto.randomUUID());
     const now = DateTime.formatIso(yield* DateTime.now);
-    const tagsJson = yield* Schema.encodeEffect(TagsJson)(input.tags);
+    const tagsJson = yield* encodeTagsJson(input.tags);
     const body = yield* claimImages(input.body, id);
     return yield* sql.withTransaction(
       Effect.gen(function* () {
@@ -195,7 +211,7 @@ export const updateNote = (input: NoteUpdateInput) =>
       sourceMessageId: null,
     });
     const sql = yield* SqlClient.SqlClient;
-    const tagsJson = yield* Schema.encodeEffect(TagsJson)(input.tags);
+    const tagsJson = yield* encodeTagsJson(input.tags);
     const now = DateTime.formatIso(yield* DateTime.now);
     const body = yield* claimImages(input.body, input.id);
     return yield* sql.withTransaction(
@@ -245,14 +261,19 @@ export const makeNotes = Effect.gen(function* () {
   };
 });
 
-/** Resolve on the owning server, before the message is appended to the event log. */
-export const snapshotNotesInCommand = (command: OrchestrationCommand) =>
+/**
+ * Copies every note the message references into its context, so the message keeps the note as
+ * it was when sent. Resolved on the owning server before the message reaches the event log.
+ */
+export const snapshotNotesInMessage = (message: {
+  readonly text: string;
+  readonly context?: OrchestrationMessageContext | undefined;
+}) =>
   Effect.gen(function* () {
-    if (command.type !== "thread.turn.start") return command;
-    const references = collectComposerContextReferences(command.message.text).filter(
+    const references = collectComposerContextReferences(message.text).filter(
       (reference) => reference.kind === "note",
     );
-    if (references.length === 0) return command;
+    if (references.length === 0) return message.context;
     const unique = [
       ...new Map(references.map((reference) => [reference.contextId, reference])).values(),
     ];
@@ -275,14 +296,18 @@ export const snapshotNotesInCommand = (command: OrchestrationCommand) =>
       }),
     );
     const records: ComposerContextRecord[] = [
-      ...(command.message.context?.records.filter((record) => record.kind !== "note") ?? []),
+      ...(message.context?.records.filter((record) => record.kind !== "note") ?? []),
       ...notes,
     ];
-    return {
-      ...command,
-      message: {
-        ...command.message,
-        context: { version: 1, records },
-      },
-    } satisfies OrchestrationCommand;
+    return { version: 1, records } satisfies OrchestrationMessageContext;
   });
+
+/** Applies `snapshotNotesInMessage` to the client commands that carry message text. */
+export const snapshotNotesInCommand = (command: OrchestrationV2Command) =>
+  command.type === "message.dispatch" || command.type === "queued-run.edit"
+    ? snapshotNotesInMessage(command).pipe(
+        Effect.map((context): OrchestrationV2Command =>
+          context === undefined ? command : { ...command, context },
+        ),
+      )
+    : Effect.succeed(command);

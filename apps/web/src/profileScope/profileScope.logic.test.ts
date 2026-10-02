@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, ProviderProfileId, ThreadId, TurnId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderProfileId, RunId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -23,38 +23,46 @@ function thread(overrides: Partial<AttentionThread> = {}): AttentionThread {
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
     interactionMode: "default",
-    session: null,
-    backgroundLiveness: null,
-    latestTurn: null,
+    runtime: null,
+    latestRun: null,
     ...overrides,
   };
 }
 
 const completed = {
-  turnId: TurnId.make("turn-1"),
-  state: "completed",
+  runId: RunId.make("run-1"),
+  status: "completed",
   requestedAt: "2026-09-01T10:00:00.000Z",
   startedAt: "2026-09-01T10:00:00.000Z",
   completedAt: "2026-09-01T10:05:00.000Z",
   assistantMessageId: null,
-} as const satisfies AttentionThread["latestTurn"];
+} as const satisfies AttentionThread["latestRun"];
 
 describe("threadNeedsAttention", () => {
   it("counts approvals, questions and unread completions, not idle or settled work", () => {
     expect(threadNeedsAttention(thread({ hasPendingApprovals: true }), undefined)).toBe(true);
     expect(threadNeedsAttention(thread({ hasPendingUserInput: true }), undefined)).toBe(true);
-    expect(
-      threadNeedsAttention(thread({ latestTurn: completed }), "2026-09-01T09:00:00.000Z"),
-    ).toBe(true);
+    expect(threadNeedsAttention(thread({ latestRun: completed }), "2026-09-01T09:00:00.000Z")).toBe(
+      true,
+    );
     // Seen after it finished, never visited, and settled threads wait on nobody.
-    expect(
-      threadNeedsAttention(thread({ latestTurn: completed }), "2026-09-01T11:00:00.000Z"),
-    ).toBe(false);
-    expect(threadNeedsAttention(thread({ latestTurn: completed }), undefined)).toBe(false);
+    expect(threadNeedsAttention(thread({ latestRun: completed }), "2026-09-01T11:00:00.000Z")).toBe(
+      false,
+    );
+    expect(threadNeedsAttention(thread({ latestRun: completed }), undefined)).toBe(false);
     expect(
       threadNeedsAttention(
         thread({ hasPendingApprovals: true, settledOverride: "settled" }),
         undefined,
+      ),
+    ).toBe(false);
+  });
+
+  it("prefers the server's visited watermark over the local one", () => {
+    expect(
+      threadNeedsAttention(
+        thread({ latestRun: completed, lastVisitedAt: "2026-09-01T11:00:00.000Z" }),
+        "2026-09-01T09:00:00.000Z",
       ),
     ).toBe(false);
   });

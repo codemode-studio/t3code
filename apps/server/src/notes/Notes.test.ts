@@ -10,9 +10,12 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationCommand,
+  type OrchestrationV2Command,
 } from "@t3tools/contracts";
-import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+import {
+  formatComposerContextReference,
+  projectComposerContextForProvider,
+} from "@t3tools/shared/composerContextReferences";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -28,6 +31,7 @@ import {
   listNotes,
   makeNotes,
   snapshotNotesInCommand,
+  snapshotNotesInMessage,
   updateNote,
 } from "./Notes.ts";
 
@@ -149,10 +153,12 @@ it.layer(testLayer)("notes", (it) => {
       const now = "2026-09-24T00:00:00.000Z";
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
         VALUES (${projectId}, 'Project', '/tmp/notes', '[]', ${now}, ${now})`;
-      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, created_at, updated_at)
-        VALUES (${threadId}, ${projectId}, 'Thread', '{}', ${now}, ${now})`;
-      yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
-        VALUES (${messageId}, ${threadId}, 'assistant', 'Source', 0, ${now}, ${now})`;
+      yield* sql`INSERT INTO orchestration_v2_projection_threads
+        (thread_id, project_id, title, default_provider, runtime_mode, interaction_mode, created_at, updated_at, payload_json)
+        VALUES (${threadId}, ${projectId}, 'Thread', 'codex', 'full-access', 'default', ${now}, ${now}, '{}')`;
+      yield* sql`INSERT INTO orchestration_v2_projection_messages
+        (message_id, thread_id, role, streaming, created_at, updated_at, payload_json)
+        VALUES (${messageId}, ${threadId}, 'assistant', 0, ${now}, ${now}, '{}')`;
 
       const note = yield* createNote({
         title: "First note",
@@ -169,27 +175,39 @@ it.layer(testLayer)("notes", (it) => {
       ]);
       expect((yield* listNotes({ query: "Original body" })).notes[0]).not.toHaveProperty("body");
       const contextId = ComposerContextId.make(`note_${note.id}`);
-      const command = {
-        type: "thread.turn.start",
+      const text = `Use ${formatComposerContextReference({ kind: "note", contextId, label: note.title })}`;
+      const command: OrchestrationV2Command = {
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
         commandId: CommandId.make("notes-command"),
         threadId,
-        message: {
-          messageId: MessageId.make("notes-outgoing"),
-          role: "user",
-          text: formatComposerContextReference({ kind: "note", contextId, label: note.title }),
-          attachments: [],
-        },
+        messageId: MessageId.make("notes-outgoing"),
+        text,
+        attachments: [],
         modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        createdAt: now,
-      } as OrchestrationCommand;
+        dispatchMode: { type: "start_immediately" },
+      };
       const sent = yield* snapshotNotesInCommand(command);
-      if (sent.type !== "thread.turn.start") throw new Error("Unexpected command");
-      expect(sent.message.context?.records[0]).toMatchObject({
-        kind: "note",
-        content: "Original body",
-      });
+      if (sent.type !== "message.dispatch") throw new Error("Unexpected command");
+      expect(sent.context?.records[0]).toMatchObject({ kind: "note", content: "Original body" });
+      // The provider reads the note's text in the prompt, not just a reference to it.
+      expect(projectComposerContextForProvider({ text, records: sent.context!.records })).toContain(
+        "content:\nOriginal body",
+      );
+      // A launched thread's first message is snapshotted the same way.
+      const launched = yield* snapshotNotesInMessage({ text, context: undefined });
+      expect(launched?.records).toEqual(sent.context?.records);
+      // Messages without a note reference pass through untouched.
+      expect(yield* snapshotNotesInMessage({ text: "No notes here" })).toBeUndefined();
+      const missing = yield* snapshotNotesInMessage({
+        text: formatComposerContextReference({
+          kind: "note",
+          contextId: ComposerContextId.make("note_00000000-0000-4000-8000-000000000009"),
+          label: "Gone",
+        }),
+      }).pipe(Effect.result);
+      expect(missing._tag).toBe("Failure");
 
       const updated = yield* updateNote({
         id: note.id,
@@ -200,10 +218,42 @@ it.layer(testLayer)("notes", (it) => {
       });
       expect(updated.projectId).toBeNull();
       expect(updated.sourceThreadId).toBe(threadId);
-      expect(sent.message.context?.records[0]).toMatchObject({ content: "Original body" });
+      expect(sent.context?.records[0]).toMatchObject({ content: "Original body" });
       expect((yield* getNote(note.id)).body).toBe("New body");
       yield* deleteNote(note.id);
       expect((yield* listNotes({})).notes).toEqual([]);
+    }),
+  );
+
+  it.effect("accepts a source thread and message that only exist from before V2", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-09-24T00:00:00.000Z";
+      const legacyThreadId = ThreadId.make("notes-legacy-thread");
+      const legacyMessageId = MessageId.make("notes-legacy-message");
+      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, created_at, updated_at)
+        VALUES (${legacyThreadId}, ${projectId}, 'Legacy', '{}', ${now}, ${now})`;
+      yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
+        VALUES (${legacyMessageId}, ${legacyThreadId}, 'assistant', 'Old', 0, ${now}, ${now})`;
+      const note = yield* createNote({
+        title: "From the old transcript",
+        body: "Old",
+        tags: [],
+        projectId: null,
+        sourceThreadId: legacyThreadId,
+        sourceMessageId: legacyMessageId,
+      });
+      expect(note.sourceMessageId).toBe(legacyMessageId);
+      const stray = yield* createNote({
+        title: "Unknown source",
+        body: "",
+        tags: [],
+        projectId: null,
+        sourceThreadId: ThreadId.make("notes-missing-thread"),
+        sourceMessageId: null,
+      }).pipe(Effect.result);
+      expect(stray._tag).toBe("Failure");
+      yield* deleteNote(note.id);
     }),
   );
 

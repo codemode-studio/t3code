@@ -27,7 +27,9 @@ as the selected login. It never switches the login active in `gh`, so apps outsi
 unaffected. A change applies to terminals and agent sessions started afterwards. If the chosen
 login is signed out, GitHub actions fail until you sign it back in or pick another account; they
 never fall back to a different login. Terminals and agent sessions start with `gh`'s active login
-instead. An OpenCode server you connect to by URL keeps its own login.
+instead. Some agents always use `gh`'s active login: Cursor agents, which run inside the T3 Code
+server, and OpenCode 2, which shares one server across projects. An OpenCode server you
+connect to by URL keeps its own login.
 
 ### Forgejo and Gitea
 

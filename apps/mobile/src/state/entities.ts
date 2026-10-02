@@ -60,8 +60,17 @@ export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.threadShellsAtom);
 }
 
+export function useNavigationThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
+  return useAtomValue(environmentThreadShells.navigationThreadShellsAtom);
+}
+
 export function useProject(ref: ScopedProjectRef | null): EnvironmentProject | null {
   return useAtomValue(ref === null ? EMPTY_PROJECT_ATOM : environmentProjects.projectAtom(ref));
+}
+
+/** One thread's shell at call time, without subscribing; for event handlers. */
+export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | null {
+  return appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
 }
 
 export function useThreadShell(ref: ScopedThreadRef | null): EnvironmentThreadShell | null {

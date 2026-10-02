@@ -2,7 +2,11 @@ import type { ProviderProfileId } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { profileScopeProjectKey } from "@t3tools/client-runtime/state/profile-scope";
 
-import { hasUnseenCompletion, resolveSidebarThreadStatus } from "../components/Sidebar.logic";
+import {
+  hasUnseenCompletion,
+  resolveSidebarThreadStatus,
+  resolveThreadLastVisitedAt,
+} from "../components/Sidebar.logic";
 
 /** The thread fields that decide whether it waits on the user and which profile it counts for. */
 export type AttentionThread = Pick<
@@ -16,9 +20,9 @@ export type AttentionThread = Pick<
   | "hasPendingUserInput"
   | "hasActionableProposedPlan"
   | "interactionMode"
-  | "session"
-  | "backgroundLiveness"
-  | "latestTurn"
+  | "runtime"
+  | "latestRun"
+  | "lastVisitedAt"
 >;
 
 /**
@@ -27,11 +31,12 @@ export type AttentionThread = Pick<
  */
 export function threadNeedsAttention(
   thread: AttentionThread,
-  lastVisitedAt: string | undefined,
+  localLastVisitedAt: string | undefined,
 ): boolean {
   if (thread.archivedAt !== null || thread.settledOverride === "settled") return false;
   const status = resolveSidebarThreadStatus(thread);
   if (status === "approval" || status === "input" || status === "failed") return true;
+  const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   return status === "ready" && hasUnseenCompletion({ ...thread, lastVisitedAt });
 }
 

@@ -7,8 +7,12 @@ import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneratio
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { chatGptModels } from "../CodexChatGptModels.ts";
 import { makeCodexManagedRuntime } from "../CodexManagedRuntime.ts";
+import {
+  withGitHubAccountCodexClients,
+  withGitHubAccountSpawner,
+} from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
+import { createCodexAdapterV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import {
   checkCodexProviderStatus,
   makePendingCodexProvider,
@@ -209,21 +213,35 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
   yield* runtime.auth.controller.subscribe("managed-codex-snapshot").pipe(
     // Disconnect also publishes idle when a saved account has no active sign-in flow.
     Stream.filter((state) => ["idle", "succeeded", "failed", "cancelled"].includes(state.phase)),
-    Stream.runForEach(() => snapshot.refresh.pipe(Effect.asVoid)),
+    // Sign-out closes the scope of an in-flight probe, which fails that refresh
+    // with an interrupt. Keep listening so the sign-out's own idle still refreshes.
+    Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
     Effect.forkScoped,
   );
   const resolveRuntime = runtime.auth.controller.withAccess!(runtime.resolve);
-  const adapter = yield* makeCodexAdapter(config, {
-    instanceId,
-    resolveRuntime,
-    onManagedConnectionRevoked: runtime.auth.revoke.pipe(Effect.ignore),
-  });
+  // Launch settings resolve per session from the signed-in token. The registry
+  // already wraps openSession in withAccess, so resolve without re-entering it.
+  const orchestrationAdapter = yield* createCodexAdapterV2(input, {
+    onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+    resolveRuntime: runtime.resolve,
+  }).pipe(
+    withGitHubAccountCodexClients,
+    Effect.mapError(
+      (cause) =>
+        new ProviderDriverError({
+          driver: DRIVER,
+          instanceId,
+          detail: "Failed to build Codex orchestration adapter.",
+          cause,
+        }),
+    ),
+  );
   const nativeGeneration = yield* makeCodexTextGeneration(
     config,
     undefined,
     snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
     resolveRuntime,
-  );
+  ).pipe(withGitHubAccountSpawner);
   const protect = <A>(operation: string, effect: Effect.Effect<A, TextGenerationError>) =>
     runtime.auth.controller.withAccess!(effect).pipe(
       Effect.scoped,
@@ -255,7 +273,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     accentColor,
     enabled,
     snapshot,
-    adapter,
+    orchestrationAdapter,
     textGeneration,
     auth: runtime.auth.controller,
     snapshotForCwd: (cwd: string) =>

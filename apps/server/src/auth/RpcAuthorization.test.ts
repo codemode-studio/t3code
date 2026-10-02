@@ -56,15 +56,64 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("separates ACP Registry discovery from provisioning", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverSearchAcpRegistry)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareAcpRegistryAgent)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverUninstallAcpRegistryManagedBinary)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverAcceptAcpRegistryUrlAuth)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverListAcpRegistrySessions)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverImportAcpRegistrySession)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverLogoutAcpRegistry)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("reads the reviewer menu under the same scope as the pull request it belongs to", () => {
     // The candidate list is a read like the detail beside it, and asking somebody for a review is
     // a write like every other pull request operation.
+    expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsChecks)).toBe(
+      AuthOrchestrationReadScope,
+    );
     expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsReviewerCandidates)).toBe(
       requiredScopeForRpcMethod(WS_METHODS.pullRequestsDetail),
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsRequestReviewers)).toBe(
       requiredScopeForRpcMethod(WS_METHODS.pullRequestsComment),
     );
+  });
+
+  it("lets read-only clients see notes and automations but not change or run them", () => {
+    for (const method of [
+      WS_METHODS.notesList,
+      WS_METHODS.notesGet,
+      WS_METHODS.notesSubscribeChanges,
+      WS_METHODS.subscribeAutomations,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+    for (const method of [
+      WS_METHODS.notesCreate,
+      WS_METHODS.notesUpdate,
+      WS_METHODS.notesDelete,
+      WS_METHODS.automationsCreate,
+      WS_METHODS.automationsUpdate,
+      WS_METHODS.automationsDelete,
+      WS_METHODS.automationsRunNow,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
   });
 
   it("rejects unknown RPC method names", () => {

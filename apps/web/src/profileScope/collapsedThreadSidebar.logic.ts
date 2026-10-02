@@ -21,8 +21,9 @@ export type RailThread = Pick<
   | "snoozedAt"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
-  | "session"
-  | "latestTurn"
+  | "latestUserMessageAt"
+  | "runtime"
+  | "latestRun"
 >;
 
 /**

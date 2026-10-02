@@ -36,10 +36,11 @@ export const layer = Layer.effect(
           WHERE workspace_root = ${cwd} AND deleted_at IS NULL
           UNION ALL
           SELECT threads.project_id, 1 AS rank
-          FROM projection_threads AS threads
+          FROM orchestration_v2_projection_threads AS threads
           JOIN projection_projects AS projects
             ON projects.project_id = threads.project_id AND projects.deleted_at IS NULL
-          WHERE threads.worktree_path = ${cwd} AND threads.deleted_at IS NULL
+          WHERE json_extract(threads.payload_json, '$.worktreePath') = ${cwd}
+            AND threads.deleted_at IS NULL
         )
         ORDER BY rank
         LIMIT 1

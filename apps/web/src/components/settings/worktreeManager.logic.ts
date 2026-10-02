@@ -3,6 +3,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, VcsListedWorktree } from "@t3tools/contracts";
+import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 
 export interface WorktreeDeletionTarget {
   environmentId: EnvironmentId;
@@ -62,11 +63,7 @@ export function worktreeDeletionBlockReason(
   threads: ReadonlyArray<
     Pick<
       EnvironmentThreadShell,
-      | "session"
-      | "latestTurn"
-      | "backgroundLiveness"
-      | "hasPendingApprovals"
-      | "hasPendingUserInput"
+      "runtime" | "pendingBackgroundTasks" | "hasPendingApprovals" | "hasPendingUserInput"
     >
   >,
 ): string | null {
@@ -79,10 +76,8 @@ export function worktreeDeletionBlockReason(
   if (
     threads.some(
       (thread) =>
-        thread.session?.status === "running" ||
-        thread.session?.status === "starting" ||
-        thread.latestTurn?.state === "running" ||
-        thread.backgroundLiveness != null ||
+        threadRuntimeIsActive(thread.runtime) ||
+        thread.pendingBackgroundTasks.length > 0 ||
         thread.hasPendingApprovals ||
         thread.hasPendingUserInput,
     )

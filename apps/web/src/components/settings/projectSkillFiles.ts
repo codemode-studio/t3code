@@ -38,7 +38,7 @@ export async function discoverLocalSkillFiles(
               ...roots.map((cwd) => ({
                 instanceId: provider.instanceId,
                 cwd,
-                refreshWorkspace: true,
+                fresh: true,
               })),
             ];
             for (const input of inputs) {

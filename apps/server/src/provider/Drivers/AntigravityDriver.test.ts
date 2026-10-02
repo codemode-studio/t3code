@@ -4,6 +4,7 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderInstanceId,
   type AntigravitySettings,
+  ProviderSessionId,
   ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -23,20 +24,18 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
-import { ServerConfig } from "../../config.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import * as ServerConfig from "../../config.ts";
+import { ProviderAdapterV2RuntimePolicy } from "../../orchestration-v2/ProviderAdapter.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
-import {
-  AntigravityInstallation,
-  AntigravityInstallationError,
-  type AntigravityExecutable,
-} from "../AntigravityInstallation.ts";
+import * as AntigravityInstallation from "../AntigravityInstallation.ts";
 import {
   ANTIGRAVITY_AUTH_STDOUT_PREFIX,
   resolveAntigravityInstanceDirectories,
 } from "../antigravityAuthSupport.ts";
-import { NoOpProviderEventLoggers, ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
+import * as ProviderEventLoggers from "../Layers/ProviderEventLoggers.ts";
 import * as ModelManifest from "../ModelManifest.ts";
+import * as IdAllocator from "../../orchestration-v2/IdAllocator.ts";
 import { AntigravityDriver } from "./AntigravityDriver.ts";
 
 const hostPlatform = HostProcessPlatform.defaultValue();
@@ -65,7 +64,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const config = yield* ServerConfig;
+  const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const nodePath = yield* HostProcessExecutablePath;
   const baseEnv = yield* HostProcessEnvironment;
@@ -109,7 +108,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       source: "managed",
       version: name,
       managedVersionDirectory: directory,
-    } satisfies AntigravityExecutable;
+    } satisfies AntigravityInstallation.AntigravityExecutable;
   });
 
   const first = yield* makeExecutable("runtime 'one");
@@ -133,12 +132,12 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     handle: ChildProcessSpawner.ChildProcessHandle;
   }> = [];
 
-  const installation = Layer.mock(AntigravityInstallation)({
+  const installation = Layer.mock(AntigravityInstallation.AntigravityInstallation)({
     managedDirectory: root,
     resolve: () =>
       Effect.gen(function* () {
         if (controls.failResolution) {
-          return yield* new AntigravityInstallationError({
+          return yield* new AntigravityInstallation.AntigravityInstallationError({
             operation: "resolve",
             detail: "Fixture resolution failed.",
           });
@@ -150,7 +149,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
         acquisitions.push({ binaryPath, path: environment?.PATH });
         yield* controls.beforeAcquire;
         if (controls.failResolution) {
-          return yield* new AntigravityInstallationError({
+          return yield* new AntigravityInstallation.AntigravityInstallationError({
             operation: "resolve",
             detail: "Fixture resolution failed.",
           });
@@ -255,14 +254,20 @@ const testLayer = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-antigravity-driver-config-",
 }).pipe(
   Layer.provideMerge(NodeServices.layer),
-  Layer.provideMerge(ServerSettingsService.layerTest()),
+  Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provideMerge(
     Layer.mock(BackgroundPolicy.BackgroundPolicy)({
       shouldRunScopeWork: () => Effect.succeed(false),
     }),
   ),
-  Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+  Layer.provideMerge(
+    Layer.succeed(
+      ProviderEventLoggers.ProviderEventLoggers,
+      ProviderEventLoggers.NoOpProviderEventLoggers,
+    ),
+  ),
   Layer.provideMerge(ModelManifest.layerTest),
+  Layer.provideMerge(IdAllocator.layer),
 );
 
 it.layer(testLayer)("AntigravityDriver", (it) => {
@@ -285,18 +290,29 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
     "starts session agents as the checkout's selected GitHub CLI login",
     () =>
       Effect.gen(function* () {
+        const checkout = process.cwd();
         const h = yield* makeHarness({ enabled: true }).pipe(
           Effect.provideService(GitHubCliAccountEnvironment, {
-            forCwd: () => Effect.succeed({ GH_TOKEN: "selected", GITHUB_TOKEN: "selected" }),
+            forCwd: (cwd) =>
+              Effect.succeed(
+                cwd === checkout ? { GH_TOKEN: "selected", GITHUB_TOKEN: "selected" } : {},
+              ),
           }),
         );
         const threadId = ThreadId.make("antigravity-github-login");
-        yield* h.instance.adapter.startSession({
-          threadId,
-          cwd: process.cwd(),
+        const modelSelection = { instanceId: h.instance.instanceId, model: "gemini-test-low" };
+        const runtimePolicy = ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: checkout,
         });
-        yield* h.instance.adapter.stopSession(threadId);
+        const session = yield* h.instance.orchestrationAdapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-antigravity-github-login"),
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* session.ensureThread({ threadId, modelSelection, runtimePolicy });
         const agentLaunches = h.launches.filter((launch) => launch.harnessPath !== undefined);
         expect(agentLaunches.map((launch) => launch.gitHubToken)).toEqual(["selected"]);
       }).pipe(Effect.scoped),
@@ -379,15 +395,15 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         const requests = yield* h.readRequests;
         expect(requests.map((request) => request.method)).toEqual([
           "initialize",
-          "authenticate",
+          "auth/login",
           "session/new",
           "initialize",
-          "authenticate",
+          "auth/login",
           "session/new",
         ]);
         expect(
           requests
-            .filter((request) => request.method === "authenticate")
+            .filter((request) => request.method === "auth/login")
             .map((request) => request.params?.methodId),
         ).toEqual(["oauth-personal", "oauth-personal"]);
         expect(
@@ -419,7 +435,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         const requests = yield* h.readRequests;
         expect(
           requests
-            .filter((request) => request.method === "authenticate")
+            .filter((request) => request.method === "auth/login")
             .map((request) => request.params?.methodId),
         ).toEqual(["gemini-api-key"]);
         yield* h.assertClosed;
@@ -522,7 +538,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const config = yield* ServerConfig;
+        const config = yield* ServerConfig.ServerConfig;
         const instanceId = ProviderInstanceId.make("antigravity-orphan-sweep");
         const directories = yield* resolveAntigravityInstanceDirectories(
           config.stateDir,
@@ -543,7 +559,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
           environment: [],
         }).pipe(
           Effect.provide(
-            Layer.mock(AntigravityInstallation)({
+            Layer.mock(AntigravityInstallation.AntigravityInstallation)({
               managedDirectory: config.stateDir,
               resolve: () => Effect.die("unused"),
               acquire: () => Effect.die("unused"),

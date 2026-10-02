@@ -10,12 +10,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { ProjectionProjectRepositoryLive } from "../persistence/Layers/ProjectionProjects.ts";
-import { ProjectionThreadRepositoryLive } from "../persistence/Layers/ProjectionThreads.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
-import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { GitHubCliAccountEnvironment, GitHubCliAccountSelection } from "./GitHubCli.ts";
@@ -26,56 +23,31 @@ const personal = { host: "github.com", login: "personal" };
 const work = { host: "github.com", login: "work" };
 
 const seed = Effect.gen(function* () {
-  const projects = yield* ProjectionProjectRepository;
-  const threads = yield* ProjectionThreadRepository;
+  const sql = yield* SqlClient.SqlClient;
   for (const [id, root] of [
     ["project-work", "/src/work"],
     ["project-personal", "/src/personal"],
   ] as const) {
-    yield* projects.upsert({
-      projectId: ProjectId.make(id),
-      title: id,
-      workspaceRoot: root,
-      defaultModelSelection: null,
-      defaultThreadEnvMode: null,
-      autoPull: false,
-      scripts: [],
-      createdAt: at,
-      updatedAt: at,
-      deletedAt: null,
-    });
+    yield* sql`
+      INSERT INTO projection_projects (
+        project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+      )
+      VALUES (${id}, ${id}, ${root}, '[]', ${at}, ${at}, NULL)
+    `;
   }
-  yield* threads.upsert({
-    threadId: ThreadId.make("thread-work"),
-    projectId: ProjectId.make("project-work"),
-    title: "Work thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: "feature",
-    worktreePath: "/worktrees/work-feature",
-    latestTurnId: null,
-    createdAt: at,
-    updatedAt: at,
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    unsettledAt: null,
-    snoozedUntil: null,
-    snoozedAt: null,
-    pinnedAt: null,
-    latestUserMessageAt: null,
-    pendingApprovalCount: 0,
-    pendingUserInputCount: 0,
-    hasActionableProposedPlan: 0,
-    deletedAt: null,
-  });
+  yield* sql`
+    INSERT INTO orchestration_v2_projection_threads (
+      thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+      created_at, updated_at, payload_json
+    )
+    VALUES (
+      'thread-work', 'project-work', 'Work thread', 'codex', 'full-access', 'default',
+      ${at}, ${at}, '{"worktreePath":"/worktrees/work-feature"}'
+    )
+  `;
 });
 
-const persistence = Layer.mergeAll(
-  ProjectionProjectRepositoryLive,
-  ProjectionThreadRepositoryLive,
-).pipe(Layer.provideMerge(SqlitePersistenceMemory));
+const persistence = SqlitePersistenceMemory;
 
 it.effect("resolves the project override for its root and its thread worktrees", () =>
   Effect.gen(function* () {

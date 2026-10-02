@@ -14,7 +14,7 @@ import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { ProjectFavicon } from "../components/ProjectFavicon";
-import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
@@ -81,9 +81,10 @@ const RailThreadButton = memo(function RailThreadButton({
 }) {
   const navigate = useNavigate();
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const lastVisitedAt = useUiStateStore(
+  const localLastVisitedAt = useUiStateStore(
     (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
   );
+  const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   const project = useProjects().find(
     (candidate) =>
       candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,

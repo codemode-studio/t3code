@@ -41,7 +41,7 @@ Resolve each conflict so both the upstream change and the fork change keep worki
 
 - **`pnpm-lock.yaml`**: take upstream's version, then run `vp i` to regenerate the fork's additions.
 - **`.repos/`**: take upstream's version. It is vendored reference material, never fork-edited.
-- **`apps/server/src/persistence/Migrations.ts` and `Migrations/NNN_*.ts`**: migrations are registered by number in one ordered list. When upstream took a number the fork also used, the fork migration moves to the next free number after all upstream migrations, in both the filename and the registry entry. Never renumber an upstream migration.
+- **`apps/server/src/persistence/Migrations.ts` and `Migrations/NNN_*.ts`**: this list belongs to upstream. Take upstream's numbers and entries untouched, and never add or renumber a fork migration there: the Effect migrator only runs ids above the highest one a database has recorded, so a fork id in that ledger hides upstream migrations from deployed databases, and renumbering the source cannot repair rows already recorded. Fork-owned schema goes in the separate `t3_fork_migrations` ledger in `apps/server/src/persistence/forkMigrations.ts`. Databases written by older fork builds that shared the upstream ledger are repaired there, before upstream migrations run, by reconciling only the exact known fork id and name pairs; never match by number or name alone.
 - **Same feature on both sides** (an upstream commit implements what a fork commit did): prefer upstream's implementation and drop the fork's, unless the fork version carries behavior upstream lacks. Record every dropped fork change for the report.
 - **Generated or formatted output**: resolve the source, then regenerate or run `vp fmt` on the file instead of hand-merging.
 

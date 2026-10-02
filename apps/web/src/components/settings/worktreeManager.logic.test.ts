@@ -1,4 +1,5 @@
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -25,11 +26,18 @@ const target: WorktreeDeletionTarget = {
 };
 const member = { environmentId: laptop, workspaceRoot: "/repo" };
 const idle = {
-  session: null,
-  latestTurn: null,
-  backgroundLiveness: null,
+  runtime: null,
+  pendingBackgroundTasks: [],
   hasPendingApprovals: false,
   hasPendingUserInput: false,
+};
+const running: ThreadRuntimeSummary = {
+  status: "running",
+  activeRunId: null,
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  providerName: null,
+  lastError: null,
+  updatedAt: "2026-09-01T10:00:00.000Z",
 };
 
 describe("worktree deletion", () => {
@@ -40,7 +48,7 @@ describe("worktree deletion", () => {
       environmentId: laptop,
       projectId,
       worktreePath: null,
-      backgroundLiveness: "working" as const,
+      runtime: running,
     };
     const explicit = { ...local, id: ThreadId.make("explicit"), worktreePath: "/linked" };
     const otherMachine = { ...local, environmentId: server };
@@ -76,9 +84,9 @@ describe("worktree deletion", () => {
 
   it("rechecks activity for an already selected deletion target", () => {
     expect(worktreeDeletionBlockReason(target, member, [idle])).toBeNull();
-    expect(
-      worktreeDeletionBlockReason(target, member, [{ ...idle, backgroundLiveness: "working" }]),
-    ).toBe("A thread is running here");
+    expect(worktreeDeletionBlockReason(target, member, [{ ...idle, runtime: running }])).toBe(
+      "A thread is running here",
+    );
     expect(
       worktreeDeletionBlockReason(target, member, [{ ...idle, hasPendingApprovals: true }]),
     ).toBe("A thread is running here");

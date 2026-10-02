@@ -22,8 +22,9 @@ function thread(id: string, overrides: Partial<RailThread> = {}): RailThread {
     snoozedAt: null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
-    session: null,
-    latestTurn: null,
+    latestUserMessageAt: null,
+    runtime: null,
+    latestRun: null,
     ...overrides,
   };
 }
