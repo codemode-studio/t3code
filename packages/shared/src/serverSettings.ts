@@ -1,4 +1,5 @@
 import {
+  FORK_PROJECT_SCOPED_SERVER_SETTING_KEYS,
   isProviderDriverKind,
   isProviderAvailable,
   resolveProviderInstanceEnabled,
@@ -265,6 +266,29 @@ function translateLegacyProjectOverridePatch(
   } as ServerSettingsPatch;
 }
 
+/**
+ * Fork: carry each patched project's stored fork-only keys into the entry that replaces it.
+ * Upstream clients drop those keys when decoding settings and resend entries without them; an
+ * entry they remove keeps just the fork-only keys.
+ */
+function keepForkProjectSettings(
+  current: Readonly<Record<string, ProjectSettingsOverrides>>,
+  patch: Readonly<Record<string, ProjectSettingsOverrides | null>>,
+): Record<string, ProjectSettingsOverrides | null> {
+  return Object.fromEntries(
+    Object.entries(patch).map(([projectId, entry]) => {
+      const stored = current[projectId];
+      const kept: ProjectSettingsOverrides = Object.fromEntries(
+        FORK_PROJECT_SCOPED_SERVER_SETTING_KEYS.flatMap((key) =>
+          stored?.[key] === undefined ? [] : [[key, stored[key]]],
+        ),
+      );
+      const next = { ...kept, ...entry };
+      return [projectId, Object.keys(next).length === 0 ? null : next];
+    }),
+  );
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   rawPatch: ServerSettingsPatch,
@@ -282,7 +306,8 @@ export function applyServerSettingsPatch(
     usagePriceOverrides: usagePriceOverridesPatch,
     providerProfiles: providerProfilesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
-    projectSettingsOverrides: projectSettingsOverridesPatch,
+    projectSettingsOverrides: projectSettingsOverridesEntries,
+    projectSettingsOverridesIncludeForkKeys,
     // Already translated into `projectSettingsOverrides` above; the legacy
     // maps are derived views and must never be merged directly.
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
@@ -290,6 +315,10 @@ export function applyServerSettingsPatch(
     projectScriptOverrides: _legacyScripts,
     ...patchForMerge
   } = patch;
+  const projectSettingsOverridesPatch =
+    projectSettingsOverridesEntries === undefined || projectSettingsOverridesIncludeForkKeys
+      ? projectSettingsOverridesEntries
+      : keepForkProjectSettings(current.projectSettingsOverrides, projectSettingsOverridesEntries);
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
   const backgroundActivityPatch =
     backgroundActivityProfile !== undefined

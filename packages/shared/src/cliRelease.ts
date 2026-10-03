@@ -97,8 +97,20 @@ export function cliReleaseChannelOf(version: string): CliReleaseChannel {
  * until a channel match turns up; a busy nightly train can push the newest
  * preview or stable release past any single page.
  */
-export function cliReleaseIndexPageUrl(page: number): string {
-  return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
+export function cliReleaseIndexPageUrl(page: number, baseUrl?: string | undefined): string {
+  return `https://api.github.com/repos/${cliReleaseRepository(baseUrl)}/releases?per_page=100&page=${page}`;
+}
+
+/**
+ * Fork: a GitHub `releases/download` base URL names the repository whose releases to list, so a
+ * fork build looks for updates where it publishes. Other mirrors keep upstream's index.
+ */
+function cliReleaseRepository(baseUrl: string | undefined): string {
+  return (
+    /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/releases\/download\/?$/.exec(
+      baseUrl?.trim() ?? "",
+    )?.[1] ?? CLI_RELEASE_REPOSITORY
+  );
 }
 
 /**

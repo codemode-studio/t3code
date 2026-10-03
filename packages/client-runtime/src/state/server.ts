@@ -972,6 +972,14 @@ export function createServerEnvironmentAtoms<R, E>(
   const updateSettings = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:server:update-settings",
     tag: WS_METHODS.serverUpdateSettings,
+    // Fork: this client decodes fork-only project keys, so its entries are complete.
+    execute: (input) =>
+      request(
+        WS_METHODS.serverUpdateSettings,
+        input.patch.projectSettingsOverrides === undefined
+          ? input
+          : { ...input, patch: { ...input.patch, projectSettingsOverridesIncludeForkKeys: true } },
+      ),
     scheduler: configScheduler,
     concurrency: configConcurrency,
   });

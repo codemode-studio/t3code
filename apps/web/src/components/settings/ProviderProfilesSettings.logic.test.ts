@@ -3,8 +3,9 @@ import {
   ProjectId,
   ProviderProfileId,
   type ServerSettings,
+  type ServerSettingsPatch,
 } from "@t3tools/contracts";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { applyServerSettingsPatch as applyPatch } from "@t3tools/shared/serverSettings";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -24,6 +25,10 @@ const optedIn = ProjectId.make("opted-in");
 const optedOut = ProjectId.make("opted-out");
 const other = ProjectId.make("other");
 const inheriting = ProjectId.make("inheriting");
+
+// The fork client sends complete project entries, so omitted fork-only keys clear.
+const applyServerSettingsPatch = (current: ServerSettings, patch: ServerSettingsPatch) =>
+  applyPatch(current, { ...patch, projectSettingsOverridesIncludeForkKeys: true });
 
 const settings: ServerSettings = {
   ...DEFAULT_SERVER_SETTINGS,

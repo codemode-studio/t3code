@@ -55,10 +55,11 @@ function ProfileFollowsActiveProject() {
 }
 
 /**
- * The app sidebar's content: the expanded sidebar it wraps, and the icon rail in its place while
- * collapsed on desktop. Mobile keeps its sheet, which only ever shows the expanded sidebar.
+ * The app sidebar's content: the expanded sidebar it wraps, and an icon rail in its place while
+ * collapsed on desktop (the thread rail unless the page brings its own). Mobile keeps its sheet,
+ * which only ever shows the expanded sidebar.
  */
-export function ProfileAwareSidebar({ children }: { children: ReactNode }) {
+export function ProfileAwareSidebar({ children, rail }: { children: ReactNode; rail?: ReactNode }) {
   const { state, isMobile } = useSidebar();
   return (
     <>
@@ -66,7 +67,7 @@ export function ProfileAwareSidebar({ children }: { children: ReactNode }) {
       <ProfileFollowsActiveProject />
       <SidebarContentSlot
         showRail={state === "collapsed" && !isMobile}
-        rail={<CollapsedThreadSidebar />}
+        rail={rail ?? <CollapsedThreadSidebar />}
       >
         {children}
       </SidebarContentSlot>

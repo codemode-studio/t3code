@@ -9,6 +9,32 @@
 }
 
 /*
+ * Nothing else fills that row above the rail, so the bare page showed through under the traffic
+ * lights: the theme's chrome color, or the unblurred desktop when the window is translucent. Paint
+ * it like the main pane's header beside it so the bar reads as one surface.
+ */
+[data-slot="sidebar"][data-collapsible="icon"] [data-slot="sidebar-gap"]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: var(--workspace-topbar-height);
+  background-color: var(--background);
+  background-image: var(--surface-grain);
+  background-size: var(--surface-grain-size);
+}
+
+html.window-translucent[data-window-translucency-main-pane]
+  [data-slot="sidebar"][data-collapsible="icon"]
+  [data-slot="sidebar-gap"]::before {
+  background-color: color-mix(
+    in srgb,
+    var(--background) var(--window-translucency-opacity),
+    transparent
+  );
+}
+
+/*
  * Headers inset past the toggle when the sidebar collapses (see workspaceTitlebar.ts), measured
  * from the window edge. The rail already moved them right by its width, so only the rest of the
  * window controls and toggle needs clearing.

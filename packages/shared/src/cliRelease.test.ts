@@ -90,5 +90,9 @@ describe("cliRelease", () => {
       "https://api.github.com/repos/pingdotgg/t3code/releases?per_page=100&page=1",
     );
     expect(cliReleaseIndexPageUrl(3)).toContain("page=3");
+    expect(cliReleaseIndexPageUrl(1, "https://github.com/acme/t3code/releases/download/")).toBe(
+      "https://api.github.com/repos/acme/t3code/releases?per_page=100&page=1",
+    );
+    expect(cliReleaseIndexPageUrl(1, "https://mirror.example/t3")).toContain("pingdotgg/t3code");
   });
 });

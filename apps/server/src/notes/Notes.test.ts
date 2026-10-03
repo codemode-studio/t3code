@@ -165,8 +165,9 @@ it.layer(testLayer)("notes", (it) => {
     }),
   );
 
-  for (const operation of ["create", "update"] as const) {
-    it.effect(`restores claimed uploads after a failed ${operation} database write`, () =>
+  it.effect.each(["create", "update"] as const)(
+    "restores claimed uploads after a failed %s database write",
+    (operation) =>
       Effect.gen(function* () {
         const config = yield* ServerConfig;
         const sql = yield* SqlClient.SqlClient;
@@ -204,8 +205,7 @@ it.layer(testLayer)("notes", (it) => {
         expect(NodeFS.existsSync(pendingPath)).toBe(false);
         yield* deleteNote(saved.id);
       }),
-    );
-  }
+  );
 
   it.effect("stores project and transcript provenance, then searches, edits, and deletes", () =>
     Effect.gen(function* () {

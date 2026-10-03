@@ -39,6 +39,7 @@ import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
+import { CollapsedSettingsSidebar } from "../profileScope/CollapsedSettingsSidebar";
 import { ProfileAwareSidebar } from "../profileScope/ProfileAwareSidebar";
 import {
   resolveInitialThreadSidebarWidth,
@@ -321,7 +322,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             onResize: setSidebarWidth,
           }}
         >
-          <ProfileAwareSidebar>
+          <ProfileAwareSidebar
+            rail={isOnSettings ? <CollapsedSettingsSidebar pathname={pathname} /> : undefined}
+          >
             {isOnSettings ? (
               <>
                 <SidebarChromeHeader isElectron={isElectron} />

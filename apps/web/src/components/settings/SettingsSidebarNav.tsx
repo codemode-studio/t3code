@@ -112,15 +112,42 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   return <Icon className="mt-0.5 size-3.5 shrink-0 text-sidebar-muted-foreground/60" />;
 }
 
-export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+/** The settings sections to list and how to open one, for this nav and the collapsed icon rail. */
+export function useSettingsSections(pathname: string) {
   const navigate = useNavigate();
-  const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const navItems = SETTINGS_NAV_ITEMS.filter(
     (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
   );
+  const isSectionActive = (to: SettingsPath) =>
+    (to === "/settings/general" && pathname === "/settings/open-source-licenses") ||
+    pathname === to ||
+    pathname.startsWith(`${to}/`);
+  const openSection = useCallback(
+    (to: SettingsPath) => {
+      const search = defaultStorageTarget(to, scopeSearch, primaryEnvironmentId);
+      void navigate({
+        to,
+        ...(search ? { search } : {}),
+        hash: "",
+        replace: true,
+        hashScrollIntoView: false,
+      });
+    },
+    [navigate, primaryEnvironmentId, scopeSearch],
+  );
+  return { navItems, isSectionActive, openSection };
+}
+
+export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const navigate = useNavigate();
+  const currentHash = useLocation({ select: (location) => location.hash });
+  const currentSearch = useLocation({ select: (location) => location.search });
+  const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { navItems, isSectionActive, openSection } = useSettingsSections(pathname);
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -179,16 +206,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       if (isMobile) {
         setOpenMobile(false);
       }
-      const search = defaultStorageTarget(to, scopeSearch, primaryEnvironmentId);
-      void navigate({
-        to,
-        ...(search ? { search } : {}),
-        hash: "",
-        replace: true,
-        hashScrollIntoView: false,
-      });
+      openSection(to);
     },
-    [isMobile, navigate, primaryEnvironmentId, scopeSearch, setOpenMobile],
+    [isMobile, openSection, setOpenMobile],
   );
   const clearSearch = useCallback(() => {
     setQuery("");
@@ -345,17 +365,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               <SidebarMenu>
                 {navItems.map((item) => {
                   const Icon = item.icon;
-                  const isGeneralDetailPage =
-                    item.to === "/settings/general" &&
-                    pathname === "/settings/open-source-licenses";
-                  const isActive =
-                    isGeneralDetailPage ||
-                    pathname === item.to ||
-                    pathname.startsWith(`${item.to}/`);
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton
-                        isActive={isActive}
+                        isActive={isSectionActive(item.to)}
                         onClick={() => handleSectionClick(item.to)}
                       >
                         <Icon />

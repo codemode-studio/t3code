@@ -206,6 +206,45 @@ describe("serverSettings helpers", () => {
     expect(resolveProjectAgentBrowserAccess(secondUpdate, firstProjectId)).toBe(false);
   });
 
+  it("keeps fork-only project settings that upstream clients resend without", () => {
+    const projectId = ProjectId.make("project-fork");
+    const stored = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
+      projectSettingsOverridesIncludeForkKeys: true,
+      projectSettingsOverrides: {
+        [projectId]: {
+          githubCliAccount: null,
+          createPullRequestsAsDraft: true,
+          defaultAutoPull: true,
+        },
+      },
+    });
+
+    // Upstream clients strip unknown keys, so their entries never carry them.
+    const edited = applyServerSettingsPatch(stored, {
+      projectSettingsOverrides: { [projectId]: { defaultAutoPull: false } },
+    });
+    expect(edited.projectSettingsOverrides[projectId]).toEqual({
+      githubCliAccount: null,
+      createPullRequestsAsDraft: true,
+      defaultAutoPull: false,
+    });
+    const cleared = applyServerSettingsPatch(edited, {
+      projectSettingsOverrides: { [projectId]: null },
+    });
+    expect(cleared.projectSettingsOverrides[projectId]).toEqual({
+      githubCliAccount: null,
+      createPullRequestsAsDraft: true,
+    });
+
+    // Fork clients send complete entries, so an omitted key is cleared.
+    const forkCleared = applyServerSettingsPatch(cleared, {
+      projectSettingsOverridesIncludeForkKeys: true,
+      projectSettingsOverrides: { [projectId]: { githubCliAccount: null } },
+    });
+    expect(forkCleared.projectSettingsOverrides[projectId]).toEqual({ githubCliAccount: null });
+    expect(forkCleared).not.toHaveProperty("projectSettingsOverridesIncludeForkKeys");
+  });
+
   it("replaces and clears conversation model defaults without retaining old options", () => {
     const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       defaultModelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [

@@ -32,6 +32,7 @@ import {
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
+import { resolveReleaseBaseUrl } from "../cloud/releaseSource.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
@@ -69,12 +70,13 @@ const RELEASE_INDEX_MAX_PAGES = 10;
 /** Asks GitHub for the newest published version on a channel, page by page. */
 const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(function* (
   channel: CliReleaseChannel,
+  releaseBaseUrl: string | undefined,
 ) {
   const httpClient = yield* HttpClient.HttpClient;
   for (let page = 1; page <= RELEASE_INDEX_MAX_PAGES; page += 1) {
     const body = yield* httpClient
       .execute(
-        HttpClientRequest.get(cliReleaseIndexPageUrl(page)).pipe(
+        HttpClientRequest.get(cliReleaseIndexPageUrl(page, releaseBaseUrl)).pipe(
           HttpClientRequest.setHeader("Accept", "application/vnd.github+json"),
         ),
       )
@@ -351,6 +353,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   const httpClient = yield* HttpClient.HttpClient;
   const service = yield* BootService.BootService;
 
+  const releaseBaseUrl = resolveReleaseBaseUrl(environment[CLI_RELEASE_BASE_URL_ENV]);
   const currentVersion = packageJson.version;
   const channel = input.channel ?? cliReleaseChannelOf(currentVersion);
   if (input.requestedVersion !== undefined && !isExactServiceVersion(input.requestedVersion)) {
@@ -362,7 +365,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   progress.status("Checking for updates...");
   const targetVersion = yield* (
     input.requestedVersion === undefined
-      ? resolveNewestVersion(channel)
+      ? resolveNewestVersion(channel, releaseBaseUrl)
       : Effect.succeed(input.requestedVersion)
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);
@@ -496,7 +499,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     httpClient,
     platform,
     arch,
-    releaseBaseUrl: environment[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined,
+    releaseBaseUrl,
     validate: (paths) =>
       runner
         .run({

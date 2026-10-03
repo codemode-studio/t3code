@@ -26,7 +26,7 @@ import { partitionRailThreads } from "./collapsedThreadSidebar.logic";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { useProfileScopedProjectKeys, useProfileScopeState } from "./useProfileScope";
 
-function RailButton({
+export function RailButton({
   label,
   ariaLabel,
   edgeColor = null,
