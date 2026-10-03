@@ -1196,6 +1196,17 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
 /**
+ * Fork: project-scoped keys upstream clients (app.t3.codes, the T3 Code mobile app) do not know.
+ * They drop them when decoding settings, so the server keeps these from the stored entry unless
+ * the patch sets `projectSettingsOverridesIncludeForkKeys`.
+ */
+export const FORK_PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "providerProfileId",
+  "createPullRequestsAsDraft",
+  "githubCliAccount",
+] as const satisfies ReadonlyArray<ProjectScopedServerSettingKey>;
+
+/**
  * One project's overrides. An absent key inherits the environment value;
  * `null` is a real value where the environment type is nullable (no default
  * model, no dedicated writer model, never auto-settle).
@@ -1715,6 +1726,11 @@ export const ServerSettingsPatch = Schema.Struct({
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(ProjectSettingsOverrides)),
   ),
+  /**
+   * Fork: this client's `projectSettingsOverrides` entries are complete, fork-only keys included,
+   * so omitting one clears it. Without it the server keeps the stored fork-only keys.
+   */
+  projectSettingsOverridesIncludeForkKeys: Schema.optionalKey(Schema.Literal(true)),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
