@@ -204,21 +204,22 @@ describe("removeInactiveWorktree", () => {
     }).pipe(Effect.provide(state.layer));
   });
 
-  for (const archived of [false, true]) {
-    it.effect(`protects active project-root threads${archived ? " in the archive" : ""}`, () => {
-      const active = thread({
-        pendingBackgroundTasks: [{ taskId: "task", kind: "command" }],
-      });
-      const state = setup(archived ? [] : [active], archived ? [active] : []);
-      return Effect.gen(function* () {
-        const result = yield* removeInactiveWorktree({ ...input, path: "/alias" }).pipe(
-          Effect.result,
-        );
-        assert.equal(result._tag, "Failure");
-        assert.deepEqual(state.removed, []);
-      }).pipe(Effect.provide(state.layer));
+  it.effect.each([
+    { name: "", archived: false },
+    { name: " in the archive", archived: true },
+  ])("protects active project-root threads$name", ({ archived }) => {
+    const active = thread({
+      pendingBackgroundTasks: [{ taskId: "task", kind: "command" }],
     });
-  }
+    const state = setup(archived ? [] : [active], archived ? [active] : []);
+    return Effect.gen(function* () {
+      const result = yield* removeInactiveWorktree({ ...input, path: "/alias" }).pipe(
+        Effect.result,
+      );
+      assert.equal(result._tag, "Failure");
+      assert.deepEqual(state.removed, []);
+    }).pipe(Effect.provide(state.layer));
+  });
 
   it.effect("protects explicit worktree threads and lets unrelated activity continue", () => {
     const state = setup([
