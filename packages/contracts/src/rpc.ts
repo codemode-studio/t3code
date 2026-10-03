@@ -16,6 +16,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import * as RpcMiddleware from "effect/unstable/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   Note,
@@ -1804,6 +1805,16 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
   stream: true,
 });
 
+/**
+ * Checks the connection's scopes against the scope each RPC declares, before
+ * the handler runs. Every RPC in `WsRpcGroup` carries it, so a handler cannot
+ * be added without authorization.
+ */
+export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
+  "t3/contracts/RpcScopeAuthorization",
+  { error: EnvironmentAuthorizationError },
+) {}
+
 export const WsRpcGroup = RpcGroup.make(
   WsAutomationsCreateRpc,
   WsAutomationsUpdateRpc,
@@ -1992,4 +2003,4 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
-);
+).middleware(RpcScopeAuthorization);

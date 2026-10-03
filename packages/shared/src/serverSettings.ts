@@ -305,6 +305,7 @@ export function applyServerSettingsPatch(
     usageLimitSources: usageLimitSourcesPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     providerProfiles: providerProfilesPatch,
+    usageModelAliases: usageModelAliasesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesEntries,
     projectSettingsOverridesIncludeForkKeys,
@@ -427,6 +428,14 @@ export function applyServerSettingsPatch(
           usagePriceOverrides: mergeSettingsEntries(
             current.usagePriceOverrides,
             usagePriceOverridesPatch,
+          ),
+        }
+      : {}),
+    ...(usageModelAliasesPatch !== undefined
+      ? {
+          usageModelAliases: mergeSettingsEntries(
+            current.usageModelAliases,
+            usageModelAliasesPatch,
           ),
         }
       : {}),
