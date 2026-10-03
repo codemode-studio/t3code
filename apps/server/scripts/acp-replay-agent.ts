@@ -56,9 +56,11 @@ let nextAgentRequestId = 1;
 const pendingClientRequestIds = new Map<string, string | number>();
 const pendingAgentRequestMethods = new Map<string, string>();
 
+// Replaced by rename so a reader, or a stop mid-write, never sees a truncated status.
 function writeStatus(failure?: unknown): void {
+  const pendingPath = `${replayStatusPath}.pending`;
   NodeFS.writeFileSync(
-    replayStatusPath,
+    pendingPath,
     JSON.stringify({
       scenario: transcript.scenario,
       cursor,
@@ -67,6 +69,7 @@ function writeStatus(failure?: unknown): void {
     }),
     "utf8",
   );
+  NodeFS.renameSync(pendingPath, replayStatusPath);
 }
 
 function stableStringify(value: unknown): string {
@@ -184,42 +187,41 @@ function materializeInbound(value: unknown): unknown {
   );
 }
 
-function emitInbound(recorded: LogicalFrame): void {
+/** The wire message for a recorded inbound frame, or undefined after stopping on a mismatch. */
+function inboundMessage(recorded: LogicalFrame): JsonRpcMessage | undefined {
   const frame = materializeInbound(recorded) as LogicalFrame;
   switch (frame.kind) {
     case "notification":
-      send({
+      return {
         jsonrpc: "2.0",
         method: frame.method,
         ...(frame.params === undefined ? {} : { params: frame.params }),
-      });
-      return;
+      };
     case "request": {
       const id = nextAgentRequestId;
       nextAgentRequestId += 1;
       pendingAgentRequestMethods.set(String(id), frame.method);
-      send({
+      return {
         jsonrpc: "2.0",
         id,
         method: frame.method,
         ...(frame.params === undefined ? {} : { params: frame.params }),
         headers: [],
-      });
-      return;
+      };
     }
     case "response": {
       const id = pendingClientRequestId(frame.method);
       if (id === undefined) {
         stopWithFailure(`No pending client request for ${frame.method}`, frame);
-        return;
+        return undefined;
       }
       pendingClientRequestIds.delete(frame.method);
-      send({
+      return {
         jsonrpc: "2.0",
         id,
         ...(frame.result === undefined ? {} : { result: frame.result }),
         ...(frame.error === undefined ? {} : { error: frame.error }),
-      });
+      };
     }
   }
 }
@@ -246,9 +248,11 @@ function flushInbound(): void {
       stopWithFailure("Invalid emit_inbound logical ACP frame", entry.frame);
       return;
     }
-    emitInbound(frame);
-    if (stopped) return;
+    const message = inboundMessage(frame);
+    if (message === undefined) return;
+    // Record progress before sending: a client that has the last frame may stop this agent.
     advance();
+    send(message);
   }
 }
 

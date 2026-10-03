@@ -382,9 +382,11 @@ it.layer(testLayer)("CodexDriver", (it) => {
             .pipe(Effect.scoped, Effect.exit);
         }
         expect(launches).toHaveLength(2);
+        // Either variable may be unset, or hold an ambient login; neither may be a project's.
+        const projectTokens = Object.values(tokens);
         for (const environment of launches) {
-          expect(environment.GH_TOKEN).not.toMatch(/^token-/);
-          expect(environment.GITHUB_TOKEN).not.toMatch(/^token-/);
+          expect(projectTokens).not.toContain(environment.GH_TOKEN);
+          expect(projectTokens).not.toContain(environment.GITHUB_TOKEN);
         }
 
         // `codex exec` runs once per request in that request's checkout.
