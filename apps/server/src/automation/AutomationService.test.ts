@@ -819,6 +819,11 @@ it.effect("settles a cancelled run once recovery skips the continuation it inten
       const automation = yield* service.create(CONFIG);
       const threadId = (yield* service.runNow(automation.id)).threadId!;
       const source = ThreadManagementService.latestRun({ runs: yield* runsOf(threadId) })!;
+      const startEffect = Option.getOrThrow(
+        yield* outbox.claimNext({ workerId: "test-worker", leaseDurationMs: 60_000 }),
+      );
+      assert.strictEqual(startEffect.request.type, "provider-turn.start");
+      yield* outbox.succeed({ effectId: startEffect.id, workerId: "test-worker" });
       yield* reply(source, "Halfway through.");
       const now = yield* DateTime.now;
       const effectId = `effect:restart-continuation:${source.id}`;
