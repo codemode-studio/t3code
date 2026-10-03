@@ -456,4 +456,6 @@ jobs:
           mv "$staging" "$runtime_root/$VERSION"
           trap - EXIT
 
-          if [[ "$was_running" == true ]]; then open "$dest"; fi
+          # The runner kills every process carrying this job's RUNNER_TRACKING_ID
+          # when the job ends, which would quit the relaunched app again.
+          if [[ "$was_running" == true ]]; then env -u RUNNER_TRACKING_ID open "$dest"; fi
