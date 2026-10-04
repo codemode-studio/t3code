@@ -109,6 +109,7 @@ const launchTestLayer = (harness: Harness) =>
     Effect.gen(function* () {
       const threads = yield* ThreadManagementService.ThreadManagementService;
       return ThreadLaunchService.ThreadLaunchService.of({
+        retryPreparation: () => Effect.die("Automation tests do not retry workspace preparation"),
         launch: (input) =>
           Effect.gen(function* () {
             yield* Ref.update(harness.launches, (all) => [...all, input]);

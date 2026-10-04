@@ -1805,12 +1805,16 @@ const makeWsRpcLayer = (
               .pipe(
                 Effect.flatMap((snapshotted) =>
                   startup.enqueueCommand(
-                    ThreadMessageIntake.dispatchCommand(
-                      ThreadManagementService.withCreationProvenance(snapshotted, {
-                        createdBy: "user",
-                        creationSource:
-                          "creationSource" in snapshotted ? snapshotted.creationSource : "web",
-                      }),
+                    // A retry also restarts the preparation work the launch owns.
+                    (snapshotted.type === "prepared-run.retry"
+                      ? threadLaunch.retryPreparation(snapshotted)
+                      : ThreadMessageIntake.dispatchCommand(
+                          ThreadManagementService.withCreationProvenance(snapshotted, {
+                            createdBy: "user",
+                            creationSource:
+                              "creationSource" in snapshotted ? snapshotted.creationSource : "web",
+                          }),
+                        )
                     ).pipe(Effect.provide(intakeContext)),
                   ),
                 ),
