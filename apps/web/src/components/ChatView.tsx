@@ -252,7 +252,8 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
-import { BrowserSettingsReadError } from "../browser/openFileInPreview";
+import { BrowserSettingsReadError, openUrlInPreview } from "../browser/openFileInPreview";
+import { resolveDiscoveredServerUrl } from "../browser/browserTargetResolver";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
@@ -3008,6 +3009,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [setDismissedVersionMismatchKey, versionMismatchDismissKey]);
   const serverUpdateEnvironmentId = activeThread?.environmentId ?? null;
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
+  const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
   const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
   const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
   const serverUpdateState = useAtomValue(
@@ -3129,6 +3131,7 @@ export default function ChatView(props: ChatViewProps) {
             environmentId={serverUpdateEnvironmentId}
             serverLabel={versionMismatchServerLabel}
             selfUpdate={versionMismatchSelfUpdate}
+            installation={versionMismatchInstallation}
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
             threadContinuation={versionMismatchThreadContinuation}
             targetVersion={versionMismatch.clientVersion}
@@ -3170,6 +3173,7 @@ export default function ChatView(props: ChatViewProps) {
     versionMismatchDismissKey,
     serverUpdateEnvironmentId,
     versionMismatchSelfUpdate,
+    versionMismatchInstallation,
     versionMismatchDesktopAppUpdate,
     versionMismatchThreadContinuation,
     versionMismatchServerLabel,
@@ -4912,12 +4916,32 @@ export default function ChatView(props: ChatViewProps) {
           data: `${script.command}\r`,
         },
       });
-      if (writeResult._tag === "Failure" && !isAtomCommandInterrupted(writeResult)) {
-        const error = squashAtomCommandFailure(writeResult);
-        setThreadError(
-          activeThreadId,
-          error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
-        );
+      if (writeResult._tag === "Failure") {
+        if (!isAtomCommandInterrupted(writeResult)) {
+          const error = squashAtomCommandFailure(writeResult);
+          setThreadError(
+            activeThreadId,
+            error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
+          );
+        }
+        return;
+      }
+      if (script.autoOpenPreview && script.previewUrl && isPreviewSupportedInRuntime()) {
+        const previewResult = await openUrlInPreview({
+          threadRef: activeThreadRef,
+          url: resolveDiscoveredServerUrl(activeThreadRef.environmentId, script.previewUrl),
+          openPreview,
+        });
+        if (previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)) {
+          const error = squashAtomCommandFailure(previewResult);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not open preview",
+              description: error instanceof Error ? error.message : "An unexpected error occurred.",
+            }),
+          );
+        }
       }
     },
     [
@@ -4933,6 +4957,7 @@ export default function ChatView(props: ChatViewProps) {
       setLastInvokedScriptByProjectId,
       environmentId,
       openTerminal,
+      openPreview,
       activeKnownTerminalIds,
       allocatableActiveTerminalIds,
       runningTerminalIds,
