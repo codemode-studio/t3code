@@ -45,7 +45,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   threadId: ThreadId;
   draftId?: DraftId;
   activeProjectName: string | undefined;
-  /** The project whose settings, such as opening pull requests as drafts, git actions use. */
+  /** The project whose changes and files the panel shows. */
   activeProjectId?: ProjectId | undefined;
   activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
   preferredScriptId: string | null;
@@ -213,7 +213,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     displayMode="panel"
                     compact={density !== "full"}
                     gitCwd={props.gitCwd}
-                    projectId={props.activeProjectId}
                     activeThreadRef={{
                       environmentId: props.environmentId,
                       threadId: props.threadId,
