@@ -66,6 +66,8 @@ describe("fork migration ledger", () => {
       assert.deepStrictEqual(yield* runMigrations(), [
         [55, "OrchestrationV2"],
         [56, "RemoveRedundantProjectionIndexes"],
+        [57, "ScheduledTaskWebhooks"],
+        [58, "WebhookRelayDeliveries"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -83,6 +85,8 @@ describe("fork migration ledger", () => {
         [54, "ProjectionThreadsAutoSettleDisabledAt"],
         [55, "OrchestrationV2"],
         [56, "RemoveRedundantProjectionIndexes"],
+        [57, "ScheduledTaskWebhooks"],
+        [58, "WebhookRelayDeliveries"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -98,7 +102,7 @@ describe("fork migration ledger", () => {
 
   it.effect("leaves an upstream database's history alone and adds notes", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 56 });
+      yield* runMigrations({ toMigrationInclusive: 58 });
       assert.isFalse(yield* tableExists("notes"));
       assert.deepStrictEqual(yield* runMigrations(), []);
       yield* insertNote;
@@ -116,7 +120,7 @@ describe("fork migration ledger", () => {
       const before = yield* upstreamLedger;
 
       yield* runMigrations();
-      assert.deepStrictEqual(yield* upstreamLedger, before);
+      assert.deepStrictEqual(yield* upstreamLedger, [...before, [58, "WebhookRelayDeliveries"]]);
       assert.isFalse(yield* tableExists("orchestration_v2_events"));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
