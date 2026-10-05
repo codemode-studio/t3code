@@ -8,7 +8,7 @@ import {
   type ProfileScope,
 } from "@t3tools/client-runtime/state/profile-scope";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useCallback, useMemo } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";

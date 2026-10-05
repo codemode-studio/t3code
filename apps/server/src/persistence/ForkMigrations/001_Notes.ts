@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 // Databases from fork builds that recorded Notes in the upstream ledger already
 // have this table, so every statement tolerates an existing schema.

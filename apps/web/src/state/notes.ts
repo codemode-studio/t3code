@@ -3,7 +3,7 @@ import { createNotesEnvironmentAtoms } from "@t3tools/client-runtime/state/notes
 import type { EnvironmentId, NoteSummary } from "@t3tools/contracts";
 import { isAnswerExpected } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentPresentations } from "./presentation";
 

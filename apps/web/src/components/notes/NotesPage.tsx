@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { ArrowUpRightIcon, FileTextIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 import {

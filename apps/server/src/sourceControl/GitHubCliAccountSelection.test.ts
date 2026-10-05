@@ -9,8 +9,8 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
-import { ChildProcessSpawner } from "effect/unstable/process";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { ChildProcessSpawner } from "effect/process";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";

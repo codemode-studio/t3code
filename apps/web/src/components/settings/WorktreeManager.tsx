@@ -10,7 +10,7 @@ import {
   RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useState, type FormEvent } from "react";
 
 import { appAtomRegistry } from "../../rpc/atomRegistry";

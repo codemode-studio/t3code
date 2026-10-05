@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Markdown } from "react-native-nitro-markdown";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { AppText as Text } from "../../components/AppText";
 import { attachmentEnvironment } from "../../state/attachments";

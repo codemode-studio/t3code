@@ -12,7 +12,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { isAnswerExpected } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentPresentations } from "./presentation";

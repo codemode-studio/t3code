@@ -10,7 +10,7 @@
  * @module forkMigrations
  */
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import Notes from "./ForkMigrations/001_Notes.ts";
 

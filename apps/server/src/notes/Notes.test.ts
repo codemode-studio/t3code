@@ -18,7 +18,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
