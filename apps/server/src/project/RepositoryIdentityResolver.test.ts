@@ -26,7 +26,7 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
-const makeRepositoryIdentityResolverTestLayer = (options: {
+const layerRepositoryIdentityResolverTest = (options: {
   readonly positiveCacheTtl?: Duration.Input;
   readonly negativeCacheTtl?: Duration.Input;
 }) =>
@@ -45,7 +45,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     let remoteUrl = "git@github.com:T3Tools/t3code.git";
     let refinements = 0;
     let refinementFails = false;
-    const processRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
+    const layerProcessRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
       run: (input) =>
         Effect.sync(() => {
           calls.push(input.args);
@@ -63,7 +63,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           };
         }),
     });
-    const resolverLayer = Layer.effect(
+    const layerResolver = Layer.effect(
       RepositoryIdentityResolver.RepositoryIdentityResolver,
       RepositoryIdentityResolver.make({
         refine: (identity) => {
@@ -88,7 +88,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           );
         },
       }),
-    ).pipe(Layer.provide(processRunner));
+    ).pipe(Layer.provide(layerProcessRunner));
 
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
@@ -127,13 +127,13 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const unavailable = yield* resolver.resolve(rootPath, { refresh: true });
       expect(unavailable?.webUrl).toBeUndefined();
       expect(unavailable?.canonicalKey).toBe("ssh.forge.test/team/repo");
-    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), resolverLayer)));
+    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerResolver)));
   });
 
   it.effect("retries Git root discovery after the negative TTL", () => {
     const calls: Array<ReadonlyArray<string>> = [];
     let rootAttempts = 0;
-    const processRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
+    const layerProcessRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
       run: (input) =>
         Effect.sync(() => {
           calls.push(input.args);
@@ -155,10 +155,10 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           };
         }),
     });
-    const resolverLayer = Layer.effect(
+    const layerResolver = Layer.effect(
       RepositoryIdentityResolver.RepositoryIdentityResolver,
       RepositoryIdentityResolver.make(),
-    ).pipe(Layer.provide(processRunner));
+    ).pipe(Layer.provide(layerProcessRunner));
 
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
@@ -174,7 +174,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         ["-C", "/repo", "remote", "-v"],
         ["-C", "/repo", "config", "--get-regexp", "^remote\\..*\\.gh-resolved$"],
       ]);
-    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), resolverLayer)));
+    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerResolver)));
   });
 
   it.effect("normalizes equivalent GitHub remotes into a stable repository identity", () =>
@@ -392,7 +392,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         Effect.provide(
           Layer.merge(
             TestClock.layer(),
-            makeRepositoryIdentityResolverTestLayer({
+            layerRepositoryIdentityResolverTest({
               negativeCacheTtl: Duration.millis(50),
               positiveCacheTtl: Duration.seconds(1),
             }),
@@ -433,7 +433,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       Effect.provide(
         Layer.merge(
           TestClock.layer(),
-          makeRepositoryIdentityResolverTestLayer({
+          layerRepositoryIdentityResolverTest({
             negativeCacheTtl: Duration.millis(50),
             positiveCacheTtl: Duration.millis(100),
           }),

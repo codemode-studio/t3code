@@ -35,7 +35,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import type { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { withGitHubAccountOpenCodeServers } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { readOpenCodeGoUsageLimits } from "../Layers/openCodeUsageLimits.ts";
+import { readOpenCodeGoUsageLimits } from "../openCodeUsageLimits.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
@@ -45,7 +45,7 @@ import {
   openCode2SkillsToServerProviderSkills,
   openCodeSkillsToServerProviderSkills,
   openCodeCommandsToServerProviderSlashCommands,
-} from "../Layers/OpenCodeProvider.ts";
+} from "../OpenCodeProvider.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
 import {

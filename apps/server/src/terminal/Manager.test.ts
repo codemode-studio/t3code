@@ -38,7 +38,7 @@ import { expect } from "vite-plus/test";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
@@ -316,7 +316,7 @@ const createManager = (
     }),
   );
 
-const withHostPlatform = (platform: NodeJS.Platform) =>
+const layerWithHostPlatform = (platform: NodeJS.Platform) =>
   Layer.succeed(HostProcessPlatform, platform);
 
 // Apply the existing line policy, then find the longest code-point-aligned byte tail.
@@ -1155,7 +1155,7 @@ it.layer(
         subprocessPollIntervalMs: 20,
       }).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
-        Effect.provide(withHostPlatform("linux")),
+        Effect.provide(layerWithHostPlatform("linux")),
       );
 
       yield* manager.open(openInput());
@@ -1216,7 +1216,7 @@ it.layer(
         subprocessPollIntervalMs: 20,
       }).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
-        Effect.provide(withHostPlatform("linux")),
+        Effect.provide(layerWithHostPlatform("linux")),
       );
 
       yield* manager.open(openInput());
@@ -1261,7 +1261,7 @@ it.layer(
           snapshotCalls += 1;
           return [{ pid: 100, ppid: 9000, name: "ping.exe" }];
         }),
-      }).pipe(Effect.provide(withHostPlatform("win32")));
+      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
 
       yield* manager.open(openInput());
       yield* waitFor(
@@ -1293,7 +1293,7 @@ it.layer(
           { pid: 301, ppid: 300, name: "sleep" },
           { pid: 9003, ppid: 1, name: "zsh" },
         ]),
-      }).pipe(Effect.provide(withHostPlatform("linux")));
+      }).pipe(Effect.provide(layerWithHostPlatform("linux")));
       yield* manager.open(openInput({ terminalId: "idle" }));
       yield* manager.open(openInput({ terminalId: "dev-server" }));
       yield* manager.open(openInput({ terminalId: "subshell" }));
@@ -1373,7 +1373,7 @@ it.layer(
         ),
       }).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
-        Effect.provide(withHostPlatform("linux")),
+        Effect.provide(layerWithHostPlatform("linux")),
       );
 
       yield* manager.open(openInput());
@@ -1871,7 +1871,7 @@ it.layer(
           PATH: "C:\\Windows\\System32",
           SystemRoot: "C:\\Windows",
         },
-      }).pipe(Effect.provide(withHostPlatform("win32")));
+      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
 
       yield* manager.open(openInput());
 
@@ -1933,7 +1933,10 @@ it.layer(
         },
       }).pipe(
         Effect.provide(
-          Layer.merge(withHostPlatform("win32"), Layer.succeed(HostProcessArchitecture, "x64")),
+          Layer.merge(
+            layerWithHostPlatform("win32"),
+            Layer.succeed(HostProcessArchitecture, "x64"),
+          ),
         ),
       );
 
@@ -1956,7 +1959,7 @@ it.layer(
           PATH: "C:\\Windows\\System32",
           SystemRoot: "C:\\Windows",
         },
-      }).pipe(Effect.provide(withHostPlatform("win32")));
+      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
       ptyAdapter.spawnFailures.push(
         new Error("spawn custom-shell.exe ENOENT"),
         new Error("spawn pwsh.exe ENOENT"),
@@ -1990,7 +1993,7 @@ it.layer(
           const { manager, ptyAdapter } = yield* createManager(5, {
             shellResolver: () => "/bin/sh",
             env,
-          }).pipe(Effect.provide(withHostPlatform(platform)));
+          }).pipe(Effect.provide(layerWithHostPlatform(platform)));
           yield* manager.open(
             openInput({ env: runtimeColor === undefined ? {} : { COLORTERM: runtimeColor } }),
           );
@@ -2477,7 +2480,7 @@ it.layer(
       Effect.provide(
         ServerSettings.layer.pipe(
           Layer.provide(ServerSecretStore.layer),
-          Layer.provide(SqlitePersistenceMemory),
+          Layer.provide(SqlitePersistence.layerMemory),
           Layer.provide(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3code-terminal-provider-restart-" }),
           ),
