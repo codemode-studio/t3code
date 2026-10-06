@@ -1,8 +1,9 @@
 import { scopedProjectKey, scopeProjectRef } from "../environment/scoped.ts";
-import type {
-  EnvironmentId,
-  ScopedProjectRef,
-  SidebarProjectGroupingMode,
+import {
+  repositoryGroupingDisplayNameOf,
+  type EnvironmentId,
+  type ScopedProjectRef,
+  type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 
@@ -106,6 +107,7 @@ function deriveRepositoryKeys(
 ): ReadonlyArray<string> {
   const identity = project?.repositoryIdentity;
   if (!identity) return [];
+  if (identity.origin) return [identity.origin.canonicalKey];
   return identity.groupKey && identity.groupKey !== identity.canonicalKey
     ? [identity.groupKey, identity.canonicalKey]
     : [identity.canonicalKey];
@@ -171,7 +173,9 @@ export function deriveProjectGroupLabel(input: {
 }): string {
   const sharedTitles = uniqueNonEmptyValues(input.members.map((member) => member.title));
   const sharedDisplayNames = uniqueNonEmptyValues(
-    input.members.map((member) => member.repositoryIdentity?.displayName),
+    input.members.map((member) =>
+      member.repositoryIdentity ? repositoryGroupingDisplayNameOf(member.repositoryIdentity) : null,
+    ),
   );
   const sharedRepositoryNames = uniqueNonEmptyValues(
     input.members.map((member) => member.repositoryIdentity?.name),

@@ -310,6 +310,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
 
       expect(identity?.locator.remoteName).toBe("origin");
       expect(identity?.canonicalKey).toBe("github.com/julius/t3code");
+      expect(identity?.origin?.canonicalKey).toBe("github.com/julius/t3code");
       // Grouping ignores the per-machine gh default.
       expect(identity?.groupKey).toBe("github.com/t3tools/t3code");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
@@ -335,6 +336,29 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         source: "git-remote",
         remoteName: "origin",
         remoteUrl: "git@github.com:T3Tools/t3code.git",
+      });
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("reports a fork's own remote as origin next to the upstream identity", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-fork-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code-fork.git"]);
+      yield* git(cwd, ["remote", "add", "upstream", "git@github.com:T3Tools/t3code.git"]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      expect(identity?.displayName).toBe("t3tools/t3code");
+      expect(identity?.origin).toEqual({
+        canonicalKey: "github.com/julius/t3code-fork",
+        displayName: "julius/t3code-fork",
       });
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );

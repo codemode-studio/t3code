@@ -102,19 +102,38 @@ function pickPrimaryRemote(
   return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
 }
 
+function repositoryPathOf(canonicalKey: string): string {
+  return canonicalKey.split("/").slice(1).join("/");
+}
+
+function buildRepositoryOrigin(
+  originUrl: string | undefined,
+  canonicalKey: string,
+): RepositoryIdentity["origin"] {
+  if (!originUrl) return undefined;
+  const originKey = normalizeGitRemoteUrl(originUrl);
+  if (originKey === canonicalKey) return undefined;
+  const displayName = repositoryPathOf(originKey);
+  return { canonicalKey: originKey, ...(displayName ? { displayName } : {}) };
+}
+
 function buildRepositoryIdentity(input: {
   readonly remoteName: string;
   readonly remoteUrl: string;
   readonly groupRemoteUrl: string;
+  readonly originUrl: string | undefined;
   readonly rootPath: string;
 }): RepositoryIdentity {
   const canonicalKey = normalizeGitRemoteUrl(input.remoteUrl);
   const groupKey = normalizeGitRemoteUrl(input.groupRemoteUrl);
   const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
-  const repositoryPath = canonicalKey.split("/").slice(1).join("/");
+  const repositoryPath = repositoryPathOf(canonicalKey);
   const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
   const [owner] = repositoryPathSegments;
   const repositoryName = repositoryPathSegments.at(-1);
+  const origin =
+    buildRepositoryOrigin(input.originUrl, canonicalKey) ??
+    buildRepositoryOrigin(input.originUrl, groupKey);
 
   return {
     canonicalKey,
@@ -129,6 +148,7 @@ function buildRepositoryIdentity(input: {
     ...(sourceControlProvider ? { provider: sourceControlProvider.kind } : {}),
     ...(owner ? { owner } : {}),
     ...(repositoryName ? { name: repositoryName } : {}),
+    ...(origin ? { origin } : {}),
   };
 }
 
@@ -185,6 +205,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     ? buildRepositoryIdentity({
         ...remote,
         groupRemoteUrl: groupRemote.remoteUrl,
+        originUrl: remotes.get("origin"),
         rootPath: cacheKey,
       })
     : null;
