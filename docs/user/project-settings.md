@@ -154,6 +154,13 @@ project's profile with **Provider profile** in **Settings → General** with the
 On mobile, the same choice is on the **New threads** server settings page, and the thread list can
 be filtered by profile.
 
+## Worktree location
+
+New worktrees go in the `worktrees` folder of the T3 home directory. To put them somewhere else,
+such as another drive, set **Settings → Storage → Worktree location** to an absolute path like
+`D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
+are, and cleanup covers both the default folder and the custom one.
+
 ## Storage cleanup
 
 Use **Manage worktrees** in **Settings → Storage** to choose a project and checkout, then create a

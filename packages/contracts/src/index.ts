@@ -63,3 +63,4 @@ export * from "./resourceTelemetry.ts";
 export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 export * from "./skills.ts";
+export * from "./secretRequest.ts";
