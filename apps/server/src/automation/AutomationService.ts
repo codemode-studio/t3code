@@ -10,8 +10,6 @@
  *
  * @module AutomationService
  */
-import * as NodeCrypto from "node:crypto";
-
 import {
   Automation,
   AUTOMATION_MAX_RUNS,
@@ -655,21 +653,22 @@ const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.as(true),
-          Effect.catchTag("OrchestratorDispatchError", (error) =>
-            threads.getThreadEventSequence(threadId).pipe(
-              // Only a thread that moved past the read is decided again against a fresh one;
-              // any other rejection waits for the next event instead of retrying in a loop.
-              Effect.flatMap((sequence) =>
-                sequence > expectedSequence
-                  ? recheck(threadId)
-                  : Effect.logWarning("automation thread delete rejected", {
-                      threadId,
-                      cause: error,
-                    }),
+          Effect.catchTags({
+            OrchestratorDispatchError: (error) =>
+              threads.getThreadEventSequence(threadId).pipe(
+                // Only a thread that moved past the read is decided again against a fresh one;
+                // any other rejection waits for the next event instead of retrying in a loop.
+                Effect.flatMap((sequence) =>
+                  sequence > expectedSequence
+                    ? recheck(threadId)
+                    : Effect.logWarning("automation thread delete rejected", {
+                        threadId,
+                        cause: error,
+                      }),
+                ),
+                Effect.as(false),
               ),
-              Effect.as(false),
-            ),
-          ),
+          }),
         );
       if (!deleted) return;
       yield* recordPendingRuns(threadId, [], "deleted");
@@ -723,7 +722,7 @@ const make = Effect.gen(function* () {
         path: path.join(
           config.worktreesDir,
           path.basename(workspaceRoot),
-          `pr-${pullRequestNumber}-${NodeCrypto.randomBytes(4).toString("hex")}`,
+          `pr-${pullRequestNumber}-${Buffer.from(yield* crypto.randomBytes(4).pipe(Effect.orDie)).toString("hex")}`,
         ),
       });
       const worktreePath = created.worktree.path;

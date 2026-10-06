@@ -1,4 +1,3 @@
-import * as NodeCrypto from "node:crypto";
 import type {
   ComposerContextRecord,
   Note,
@@ -12,6 +11,7 @@ import type {
 } from "@t3tools/contracts";
 import { NoteContextRecord, NoteError, NoteId as NoteIdSchema } from "@t3tools/contracts";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -171,7 +171,8 @@ export const createNote = (input: NoteCreateInput) =>
   Effect.gen(function* () {
     yield* validateAssociation(input);
     const sql = yield* SqlClient.SqlClient;
-    const id = NoteIdSchema.make(NodeCrypto.randomUUID());
+    const crypto = yield* Crypto.Crypto;
+    const id = NoteIdSchema.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
     const now = DateTime.formatIso(yield* DateTime.now);
     const tagsJson = yield* encodeTagsJson(input.tags);
     const body = yield* claimImages(input.body, id);
