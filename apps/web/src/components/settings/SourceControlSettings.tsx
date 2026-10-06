@@ -63,6 +63,8 @@ import {
   type Icon,
 } from "../Icons";
 import { BitbucketCredentialsSettings } from "./BitbucketCredentialsSettings";
+import { GitHubAccountSettings } from "./GitHubAccountSettings";
+import { GitHubTokenSettings } from "./GitHubTokenSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import {
@@ -229,6 +231,9 @@ function itemSummary({
 
   if (auth) {
     if (auth.status === "authenticated") {
+      // The server names the account its requests use, Settings choice included, and
+      // says when an environment token overrides it.
+      const authDetail = optionLabel(auth.detail);
       return (
         <>
           <span>Authenticated</span>
@@ -238,6 +243,7 @@ function itemSummary({
               <RedactedAccount account={authAccount} />
             </>
           ) : null}
+          {authDetail ? <span>· {authDetail}</span> : null}
         </>
       );
     }
@@ -246,6 +252,11 @@ function itemSummary({
     // through to the "could not verify" detail instead of repeating the setup hint.
     if (!item.executable && auth.status === "unauthenticated") {
       return <span>Available. {item.installHint}</span>;
+    }
+
+    // Signed in, but every login is turned off here: the fix is the switch below, not the CLI.
+    if (auth.status === "unauthenticated" && auth.accounts?.some((entry) => entry.authenticated)) {
+      return <span>{optionLabel(auth.detail) ?? `Every ${item.label} host is turned off.`}</span>;
     }
 
     if (auth.status === "unauthenticated") {
@@ -291,7 +302,8 @@ function DiscoveryItemRow({
       (item.kind === "git" && searchTargetId === searchableSetting("git-fetch-interval").id) ||
       (item.kind === "github" && searchTargetId === searchableSetting("github-cli-account").id) ||
       (item.kind === "bitbucket" &&
-        searchTargetId === searchableSetting("bitbucket-credentials").id)
+        searchTargetId === searchableSetting("bitbucket-credentials").id) ||
+      (item.kind === "github" && searchTargetId === searchableSetting("github-accounts").id)
     ) {
       setIsExpanded(true);
     }
@@ -707,8 +719,13 @@ export function SourceControlSettingsPanel() {
                   {item.kind === "github" &&
                   item.auth.accounts !== undefined &&
                   (item.auth.accounts.length > 1 || githubCliAccount !== null) ? (
-                    <GitHubCliAccountSettings accounts={item.auth.accounts} />
-                  ) : item.kind === "bitbucket" ? (
+                    <GitHubCliAccountSettings
+                      accounts={item.auth.accounts
+                        .filter((account) => account.authenticated)
+                        .map((account) => ({ host: account.host, login: account.account }))}
+                    />
+                  ) : null}
+                  {item.kind === "bitbucket" ? (
                     <SettingsSearchTarget id={searchableSetting("bitbucket-credentials").id}>
                       <BitbucketCredentialsSettings
                         // Drafts belong to one environment; switching must not carry them over.
@@ -716,6 +733,25 @@ export function SourceControlSettingsPanel() {
                         environmentId={environmentId}
                         onSaved={handleScan}
                       />
+                    </SettingsSearchTarget>
+                  ) : item.kind === "github" ? (
+                    <SettingsSearchTarget id={searchableSetting("github-accounts").id}>
+                      <div className="grid gap-6">
+                        {/* Shown even without gh: a saved token is how GitHub works without the CLI. */}
+                        <GitHubTokenSettings
+                          key={`token-${environmentId}`}
+                          environmentId={environmentId}
+                          onSaved={handleScan}
+                        />
+                        {item.status === "available" ? (
+                          <GitHubAccountSettings
+                            key={environmentId}
+                            environmentId={environmentId}
+                            auth={item.auth}
+                            onSaved={handleScan}
+                          />
+                        ) : null}
+                      </div>
                     </SettingsSearchTarget>
                   ) : undefined}
                 </DiscoveryItemRow>

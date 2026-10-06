@@ -329,7 +329,12 @@ const layerRepositoryIdentityResolver = Layer.effect(
 ).pipe(Layer.provide(layerSourceControlProviderRegistry), Layer.provide(ProcessRunner.layer));
 
 const layerPullRequestService = PullRequestService.layer.pipe(
-  Layer.provide(PullRequestProviderRegistry.layer.pipe(Layer.provide(layerGitHubCli))),
+  Layer.provide(
+    PullRequestProviderRegistry.layer.pipe(
+      Layer.provide(layerGitHubCli),
+      Layer.provide(layerGitHubCliAccountSelection),
+    ),
+  ),
   // Where the viewed-file marks live for a host that keeps none of its own.
   Layer.provide(PullRequestFilesViewed.layer),
   Layer.provide(PullRequestReadCache.layer),
@@ -589,7 +594,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
   Layer.provideMerge(layerServerSettings),
   // The asset route uses the registry's GitHub credential for private PR media.
-  Layer.provideMerge(Layer.mergeAll(layerSourceControlProviderRegistry, layerGitHubCli)),
+  Layer.provideMerge(layerSourceControlProviderRegistry),
+  Layer.provideMerge(layerGitHubCli),
   Layer.provideMerge(layerGit),
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),

@@ -11,17 +11,26 @@ and choose **Rescan**.
 
 ### GitHub
 
-Install [GitHub CLI](https://cli.github.com/) 2.81.0 or newer, then sign in:
+T3 Code talks to GitHub's API directly and only needs a token. Any of these works, in this
+order of precedence:
 
-```bash
-gh auth login
-```
+1. A token saved in **Settings → Source Control → GitHub**. It is kept in the server's secret
+   store, and works without the GitHub CLI.
+2. `GH_TOKEN` (`GH_ENTERPRISE_TOKEN` with `GH_HOST` for GitHub Enterprise Server) in the
+   server's environment.
+3. [GitHub CLI](https://cli.github.com/) 2.81.0 or newer, signed in with `gh auth login`.
+
+If `gh` is signed in to several accounts or hosts, expand **GitHub** in the same place to pick
+the account each host uses or turn a host off. A saved token or `GH_TOKEN` takes precedence
+over that choice; a host turned off stays off either way.
 
 When `gh` holds more than one login, choose which one T3 Code uses under **GitHub CLI account**
 in the GitHub entry of **Settings → Source Control**. Select a project to give it a different
 account, for example a work login for company repositories, or set one on a
 [provider profile](./project-settings.md#provider-profiles) to cover all of that profile's
-projects. A project's own choice wins over its profile's. T3 Code passes that login's token to
+projects. A project's own choice wins over its profile's. This selection takes precedence over
+a saved token, an environment token, and the account chosen per host; a host turned off stays off.
+T3 Code passes that login's token to
 its own GitHub commands, to terminals it opens, and to agent sessions it starts, so `gh` there acts
 as the selected login. It never switches the login active in `gh`, so apps outside T3 Code are
 unaffected. A change applies to terminals and agent sessions started afterwards. If the chosen
@@ -154,7 +163,7 @@ environment clears its permission.
 GitHub review details, linked PR status, and permitted review actions can then use another
 connected environment signed in to the same GitHub account. Each needs a project on that host.
 A connected local environment is preferred for actions and can answer slow or failed reads.
-Browsers and mobile clients need a paired environment to use its GitHub CLI credentials.
+Browsers and mobile clients need a paired environment to use its GitHub credentials.
 Credentials stay on their machines. Previously verified credentials remain usable for routing
 for ten minutes during a GitHub outage; new credentials must be verified first. An action with
 an uncertain result is never automatically retried elsewhere. Listings, diffs, and checkout or
@@ -182,7 +191,7 @@ does not show its diff, so marks are made and read on web and desktop.
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,
   check the credentials saved in Settings → Source Control, or confirm the running server received
   the environment variables.
-- **GitHub sign-in cannot be verified:** update GitHub CLI to at least 2.81.0.
+- **GitHub sign-in cannot be verified:** update GitHub CLI to at least 2.81.0, or save a token in Settings → Source Control.
 - **Push fails despite a connected account:** check the Git remote's credentials. SSH and HTTPS
   remotes can require separate setup from the hosting provider's API access.
 - **A review cannot load:** open it on the host website while resolving connectivity, permissions,

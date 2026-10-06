@@ -36,6 +36,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as GitHubApi from "../sourceControl/GitHubApi.ts";
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import { decodeGitHubPullRequestListJson } from "../sourceControl/gitHubPullRequests.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
@@ -385,7 +386,11 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
   );
   const ghCalls: string[] = [];
 
-  const execute: GitHubCli.GitHubCli["Service"]["execute"] = (input) => {
+  // The fake still speaks in gh's command shapes; the service methods below translate to them.
+  const execute = (input: {
+    readonly cwd: string;
+    readonly args: ReadonlyArray<string>;
+  }): Effect.Effect<VcsProcess.VcsProcessOutput, GitHubCli.GitHubCliError> => {
     const args = [...input.args];
     ghCalls.push(args.join(" "));
 
@@ -728,7 +733,12 @@ function makeManager(input?: {
           discover: Effect.succeed([]),
         }),
       ),
-      Effect.provide(Layer.succeed(GitHubCli.GitHubCli, gitHubCli)),
+      Effect.provide(
+        Layer.merge(
+          Layer.succeed(GitHubCli.GitHubCli, gitHubCli),
+          Layer.mock(GitHubApi.GitHubApi)({}),
+        ),
+      ),
     ),
   );
 
@@ -2664,8 +2674,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         provider: "github",
         providerOperation: "listChangeRequests",
         providerCommand: "gh",
-        errorDetail:
-          "GitHub API rate limit exceeded. For the GraphQL quota and reset time, run `gh api graphql -f query='{rateLimit{remaining resetAt}}'`; `gh api rate_limit` reports REST.",
+        errorDetail: "GitHub API rate limit exceeded. Requests resume when the limit resets.",
       });
       const loggedText = [
         warning?.message ?? "",
@@ -4590,7 +4599,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         Effect.flip,
         Effect.map((error) => error.message),
       );
-      expect(errorMessage).toContain("GitHub CLI (`gh`) is required");
+      expect(errorMessage).toContain("No GitHub credential on the server");
     }),
   );
 

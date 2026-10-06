@@ -11,3 +11,6 @@ To disable collection, turn off **Usage analytics** in Settings > General for th
 You can also set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before starting it.
 Either option stops product events from being recorded or sent. The environment variable takes
 precedence if it is set to `false`.
+
+The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
+Linux, so export it there and restart the app. On Windows, set it as a user environment variable.

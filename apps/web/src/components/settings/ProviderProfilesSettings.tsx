@@ -483,9 +483,12 @@ function ProfileGitHubAccountField({
   const discovery = useEnvironmentQuery(
     sourceControlEnvironment.discovery({ environmentId, input: {} }),
   );
-  const accounts =
+  const accounts = (
     discovery.data?.sourceControlProviders.find((item) => item.kind === "github")?.auth.accounts ??
-    [];
+    []
+  )
+    .filter((account) => account.authenticated)
+    .map((account) => ({ host: account.host, login: account.account }));
   if (accounts.length < 2 && value === undefined) return null;
   const signedOut =
     value !== undefined &&
