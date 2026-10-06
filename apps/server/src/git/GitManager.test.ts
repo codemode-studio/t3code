@@ -795,7 +795,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 13,
@@ -840,7 +839,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 14,
@@ -880,7 +878,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 0,
@@ -933,7 +930,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 16,
@@ -1047,7 +1043,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       };
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           prListSequence: [JSON.stringify([existingPr]), JSON.stringify([existingPr])],
         },
       });
@@ -1100,7 +1095,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 217,
@@ -1143,7 +1137,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           prListSequence: [
             "[]",
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 114,
@@ -1249,7 +1242,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 216,
@@ -1301,7 +1293,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 221,
@@ -1352,7 +1343,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 217,
@@ -1415,7 +1405,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListByHeadSelector: {
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             "feature/deleted-fork-branch": JSON.stringify([
               {
                 number: 218,
@@ -1497,7 +1486,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 219,
@@ -1550,7 +1538,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 220,
@@ -1724,7 +1711,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 215,
@@ -1773,7 +1759,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 214,
@@ -1996,7 +1981,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager } = yield* makeManager({
           ghScenario: {
             prListSequence: [
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 1661,
@@ -2050,7 +2034,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListSequence: [
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 488,
@@ -2116,7 +2099,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               main: JSON.stringify([
                 {
                   number: 777,
@@ -2192,7 +2174,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "effect-atom": JSON.stringify([
                 {
                   number: 1618,
@@ -2204,7 +2185,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   updatedAt: "2026-03-01T10:00:00Z",
                 },
               ]),
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -2255,7 +2235,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 22,
@@ -2294,7 +2273,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 23,
@@ -2330,7 +2308,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 54,
@@ -2370,7 +2347,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListByHeadSelector: {
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             "feature/pushed-plain": JSON.stringify([
               {
                 number: 88,
@@ -2425,7 +2401,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           ghScenario: {
             prListByHeadSelector: {
               // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "feature/fork-plain": JSON.stringify([
                 {
                   number: 89,
@@ -2481,7 +2456,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListByHeadSelector: {
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             "feature/fork-settle": JSON.stringify([
               {
                 number: 91,
@@ -2529,7 +2503,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListByHeadSelector: {
             // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             "feature/sticky-plain": JSON.stringify([
               {
                 number: 90,
@@ -2569,7 +2542,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 45,
@@ -2703,7 +2675,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       };
       const { manager } = yield* makeManager({
         ghScenario: {
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           prListSequence: [JSON.stringify([existingPr])],
           failWith: new GitHubCli.GitHubCliUnavailableError({
             command: "gh",
@@ -2747,7 +2718,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         };
         const { manager } = yield* makeManager({
           ghScenario: {
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             prListSequence: [JSON.stringify([existingPr])],
             failWith: new GitHubCli.GitHubCliUnavailableError({
               command: "gh",
@@ -2796,7 +2766,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       };
       const { manager } = yield* makeManager({
         ghScenario: {
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           prListSequence: [JSON.stringify([existingPr])],
           failWith: new GitHubCli.GitHubCliUnavailableError({
             command: "gh",
@@ -2836,7 +2805,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       };
       const { manager } = yield* makeManager({
         ghScenario: {
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           prListSequence: [JSON.stringify([existingPr])],
           failWith: new GitHubCli.GitHubCliUnavailableError({
             command: "gh",
@@ -2879,7 +2847,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       };
       const { manager } = yield* makeManager({
         ghScenario: {
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           prListSequence: [JSON.stringify([existingPr])],
           failWith: new GitHubCli.GitHubCliUnavailableError({
             command: "gh",
@@ -3474,7 +3441,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           ghScenario: {
             prListSequence: [
               "[]",
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 77,
@@ -3610,7 +3576,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             "[]",
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 303,
@@ -3698,7 +3663,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             "[]",
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 404,
@@ -3750,7 +3714,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           defaultBranch: "",
           prListSequence: [
             "[]",
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 505,
@@ -3790,7 +3753,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 42,
@@ -3844,7 +3806,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListSequence: [
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 142,
@@ -3921,7 +3882,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "effect-atom": JSON.stringify([
                 {
                   number: 1618,
@@ -3931,7 +3891,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   headRefName: "effect-atom",
                 },
               ]),
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -3981,9 +3940,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "t3code/pr-142/statemachine": JSON.stringify([]),
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               statemachine: JSON.stringify([
                 {
                   number: 41,
@@ -4049,7 +4006,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListByHeadSelector: {
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               statemachine: JSON.stringify([
                 {
                   number: 142,
@@ -4067,7 +4023,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   },
                 },
               ]),
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "t3code/pr-142/statemachine": JSON.stringify([]),
             },
           },
@@ -4310,7 +4265,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequence: [
             "[]",
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 88,
@@ -4431,7 +4385,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager, ghCalls } = yield* makeManager({
           ghScenario: {
             prListSequence: [
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 1661,
@@ -4449,7 +4402,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                   },
                 },
               ]),
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 188,
@@ -4512,9 +4464,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ghScenario: {
           prListSequenceByHeadSelector: {
             statemachine: [
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([]),
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 188,
@@ -6130,9 +6080,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([]),
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 201,
