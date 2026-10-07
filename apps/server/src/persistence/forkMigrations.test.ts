@@ -68,6 +68,7 @@ describe("fork migration ledger", () => {
         [56, "RemoveRedundantProjectionIndexes"],
         [57, "ScheduledTaskWebhooks"],
         [58, "WebhookRelayDeliveries"],
+        [59, "McpAppModelContext"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -87,6 +88,7 @@ describe("fork migration ledger", () => {
         [56, "RemoveRedundantProjectionIndexes"],
         [57, "ScheduledTaskWebhooks"],
         [58, "WebhookRelayDeliveries"],
+        [59, "McpAppModelContext"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -102,7 +104,7 @@ describe("fork migration ledger", () => {
 
   it.effect("leaves an upstream database's history alone and adds notes", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 58 });
+      yield* runMigrations({ toMigrationInclusive: 59 });
       assert.isFalse(yield* tableExists("notes"));
       assert.deepStrictEqual(yield* runMigrations(), []);
       yield* insertNote;
@@ -120,7 +122,11 @@ describe("fork migration ledger", () => {
       const before = yield* upstreamLedger;
 
       yield* runMigrations();
-      assert.deepStrictEqual(yield* upstreamLedger, [...before, [58, "WebhookRelayDeliveries"]]);
+      assert.deepStrictEqual(yield* upstreamLedger, [
+        ...before,
+        [58, "WebhookRelayDeliveries"],
+        [59, "McpAppModelContext"],
+      ]);
       assert.isFalse(yield* tableExists("orchestration_v2_events"));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
