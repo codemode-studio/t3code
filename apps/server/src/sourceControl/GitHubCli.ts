@@ -213,7 +213,7 @@ function fromGitHubApiError(cwd: string, error: GitHubApi.GitHubApiError): GitHu
   }
 }
 
-export function fromVcsError(
+function fromVcsError(
   context: {
     readonly command: "gh";
     readonly cwd: string;

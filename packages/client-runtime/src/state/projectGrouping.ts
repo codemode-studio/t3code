@@ -1,6 +1,7 @@
 import { scopedProjectKey, scopeProjectRef } from "../environment/scoped.ts";
 import {
   repositoryGroupingDisplayNameOf,
+  repositoryGroupingKeyOf,
   type EnvironmentId,
   type ScopedProjectRef,
   type SidebarProjectGroupingMode,
@@ -107,7 +108,7 @@ function deriveRepositoryKeys(
 ): ReadonlyArray<string> {
   const identity = project?.repositoryIdentity;
   if (!identity) return [];
-  if (identity.origin) return [identity.origin.canonicalKey];
+  if (identity.origin) return [repositoryGroupingKeyOf(identity)];
   return identity.groupKey && identity.groupKey !== identity.canonicalKey
     ? [identity.groupKey, identity.canonicalKey]
     : [identity.canonicalKey];
