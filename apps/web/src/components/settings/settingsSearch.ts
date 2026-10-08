@@ -682,7 +682,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "provider-profiles",
     title: "Profiles",
     to: "/settings/profiles",
-    searchTerms: ["group providers company client account project default model new profile"],
+    searchTerms: [
+      "group providers company client account project default model new profile github gh login personal work",
+    ],
     providerSettingsOnly: true,
   },
   {
@@ -846,13 +848,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
     searchTerms: ["static semantic prefix custom prompt instructions feat fix refactor chore"],
     environmentOnly: true,
-    scope: "project-defaults",
-  },
-  {
-    id: "github-cli-account",
-    title: "GitHub CLI account",
-    to: "/settings/source-control",
-    searchTerms: ["gh login switch personal work company token multiple accounts"],
     scope: "project-defaults",
   },
   {

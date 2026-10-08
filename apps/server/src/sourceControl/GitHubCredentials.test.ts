@@ -145,7 +145,7 @@ describe("GitHubCredentials", () => {
   });
 
   it.effect(
-    "keeps project accounts separate and overrides host, saved, and ambient credentials",
+    "keeps profile accounts separate and overrides host, saved, and ambient credentials",
     () => {
       vi.stubEnv("GH_TOKEN", "env-token");
       const { layer, calls } = harness({ "github.com": { account: "host-login" } }, [], {
@@ -155,7 +155,7 @@ describe("GitHubCredentials", () => {
         const credentials = yield* GitHubCredentials.GitHubCredentials;
         for (const login of ["work", "personal", "work"]) {
           const credential = yield* credentials.get("github.com").pipe(
-            Effect.provideService(GitHubCredentials.ProjectGitHubAccount, {
+            Effect.provideService(GitHubCredentials.ProfileGitHubAccount, {
               host: "github.com",
               login,
             }),
@@ -168,12 +168,12 @@ describe("GitHubCredentials", () => {
     },
   );
 
-  it.effect("fails a signed-out project account without falling back to another login", () => {
+  it.effect("fails a signed-out profile account without falling back to another login", () => {
     const { layer, calls } = harness({}, ["gone"]);
     return Effect.gen(function* () {
       const credentials = yield* GitHubCredentials.GitHubCredentials;
       const failure = yield* credentials.get("github.com").pipe(
-        Effect.provideService(GitHubCredentials.ProjectGitHubAccount, {
+        Effect.provideService(GitHubCredentials.ProfileGitHubAccount, {
           host: "github.com",
           login: "gone",
         }),

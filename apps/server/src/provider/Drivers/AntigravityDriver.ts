@@ -1,5 +1,4 @@
 import { withAgentDeviceEnvironment } from "../../mcp/McpProviderSession.ts";
-import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCliAccountSelection.ts";
 import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
@@ -94,8 +93,6 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      // Session agents start as their checkout's selected `gh` login.
-      const gitHubAccounts = yield* GitHubCliAccountEnvironment;
       const serverConfig = yield* ServerConfig.ServerConfig;
       const selfInvocation = yield* resolveSelfInvocation();
       const installation = yield* AntigravityInstallation.AntigravityInstallation;
@@ -245,10 +242,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
             installation: executable,
             profile,
             cwd: input.cwd,
-            baseEnv: withAgentDeviceEnvironment(
-              { ...processEnvironment, ...(yield* gitHubAccounts.forCwd(input.cwd)) },
-              input,
-            ),
+            baseEnv: withAgentDeviceEnvironment(processEnvironment, input),
             auth,
             runtimeTempDirectory,
           }),

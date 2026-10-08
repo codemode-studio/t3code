@@ -48,19 +48,17 @@ function formatValue(
   if (value === null || value === undefined) {
     return key === "pullRequestMergeMethod"
       ? "Last selected"
-      : key === "githubCliAccount"
-        ? "Active gh login"
-        : key === "sidebarAutoSettleAfterDays"
-          ? "Never"
-          : key === "defaultModelSelection"
-            ? "Automatic"
-            : key === "providerProfileId"
-              ? "No profile"
-              : key === "sourceControlWriterModelSelection"
-                ? "Text generation model"
-                : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
-                  ? "Inherit"
-                  : "Not set";
+      : key === "sidebarAutoSettleAfterDays"
+        ? "Never"
+        : key === "defaultModelSelection"
+          ? "Automatic"
+          : key === "providerProfileId"
+            ? "No profile"
+            : key === "sourceControlWriterModelSelection"
+              ? "Text generation model"
+              : key === "defaultThreadEnvMode" || key === "worktreeSubmodules"
+                ? "Inherit"
+                : "Not set";
   }
   if (typeof value === "boolean") return value ? "On" : "Off";
   if (typeof value === "number") {
@@ -88,7 +86,6 @@ function formatValue(
   }
   if (Array.isArray(value)) return `${value.length} ${value.length === 1 ? "item" : "items"}`;
   if (typeof value === "object") {
-    if ("login" in value && "host" in value) return `${value.login} @ ${value.host}`;
     if ("model" in value && typeof value.model === "string") return value.model;
     if ("mode" in value && typeof value.mode === "string") {
       return WRITING_STYLE_LABELS[value.mode] ?? value.mode;

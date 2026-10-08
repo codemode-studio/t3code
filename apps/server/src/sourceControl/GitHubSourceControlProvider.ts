@@ -1041,7 +1041,7 @@ export const make = Effect.gen(function* () {
       .forCwd(cwd)
       .pipe(
         Effect.flatMap((account) =>
-          effect.pipe(Effect.provideService(GitHubCredentials.ProjectGitHubAccount, account)),
+          effect.pipe(Effect.provideService(GitHubCredentials.ProfileGitHubAccount, account)),
         ),
       );
   return SourceControlProvider.SourceControlProvider.of({

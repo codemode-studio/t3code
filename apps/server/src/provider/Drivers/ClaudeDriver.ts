@@ -33,10 +33,6 @@ import {
   type ClaudeAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import {
-  withGitHubAccountClaudeQueries,
-  withGitHubAccountSpawner,
-} from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeClaudeScopedLimitNames } from "../claudeUsageLimits.ts";
 import * as ClaudeResetCredits from "../claudeResetCredits.ts";
@@ -184,7 +180,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         },
         { scopedLimitNames, onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
       ).pipe(
-        withGitHubAccountClaudeQueries,
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({
@@ -199,7 +194,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         effectiveConfig,
         processEnv,
         modelCatalog,
-      ).pipe(withGitHubAccountSpawner);
+      );
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
       // account-specific probes never share auth metadata across instances.

@@ -223,7 +223,7 @@ describe("serverSettings helpers", () => {
       projectSettingsOverridesIncludeForkKeys: true,
       projectSettingsOverrides: {
         [projectId]: {
-          githubCliAccount: null,
+          providerProfileId: null,
           createPullRequestsAsDraft: true,
           defaultAutoPull: true,
         },
@@ -235,7 +235,7 @@ describe("serverSettings helpers", () => {
       projectSettingsOverrides: { [projectId]: { defaultAutoPull: false } },
     });
     expect(edited.projectSettingsOverrides[projectId]).toEqual({
-      githubCliAccount: null,
+      providerProfileId: null,
       createPullRequestsAsDraft: true,
       defaultAutoPull: false,
     });
@@ -243,16 +243,16 @@ describe("serverSettings helpers", () => {
       projectSettingsOverrides: { [projectId]: null },
     });
     expect(cleared.projectSettingsOverrides[projectId]).toEqual({
-      githubCliAccount: null,
+      providerProfileId: null,
       createPullRequestsAsDraft: true,
     });
 
     // Fork clients send complete entries, so an omitted key is cleared.
     const forkCleared = applyServerSettingsPatch(cleared, {
       projectSettingsOverridesIncludeForkKeys: true,
-      projectSettingsOverrides: { [projectId]: { githubCliAccount: null } },
+      projectSettingsOverrides: { [projectId]: { providerProfileId: null } },
     });
-    expect(forkCleared.projectSettingsOverrides[projectId]).toEqual({ githubCliAccount: null });
+    expect(forkCleared.projectSettingsOverrides[projectId]).toEqual({ providerProfileId: null });
     expect(forkCleared).not.toHaveProperty("projectSettingsOverridesIncludeForkKeys");
   });
 

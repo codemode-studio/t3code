@@ -18,6 +18,7 @@ import { EnvironmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { ProjectFavicon } from "../components/ProjectFavicon";
 import {
   describeProfileModel,
+  ProfileGitHubAccountRow,
   ProviderProfileEditorDialog,
   ProviderProfileInstances,
   useProviderInstanceEntries,
@@ -32,7 +33,6 @@ import {
 } from "../components/settings/ProviderProfilesSettings.logic";
 import type { ProviderOperateAccess } from "../components/settings/ProviderSettingsPanel.logic";
 import { SettingsRow, SettingsSection } from "../components/settings/settingsLayout";
-import { githubCliAccountLabel } from "../components/settings/SourceControlSettings";
 import { Badge } from "../components/ui/badge";
 import { Button, InlineButton } from "../components/ui/button";
 import {
@@ -194,17 +194,19 @@ export function EnvironmentProfiles({
                   </span>
                 }
               />
-              {profile.githubCliAccount ? (
-                <SettingsRow
-                  title="GitHub account"
-                  description="GitHub actions in its projects run as this login unless a project picks its own."
-                  control={
-                    <span className="text-sm">
-                      {githubCliAccountLabel(profile.githubCliAccount)}
-                    </span>
-                  }
-                />
-              ) : null}
+              <ProfileGitHubAccountRow
+                environmentId={environmentId}
+                value={profile.githubCliAccount}
+                readOnly={readOnly}
+                onChange={(account) => {
+                  const { githubCliAccount: _previous, ...rest } = profile;
+                  updateSettings({
+                    providerProfiles: {
+                      [id]: account ? { ...rest, githubCliAccount: account } : rest,
+                    },
+                  });
+                }}
+              />
               {knownEnvironments.length > 1 ? (
                 <SettingsRow
                   title="Environments"
@@ -334,7 +336,6 @@ export function EnvironmentProfiles({
 
       {editing && !readOnly ? (
         <ProviderProfileEditorDialog
-          environmentId={environmentId}
           initial={editing}
           entries={entries}
           settings={settings}

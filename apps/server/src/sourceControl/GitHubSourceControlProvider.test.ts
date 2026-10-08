@@ -134,13 +134,13 @@ const githubContext = (host: string) => ({
   remoteUrl: `git@${host}:acme/web.git`,
 });
 
-describe("GitHub project accounts", () => {
+describe("GitHub profile accounts", () => {
   it.effect("reads each checkout with its selected account through the API", () => {
     const { layer } = harness({
       remotes: remotesOutput(["origin", "git@github.com:acme/web.git"]),
       api: {
         rest: () =>
-          GitHubCredentials.ProjectGitHubAccount.pipe(
+          GitHubCredentials.ProfileGitHubAccount.pipe(
             Effect.map((account) =>
               restResponse({
                 ssh_url: `git@github.com:${account?.login ?? "active"}/web.git`,

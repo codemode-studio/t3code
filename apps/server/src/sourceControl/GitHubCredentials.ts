@@ -16,11 +16,14 @@ import { HostProcessEnvironment, HostProcessWorkingDirectory } from "@t3tools/sh
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 
-/** Project and profile selections override ambient credentials without changing gh's active login. */
-export const ProjectGitHubAccount = Context.Reference<{
+/**
+ * The login a project's profile picks (see `GitHubCliAccountSelection.ts`). Callers provide it
+ * around reads for a checkout; it wins over every other source without switching gh's active login.
+ */
+export const ProfileGitHubAccount = Context.Reference<{
   readonly host: string;
   readonly login: string;
-} | null>("t3/sourceControl/ProjectGitHubAccount", { defaultValue: () => null });
+} | null>("t3/sourceControl/ProfileGitHubAccount", { defaultValue: () => null });
 
 /** How long a token is reused before `gh` is asked again, so a `gh auth switch` applies soon. */
 const TOKEN_TTL = Duration.minutes(5);
@@ -203,15 +206,16 @@ export const make = Effect.gen(function* () {
 
   const lookup = Effect.fn("GitHubCredentials.lookup")(function* (key: string) {
     const [host = key, choice, strict] = key.split("\u0000");
-    // Host choices follow gh precedence; an explicit project choice uses only that login.
-    const fromEnv = strict === "project" ? null : environmentToken(host, environment);
-    // Upstream host choices fall back to the active login. Project choices fail when signed out.
+    // Host choices follow gh precedence; a profile's choice uses only that login.
+    const fromEnv = strict === "profile" ? null : environmentToken(host, environment);
+    // A pinned login gh no longer holds falls back to the active one, except a profile's:
+    // running as the wrong account is worse than failing.
     const token =
       fromEnv ??
       (yield* fromGh(host, choice).pipe(
         Effect.catchTags({
           GitHubNotSignedInError: (error) =>
-            choice === undefined || strict === "project"
+            choice === undefined || strict === "profile"
               ? Effect.fail(error)
               : fromGh(host, undefined),
         }),
@@ -240,13 +244,13 @@ export const make = Effect.gen(function* () {
   return GitHubCredentials.of({
     get: Effect.fn("GitHubCredentials.get")(function* (rawHost) {
       const host = normalizeHost(rawHost);
-      const projectAccount = yield* ProjectGitHubAccount;
+      const profileAccount = yield* ProfileGitHubAccount;
       const choice = yield* hostChoice(host);
       if (choice?.enabled === false) {
         return yield* new GitHubHostDisabledError({ host });
       }
-      if (projectAccount !== null && projectAccount.host.toLowerCase() === host) {
-        return yield* Cache.get(cache, `${cacheKey(host, projectAccount.login)}\u0000project`);
+      if (profileAccount !== null && profileAccount.host.toLowerCase() === host) {
+        return yield* Cache.get(cache, `${cacheKey(host, profileAccount.login)}\u0000profile`);
       }
       // A token saved in Settings is the most deliberate choice, so it comes before the
       // environment and gh. It is read from the secret store each time, so it needs no cache.
@@ -264,11 +268,11 @@ export const make = Effect.gen(function* () {
     invalidate: (rawHost) => {
       const host = normalizeHost(rawHost);
       return Effect.gen(function* () {
-        const account = yield* ProjectGitHubAccount;
+        const account = yield* ProfileGitHubAccount;
         const choice = yield* hostChoice(host);
         const key =
           account !== null && account.host.toLowerCase() === host
-            ? `${cacheKey(host, account.login)}\u0000project`
+            ? `${cacheKey(host, account.login)}\u0000profile`
             : cacheKey(host, choice?.account);
         yield* Cache.invalidate(cache, key);
       });
