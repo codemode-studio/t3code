@@ -4,10 +4,8 @@
  * Composer-only slash commands (/model, /plan) are left out: a server-started run cannot act on them.
  */
 import type { EnvironmentId, ProviderDriverKind, ServerProvider } from "@t3tools/contracts";
-import {
-  formatProviderSkillDisplayName,
-  resolveProviderSkillsForCwd,
-} from "@t3tools/client-runtime/providerSkills";
+import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
+import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { type KeyboardEvent, useId, useRef, useState } from "react";
 

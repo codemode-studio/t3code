@@ -4,13 +4,13 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   applySkillVisibility,
   setSkillPathVisibility,
   dedupeProviderSkillsByName,
-  formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
   hasCompleteProviderWorkspaceSnapshot,

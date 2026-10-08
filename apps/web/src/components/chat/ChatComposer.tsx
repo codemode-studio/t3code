@@ -1,4 +1,5 @@
 import { useSkillVisibility } from "../../hooks/useSkillVisibility";
+import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { runtimeModeConfig, runtimeModeOptions as runtimeModes } from "./runtimeModeConfig";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
@@ -1092,7 +1093,7 @@ import {
   ShieldIcon,
   XIcon,
 } from "lucide-react";
-import { proposedPlanTitle } from "../../proposedPlan";
+import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import {
   applyProviderInstanceSettings,
@@ -1130,7 +1131,6 @@ import {
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import {
   applySkillVisibility,
-  formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
   hasCompleteProviderWorkspaceSnapshot,
