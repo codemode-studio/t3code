@@ -68,7 +68,7 @@ import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
   resolveHomeListProjectRefs,
-  sortHomeProjectScopes,
+  findHomeProjectScope,
   type HomeProjectSortOrder,
 } from "./homeThreadList";
 import { createSwipeRowActivation } from "./swipe-row-activation";
@@ -399,42 +399,14 @@ export function HomeScreen(props: HomeScreenProps) {
   }, [props.projects]);
 
   const v2ProjectScopeKey = props.selectedProjectKey;
-  const v2ScopeProjects = useMemo(
-    () =>
-      sortHomeProjectScopes({
-        scopes: projectScopes,
-        threads: props.threads,
-        pendingTasks: props.pendingTasks,
-        projectSortOrder: props.projectSortOrder,
-      }),
-    [
-      props.pendingTasks,
-      props.projects,
-      props.projectSortOrder,
-      props.selectedEnvironmentId,
-      props.threads,
-      projectScopes,
-    ],
-  );
   const v2ScopedProjectGroup = useMemo(
-    () =>
-      v2ProjectScopeKey === null
-        ? null
-        : (v2ScopeProjects.find(
-            (scope) =>
-              scope.key === v2ProjectScopeKey ||
-              scope.projectRefs.some(
-                (projectRef) =>
-                  scopedProjectKey(projectRef.environmentId, projectRef.projectId) ===
-                  v2ProjectScopeKey,
-              ),
-          ) ?? null),
-    [v2ProjectScopeKey, v2ScopeProjects],
+    () => findHomeProjectScope(projectScopes, v2ProjectScopeKey),
+    [v2ProjectScopeKey, projectScopes],
   );
   const v2ProjectTitleByProjectKey = useMemo(
     () =>
       new Map(
-        v2ScopeProjects.flatMap((scope) =>
+        projectScopes.flatMap((scope) =>
           scope.projectRefs.map(
             (projectRef) =>
               [
@@ -444,7 +416,7 @@ export function HomeScreen(props: HomeScreenProps) {
           ),
         ),
       ),
-    [v2ScopeProjects],
+    [projectScopes],
   );
   const v2ProjectRefs = useMemo(
     () =>

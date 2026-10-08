@@ -69,6 +69,7 @@ describe("fork migration ledger", () => {
         [57, "ScheduledTaskWebhooks"],
         [58, "WebhookRelayDeliveries"],
         [59, "McpAppModelContext"],
+        [60, "ThreadSnapshotWindowIndexes"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -89,6 +90,7 @@ describe("fork migration ledger", () => {
         [57, "ScheduledTaskWebhooks"],
         [58, "WebhookRelayDeliveries"],
         [59, "McpAppModelContext"],
+        [60, "ThreadSnapshotWindowIndexes"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -104,7 +106,7 @@ describe("fork migration ledger", () => {
 
   it.effect("leaves an upstream database's history alone and adds notes", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 59 });
+      yield* runMigrations({ toMigrationInclusive: 60 });
       assert.isFalse(yield* tableExists("notes"));
       assert.deepStrictEqual(yield* runMigrations(), []);
       yield* insertNote;
@@ -121,7 +123,9 @@ describe("fork migration ledger", () => {
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (57, 'Notes')`;
       const before = yield* upstreamLedger;
 
-      yield* runMigrations();
+      // This deliberately inconsistent ledger skips the orchestration tables, so
+      // stop before the index migration that requires those tables.
+      yield* runMigrations({ toMigrationInclusive: 59 });
       assert.deepStrictEqual(yield* upstreamLedger, [
         ...before,
         [58, "WebhookRelayDeliveries"],
