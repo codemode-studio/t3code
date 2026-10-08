@@ -32,6 +32,9 @@ requests, reviews, and automations. If that login is signed out, these fail unti
 in or pick another account; they never fall back to a different login. Terminals and agents keep
 `gh`'s own login, and T3 Code never switches the login active in `gh`.
 
+For GitHub Enterprise, sign in with `gh auth login --hostname YOUR_HOST`. T3 Code treats a
+custom server name as GitHub once it has a credential for that host.
+
 ### Forgejo and Gitea
 
 Install [Forgejo CLI (`fj`)](https://codeberg.org/forgejo-contrib/forgejo-cli) or
