@@ -274,11 +274,6 @@ const layerGitHubCliAccountSelection = GitHubCliAccountSelection.layer.pipe(
   Layer.provide(layerServerSettings),
 );
 
-// Terminals and agent sessions start as the checkout's selected `gh` login too.
-const layerGitHubCliAccountEnvironment = GitHubCliAccountSelection.environmentLayer.pipe(
-  Layer.provide(layerGitHubCliAccountSelection),
-);
-
 const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer));
 
 const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.pipe(
@@ -406,7 +401,6 @@ const layerCheckpointStore = CheckpointStore.layer.pipe(Layer.provide(layerVcsDr
 const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
 const layerTerminal = TerminalManager.layer.pipe(
-  Layer.provide(layerGitHubCliAccountEnvironment),
   Layer.provide(layerPtyAdapter),
   Layer.provide(layerPortScanner),
   Layer.provide(layerNativeTelemetry),
@@ -517,7 +511,12 @@ const layerAutomationService = Layer.effectDiscard(
 ).pipe(
   // Its own reader of the durable outbox: settling a run checks for a restart continuation the
   // effect worker still owes it.
-  Layer.provideMerge(AutomationService.layer.pipe(Layer.provide(EffectOutbox.layer))),
+  Layer.provideMerge(
+    AutomationService.layer.pipe(
+      Layer.provide(EffectOutbox.layer),
+      Layer.provide(layerGitHubCliAccountSelection),
+    ),
+  ),
 );
 
 const layerThreadPullRequestWorker = Layer.effectDiscard(
@@ -615,9 +614,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(
-    ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(layerGitHubCliAccountEnvironment)),
-  ),
+  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
   Layer.provideMerge(
     Layer.mergeAll(
       AntigravityInstallation.AntigravityInstallation.layer,

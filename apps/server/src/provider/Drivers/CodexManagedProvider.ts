@@ -7,7 +7,6 @@ import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneratio
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { chatGptModels } from "../CodexChatGptModels.ts";
 import { makeCodexManagedRuntime } from "../CodexManagedRuntime.ts";
-import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { createCodexAdapterV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import {
@@ -237,7 +236,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     undefined,
     snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
     resolveRuntime,
-  ).pipe(withGitHubAccountSpawner);
+  );
   const protect = <A>(operation: string, effect: Effect.Effect<A, TextGenerationError>) =>
     runtime.auth.controller.withAccess!(effect).pipe(
       Effect.scoped,

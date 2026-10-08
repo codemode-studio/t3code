@@ -1,6 +1,7 @@
 import { ProjectId, type GitHubCliAccount } from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 import * as Cache from "effect/Cache";
+import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -11,8 +12,15 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
 import * as ServerSettings from "../serverSettings.ts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as Context from "effect/Context";
+
+/**
+ * The `gh` login picked by the profile of the project a checkout belongs to, or null to use the
+ * environment's choice for the host (Settings → Source Control).
+ *
+ * A reference, so upstream code paths without project settings (the CLI, most tests) need not
+ * provide it. Server layers that read GitHub for a checkout must provide `layer`, or they
+ * silently ignore profile accounts.
+ */
 export class GitHubCliAccountSelection extends Context.Reference<{
   readonly forCwd: (cwd: string) => Effect.Effect<GitHubCliAccount | null>;
 }>("t3/sourceControl/GitHubCliAccountSelection", {
@@ -20,29 +28,11 @@ export class GitHubCliAccountSelection extends Context.Reference<{
 }) {}
 
 /**
- * Environment that makes `gh` (and git's `gh auth git-credential` helper) act as
- * the login selected for a checkout. Terminals and agent sessions merge it into
- * the processes they start; empty when no login is selected or it cannot be read.
- */
-export const GitHubCliAccountEnvironment = Context.Reference<{
-  readonly forCwd: (cwd: string) => Effect.Effect<Readonly<Record<string, string>>>;
-}>("t3/sourceControl/GitHubCliAccountEnvironment", {
-  defaultValue: () => ({ forCwd: () => Effect.succeed({}) }),
-});
-
-/** gh reads github.com and GHE.com tenancies from GH_TOKEN, every other host from GH_ENTERPRISE_TOKEN. */
-export function tokenEnv(host: string, token: string): Record<string, string> {
-  return host === "github.com" || host.endsWith(".ghe.com")
-    ? { GH_TOKEN: token, GITHUB_TOKEN: token }
-    : { GH_ENTERPRISE_TOKEN: token, GITHUB_ENTERPRISE_TOKEN: token };
-}
-
-/**
- * Resolves the `gh` login for a GitHub command from its cwd: the project
- * rooted there, or the project whose thread owns that worktree.
+ * Resolves a checkout's project from its cwd: the project rooted there, or the project whose
+ * thread owns that worktree.
  *
  * Reads the projection tables directly because the snapshot query depends on
- * source control (repository identity), which depends on `GitHubCli`.
+ * source control (repository identity), which depends on this selection.
  */
 export const layer = Layer.effect(
   GitHubCliAccountSelection,
@@ -83,78 +73,18 @@ export const layer = Layer.effect(
     return {
       forCwd: Effect.fn("GitHubCliAccountSelection.forCwd")(function* (cwd: string) {
         const settings = yield* serverSettings.getSettings;
-        // Nobody picked an account anywhere: skip the project lookup entirely.
+        // No profile picks an account: skip the project lookup entirely.
         if (
-          settings.githubCliAccount === null &&
           !Object.values(settings.providerProfiles).some(
             (profile) => profile.githubCliAccount !== undefined,
-          ) &&
-          !Object.values(settings.projectSettingsOverrides).some(
-            (overrides) => overrides.githubCliAccount !== undefined,
           )
         ) {
           return null;
         }
         const projectId = yield* Cache.get(projectIds, cwd);
-        return resolveProjectSettings(settings, projectId).settings.githubCliAccount;
+        const resolved = resolveProjectSettings(settings, projectId).settings;
+        return resolveProviderProfile(resolved)?.githubCliAccount ?? null;
       }, Effect.orDie),
-    };
-  }),
-);
-
-/**
- * Hands terminals and agent sessions the selected login's token, so `gh` in them
- * matches the checkout's selection instead of the CLI's globally active login.
- * An unreadable login leaves the environment untouched rather than blocking the process.
- */
-export const environmentLayer = Layer.effect(
-  GitHubCliAccountEnvironment,
-  Effect.gen(function* () {
-    const selection = yield* GitHubCliAccountSelection;
-    const process = yield* VcsProcess.VcsProcess;
-    const environments = yield* Cache.makeWith(
-      (key: string) => {
-        const [host = "", login = ""] = key.split("\0");
-        return process
-          .run({
-            operation: "GitHubCliAccountEnvironment.token",
-            command: "gh",
-            args: ["auth", "token", "--hostname", host, "--user", login],
-            cwd: globalThis.process.cwd(),
-            timeoutMs: 10_000,
-            // Blank env tokens so an ambient GH_TOKEN cannot answer for the login.
-            env: { ...tokenEnv(host, ""), GH_DEBUG: "" },
-          })
-          .pipe(
-            Effect.map((result) => result.stdout.trim()),
-            Effect.flatMap((token) =>
-              token ? Effect.succeed(tokenEnv(host, token)) : Effect.fail(null),
-            ),
-          );
-      },
-      {
-        capacity: 16,
-        timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.minutes(1) : Duration.zero),
-      },
-    );
-    return {
-      forCwd: Effect.fn("GitHubCliAccountEnvironment.forCwd")(function* (cwd: string) {
-        const account = yield* selection.forCwd(cwd);
-        if (account === null) return {};
-        const host = account.host.toLowerCase();
-        return yield* Cache.get(environments, `${host}\0${account.login}`).pipe(
-          // Never attach credential lookup output to the log.
-          Effect.catch(() =>
-            Effect.logWarning(
-              "Selected GitHub CLI account is unavailable; using gh's active login.",
-              {
-                host,
-                login: account.login,
-              },
-            ).pipe(Effect.as({})),
-          ),
-        );
-      }),
     };
   }),
 );

@@ -1236,8 +1236,8 @@ export const ProviderProfile = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   /**
-   * The `gh` login GitHub commands in the profile's projects run as, unless a project picks its
-   * own. Absent uses the environment's choice.
+   * The `gh` login T3 Code's GitHub requests for the profile's projects use, instead of the
+   * environment's choice for that host. Absent uses the environment's choice.
    */
   githubCliAccount: Schema.optionalKey(GitHubCliAccount),
 });
@@ -1264,7 +1264,6 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "branchNameInstructions",
   "pullRequestMergeMethod",
   "createPullRequestsAsDraft",
-  "githubCliAccount",
   "sidebarAutoSettleOnMerge",
   "sidebarAutoSettleAfterDays",
   "continueThreadsAfterServerUpdate",
@@ -1280,7 +1279,6 @@ export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTIN
 export const FORK_PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "providerProfileId",
   "createPullRequestsAsDraft",
-  "githubCliAccount",
 ] as const satisfies ReadonlyArray<ProjectScopedServerSettingKey>;
 
 /**
@@ -1309,7 +1307,6 @@ export const ProjectSettingsOverrides = Schema.Struct({
   branchNameInstructions: Schema.optionalKey(TrimmedString),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   createPullRequestsAsDraft: Schema.optionalKey(Schema.Boolean),
-  githubCliAccount: Schema.optionalKey(Schema.NullOr(GitHubCliAccount)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
@@ -1335,7 +1332,6 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
   "defaultModelSelection",
   "sourceControlWriterModelSelection",
   "pullRequestMergeMethod",
-  "githubCliAccount",
   "sidebarAutoSettleAfterDays",
 ]);
 
@@ -1546,14 +1542,6 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Whether pull requests the Git actions create open as drafts. */
   createPullRequestsAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * The `gh` login GitHub commands run as, by passing that login's token to
-   * each command. `null` uses whichever login is active in the CLI. The CLI's
-   * active login is never switched, so terminals and other tools keep theirs.
-   */
-  githubCliAccount: Schema.NullOr(GitHubCliAccount).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
 
   // Legacy single-instance-per-driver settings. Continues to be the source
   // of truth until `providerInstances` (below) lands per-driver migration
@@ -1877,7 +1865,6 @@ export const ServerSettingsPatch = Schema.Struct({
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   createPullRequestsAsDraft: Schema.optionalKey(Schema.Boolean),
-  githubCliAccount: Schema.optionalKey(Schema.NullOr(GitHubCliAccount)),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),

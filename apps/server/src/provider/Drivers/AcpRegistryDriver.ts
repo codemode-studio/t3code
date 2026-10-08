@@ -29,7 +29,6 @@ import {
 } from "../../orchestration-v2/Adapters/AcpRegistryAdapterV2.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import type { TextGeneration } from "../../textGeneration/TextGeneration.ts";
-import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
@@ -516,7 +515,6 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         enabled,
         config,
       }).pipe(
-        withGitHubAccountSpawner,
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({

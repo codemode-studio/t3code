@@ -53,6 +53,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -71,9 +72,19 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCliAccountSelection.ts";
+import * as GitHubApi from "../sourceControl/GitHubApi.ts";
+import { GitHubCliAccountSelection } from "../sourceControl/GitHubCliAccountSelection.ts";
+import * as GitHubCredentials from "../sourceControl/GitHubCredentials.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import { RUN_SUMMARY_TRANSCRIPT_MAX_LENGTH } from "../textGeneration/TextGenerationPrompts.ts";
+
+/** gh reads github.com and GHE.com tenancies from GH_TOKEN, every other host from GH_ENTERPRISE_TOKEN. */
+function ghTokenEnvironment(host: string, token: string): Record<string, string> {
+  const normalized = host.toLowerCase();
+  return normalized === "github.com" || normalized.endsWith(".ghe.com")
+    ? { GH_TOKEN: token }
+    : { GH_ENTERPRISE_TOKEN: token };
+}
 
 /** A run that has not ended yet; `messageAt` is when the run's message was sent. */
 const PendingRun = Schema.Struct({
@@ -350,14 +361,23 @@ const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const process = yield* VcsProcess.VcsProcess;
-  const accountEnvironment = yield* GitHubCliAccountEnvironment;
+  const gitHubAccounts = yield* GitHubCliAccountSelection;
+  const gitHubApi = yield* GitHubApi.GitHubApi;
+  /** Runs `gh` with the token of the login the project's profile picks, when it picks one. */
   const gitHubCli = {
     execute: Effect.fn(function* (input: {
       cwd: string;
       args: readonly string[];
       timeoutMs?: number;
     }) {
-      const env = yield* accountEnvironment.forCwd(input.cwd);
+      const account = yield* gitHubAccounts.forCwd(input.cwd);
+      const env =
+        account === null
+          ? {}
+          : yield* gitHubApi.credential(account.host).pipe(
+              Effect.provideService(GitHubCredentials.ProfileGitHubAccount, account),
+              Effect.map(({ token }) => ghTokenEnvironment(account.host, Redacted.value(token))),
+            );
       return yield* process.run({
         ...input,
         env,

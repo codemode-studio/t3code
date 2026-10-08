@@ -140,9 +140,8 @@ changes.
 
 A project with a profile offers only that profile's instances in the model picker, and new threads
 start on the profile's default model unless the project sets its own. **No profile** offers every
-instance. A profile can also pick the **GitHub account** its projects' GitHub actions run as, when
-more than one `gh` login is signed in; a project's own choice in **Settings → Source Control**
-still wins. Every other setting resolves as usual, from the project, then the environment. The eye
+instance. Set **GitHub account** on a profile's card to have its projects' pull requests, reviews,
+and automations use that `gh` login; see [GitHub](./source-control.md#github). Every other setting resolves as usual, from the project, then the environment. The eye
 button at the bottom of the picker's provider rail reveals instances outside the profile. Models
 picked from them are marked **Outside profile** because they run with that instance's credentials
 and MCP servers. Existing threads keep their provider.

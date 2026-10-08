@@ -24,21 +24,13 @@ If `gh` is signed in to several accounts or hosts, expand **GitHub** in the same
 the account each host uses or turn a host off. A saved token or `GH_TOKEN` takes precedence
 over that choice; a host turned off stays off either way.
 
-When `gh` holds more than one login, choose which one T3 Code uses under **GitHub CLI account**
-in the GitHub entry of **Settings → Source Control**. Select a project to give it a different
-account, for example a work login for company repositories, or set one on a
-[provider profile](./project-settings.md#provider-profiles) to cover all of that profile's
-projects. A project's own choice wins over its profile's. This selection takes precedence over
-a saved token, an environment token, and the account chosen per host; a host turned off stays off.
-T3 Code passes that login's token to
-its own GitHub commands, to terminals it opens, and to agent sessions it starts, so `gh` there acts
-as the selected login. It never switches the login active in `gh`, so apps outside T3 Code are
-unaffected. A change applies to terminals and agent sessions started afterwards. If the chosen
-login is signed out, GitHub actions fail until you sign it back in or pick another account; they
-never fall back to a different login. Terminals and agent sessions start with `gh`'s active login
-instead. Some agents always use `gh`'s active login because one process serves every project:
-Codex and OpenCode 2 agents share a server per provider, and Cursor agents run inside the T3 Code
-server. An OpenCode server you connect to by URL keeps its own login.
+To use a different login for some projects, for example a work login for company repositories,
+pick a **GitHub account** on their [provider profile](./project-settings.md#provider-profiles).
+It takes precedence over a saved token, `GH_TOKEN`, and the account chosen per host; a host
+turned off stays off. It covers T3 Code's own GitHub work for those projects, such as pull
+requests, reviews, and automations. If that login is signed out, these fail until you sign it back
+in or pick another account; they never fall back to a different login. Terminals and agents keep
+`gh`'s own login, and T3 Code never switches the login active in `gh`.
 
 ### Forgejo and Gitea
 

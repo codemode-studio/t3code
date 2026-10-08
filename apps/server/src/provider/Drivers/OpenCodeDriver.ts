@@ -33,7 +33,6 @@ import * as OpenCode2AdapterV2 from "../../orchestration-v2/Adapters/OpenCode2Ad
 import type { ProviderAdapterV2Shape } from "../../orchestration-v2/ProviderAdapter.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import type { TextGeneration } from "../../textGeneration/TextGeneration.ts";
-import { withGitHubAccountOpenCodeServers } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { readOpenCodeGoUsageLimits } from "../openCodeUsageLimits.ts";
 import {
@@ -272,7 +271,6 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         enabled,
         config,
       }).pipe(
-        withGitHubAccountOpenCodeServers,
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({

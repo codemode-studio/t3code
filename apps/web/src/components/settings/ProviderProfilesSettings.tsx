@@ -45,8 +45,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { PROVIDER_PROFILE_COLORS } from "./ProviderProfilesSettings.logic";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ProviderCustomColorPanel } from "./ProviderAccentColorPicker";
-import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
-import { githubCliAccountLabel } from "./SourceControlSettings";
+import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow } from "./settingsLayout";
 
 /** Provider instance entries for an environment, in settings order. */
 export function useProviderInstanceEntries(
@@ -161,7 +160,6 @@ function ProviderProfileCustomColor({
 }
 
 export function ProviderProfileEditorDialog({
-  environmentId,
   initial,
   entries,
   settings,
@@ -173,7 +171,6 @@ export function ProviderProfileEditorDialog({
   onSave,
   onDelete,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly initial: EditingProfile;
   readonly entries: ReadonlyArray<ProviderInstanceEntry>;
   readonly settings: UnifiedSettings;
@@ -371,16 +368,6 @@ export function ProviderProfileEditorDialog({
               </span>
             </div>
 
-            <ProfileGitHubAccountField
-              environmentId={environmentId}
-              environmentAccount={settings.githubCliAccount}
-              value={draft.githubCliAccount}
-              onChange={(account) => {
-                const { githubCliAccount: _previous, ...rest } = draft;
-                setDraft(account ? { ...rest, githubCliAccount: account } : rest);
-              }}
-            />
-
             {creating && assignableProjects && assignableProjects.length > 0 ? (
               <div className="grid gap-1.5">
                 <span className="text-sm font-medium">Projects</span>
@@ -465,19 +452,23 @@ export function ProviderProfileEditorDialog({
 
 const ENVIRONMENT_GITHUB_CLI_ACCOUNT = "environment";
 
+function githubCliAccountLabel(account: GitHubCliAccount): string {
+  return `${account.login} @ ${account.host}`;
+}
+
 /**
- * The `gh` login for the profile's projects, from the logins signed in on this environment. Like
- * Source Control settings, one login leaves nothing to choose unless an account is already set.
+ * The `gh` login T3 Code uses for GitHub in the profile's projects, from the logins signed in on
+ * this environment. Unset follows the environment's choice in Settings → Source Control.
  */
-function ProfileGitHubAccountField({
+export function ProfileGitHubAccountRow({
   environmentId,
-  environmentAccount,
   value,
+  readOnly,
   onChange,
 }: {
   readonly environmentId: EnvironmentId;
-  readonly environmentAccount: GitHubCliAccount | null;
   readonly value: GitHubCliAccount | undefined;
+  readonly readOnly: boolean;
   readonly onChange: (account: GitHubCliAccount | undefined) => void;
 }) {
   const discovery = useEnvironmentQuery(
@@ -487,54 +478,68 @@ function ProfileGitHubAccountField({
     discovery.data?.sourceControlProviders.find((item) => item.kind === "github")?.auth.accounts ??
     []
   )
-    .filter((account) => account.authenticated)
+    .filter((account) => account.authenticated && account.environmentVariable === undefined)
     .map((account) => ({ host: account.host, login: account.account }));
-  if (accounts.length < 2 && value === undefined) return null;
   const signedOut =
     value !== undefined &&
+    discovery.data !== undefined &&
     !accounts.some(
       (account) => account.host === value.host.toLowerCase() && account.login === value.login,
     );
   const options = signedOut ? [...accounts, value] : accounts;
-  const inheritedLabel = `Environment default (${
-    environmentAccount ? githubCliAccountLabel(environmentAccount) : "active gh login"
-  })`;
 
   return (
-    <div className="grid gap-1.5">
-      <span className="text-sm font-medium">GitHub account</span>
-      <Select
-        value={value === undefined ? ENVIRONMENT_GITHUB_CLI_ACCOUNT : githubCliAccountLabel(value)}
-        onValueChange={(next) => {
-          if (next === ENVIRONMENT_GITHUB_CLI_ACCOUNT) {
-            onChange(undefined);
-            return;
-          }
-          const account = options.find((option) => githubCliAccountLabel(option) === next);
-          if (account) onChange({ host: account.host, login: account.login });
-        }}
-      >
-        <SelectTrigger size="sm" aria-label="GitHub account">
-          <SelectValue>
-            {(selected: string | null) =>
-              selected === ENVIRONMENT_GITHUB_CLI_ACCOUNT ? inheritedLabel : selected
+    <SettingsRow
+      title="GitHub account"
+      description="Pull requests, reviews, and automations in this profile's projects use this login. Terminals and agents keep gh's own login."
+      status={
+        signedOut ? (
+          <span className="text-warning">
+            {value.login} is not signed in to gh on this environment, so GitHub actions in these
+            projects fail until you sign it back in or choose another account.
+          </span>
+        ) : null
+      }
+      control={
+        readOnly ? (
+          <span className="text-sm">
+            {value === undefined ? "Environment default" : githubCliAccountLabel(value)}
+          </span>
+        ) : (
+          <Select
+            value={
+              value === undefined ? ENVIRONMENT_GITHUB_CLI_ACCOUNT : githubCliAccountLabel(value)
             }
-          </SelectValue>
-        </SelectTrigger>
-        <SelectPopup alignItemWithTrigger={false}>
-          <SelectItem value={ENVIRONMENT_GITHUB_CLI_ACCOUNT}>{inheritedLabel}</SelectItem>
-          {options.map((account) => (
-            <SelectItem key={githubCliAccountLabel(account)} value={githubCliAccountLabel(account)}>
-              {githubCliAccountLabel(account)}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-      <span className={cn("text-xs", signedOut ? "text-warning" : "text-muted-foreground")}>
-        {signedOut
-          ? `${value.login} is not signed in to gh on this environment, so GitHub actions in these projects fail until you sign it back in or choose another account.`
-          : "GitHub actions in the profile's projects run as this login unless a project picks its own."}
-      </span>
-    </div>
+            onValueChange={(next) => {
+              if (next === ENVIRONMENT_GITHUB_CLI_ACCOUNT) {
+                onChange(undefined);
+                return;
+              }
+              const account = options.find((option) => githubCliAccountLabel(option) === next);
+              if (account) onChange({ host: account.host, login: account.login });
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="GitHub account">
+              <SelectValue>
+                {(selected: string | null) =>
+                  selected === ENVIRONMENT_GITHUB_CLI_ACCOUNT ? "Environment default" : selected
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem value={ENVIRONMENT_GITHUB_CLI_ACCOUNT}>Environment default</SelectItem>
+              {options.map((account) => (
+                <SelectItem
+                  key={githubCliAccountLabel(account)}
+                  value={githubCliAccountLabel(account)}
+                >
+                  {githubCliAccountLabel(account)}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        )
+      }
+    />
   );
 }

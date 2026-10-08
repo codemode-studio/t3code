@@ -16,7 +16,6 @@ import {
   GrokAdapterV2Driver,
   type GrokAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/GrokAdapterV2.ts";
-import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import {
   buildInitialGrokProviderSnapshot,
@@ -135,7 +134,6 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         enabled,
         config,
       }).pipe(
-        withGitHubAccountSpawner,
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({
@@ -146,9 +144,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
             }),
         ),
       );
-      const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv).pipe(
-        withGitHubAccountSpawner,
-      );
+      const textGeneration = yield* makeGrokTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkGrokProviderStatus(effectiveConfig, processEnv, cwd).pipe(
         Effect.flatMap((snapshot) =>

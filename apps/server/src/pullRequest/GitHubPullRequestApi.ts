@@ -1132,7 +1132,7 @@ export const make = Effect.gen(function* () {
       const account = yield* selection.forCwd(input.cwd);
       const { token, fingerprint: key } = yield* api
         .credential(host)
-        .pipe(Effect.provideService(GitHubCredentials.ProjectGitHubAccount, account));
+        .pipe(Effect.provideService(GitHubCredentials.ProfileGitHubAccount, account));
       const credential = { host, token, credentialFingerprint: key };
       // A cold page may ask several times. Wait per credential and check again after the
       // first verification; cancellation releases the next waiter without losing its request.

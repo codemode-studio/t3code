@@ -22,7 +22,6 @@ import {
   PiAdapterV2Driver,
   type PiAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/PiAdapterV2.ts";
-import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import {
   buildInitialPiProviderSnapshot,
@@ -131,7 +130,6 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         enabled,
         config,
       }).pipe(
-        withGitHubAccountSpawner,
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({
@@ -142,9 +140,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
             }),
         ),
       );
-      const textGeneration = yield* makePiTextGeneration(effectiveConfig, processEnv).pipe(
-        withGitHubAccountSpawner,
-      );
+      const textGeneration = yield* makePiTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkPiProviderStatus(effectiveConfig, processEnv, cwd).pipe(
         Effect.map(stampIdentity),

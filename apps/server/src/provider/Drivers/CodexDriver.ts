@@ -40,7 +40,6 @@ import {
   type CodexAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import { withGitHubAccountSpawner } from "../ProviderGitHubAccountEnvironment.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import * as ResetCreditCoordinator from "../resetCreditCoordinator.ts";
 import {
@@ -272,7 +271,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         effectiveConfig,
         processEnv,
         snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
-      ).pipe(withGitHubAccountSpawner);
+      );
       const snapshotForCwd = (cwd: string) =>
         !effectiveConfig.enabled
           ? snapshot.getSnapshot

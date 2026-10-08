@@ -16,10 +16,12 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -37,6 +39,9 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as GitHubApi from "../sourceControl/GitHubApi.ts";
+import { GitHubCliAccountSelection } from "../sourceControl/GitHubCliAccountSelection.ts";
+import * as GitHubCredentials from "../sourceControl/GitHubCredentials.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import {
@@ -66,6 +71,12 @@ const CONFIG: AutomationConfig = {
 };
 
 /** What a test can steer and observe around the service. */
+/** Answers the service's `gh` calls; `env` carries the token it passed, if any. */
+type GhResponder = (
+  args: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv | undefined,
+) => Effect.Effect<string>;
+
 interface Harness {
   /** Runs once, just before the first `thread.delete` reaches the orchestrator. */
   readonly beforeDelete: Ref.Ref<Effect.Effect<void> | null>;
@@ -76,7 +87,7 @@ interface Harness {
   readonly summaries: Queue.Queue<ReadonlyArray<string>>;
   /** Effect ids the service read from the outbox. */
   readonly outboxReads: Queue.Queue<string>;
-  readonly gh: Ref.Ref<(args: ReadonlyArray<string>) => Effect.Effect<string>>;
+  readonly gh: Ref.Ref<GhResponder>;
   readonly worktrees: Ref.Ref<{
     readonly created: ReadonlyArray<string>;
     readonly removed: ReadonlyArray<string>;
@@ -226,11 +237,18 @@ const environmentLayer = (harness: Harness) =>
         Layer.mock(VcsProcess.VcsProcess)({
           run: (input) =>
             Ref.get(harness.gh).pipe(
-              Effect.flatMap((respond) => respond(input.args)),
+              Effect.flatMap((respond) => respond(input.args, input.env)),
               Effect.map((stdout) => ({ stdout, stderr: "", exitCode: 0 }) as never),
             ),
         }),
         Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        Layer.mock(GitHubApi.GitHubApi)({
+          credential: () =>
+            Effect.map(GitHubCredentials.ProfileGitHubAccount, (account) => ({
+              token: Redacted.make(`token-for-${account?.login ?? "active"}`),
+              fingerprint: "test",
+            })),
+        }),
         Layer.mock(TextGeneration.TextGeneration)({
           generateRunSummary: (request) =>
             Queue.offer(harness.summaries, request.agentMessages).pipe(
@@ -272,9 +290,7 @@ const withHarness = <A, E>(body: (harness: Harness) => Effect.Effect<A, E, Env |
       launches: yield* Ref.make<ReadonlyArray<ThreadLaunchService.ThreadLaunchInput>>([]),
       summaries: yield* Queue.unbounded<ReadonlyArray<string>>(),
       outboxReads: yield* Queue.unbounded<string>(),
-      gh: yield* Ref.make<(args: ReadonlyArray<string>) => Effect.Effect<string>>(() =>
-        Effect.succeed("[]"),
-      ),
+      gh: yield* Ref.make<GhResponder>(() => Effect.succeed("[]")),
       worktrees: yield* Ref.make<{
         readonly created: ReadonlyArray<string>;
         readonly removed: ReadonlyArray<string>;
@@ -941,6 +957,30 @@ it.effect("reviews a new pull request detached at its head and links the thread"
         (thread.pullRequests ?? []).map((link) => link.number),
         [12],
       );
+    }),
+  ),
+);
+
+it.effect("polls GitHub as the login the project's profile picks", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      const listToken = yield* Deferred.make<string | undefined>();
+      yield* Ref.set(harness.gh, (args, env) =>
+        args[0] === "pr" && args[1] === "list"
+          ? Deferred.succeed(listToken, env?.GH_TOKEN).pipe(Effect.as("[]"))
+          : Effect.succeed("[]"),
+      );
+      yield* createWatching(harness, {
+        ...CONFIG,
+        triggers: [{ type: "github", event: "pull_request.opened" }],
+      });
+      yield* startService(harness).pipe(
+        Effect.provideService(GitHubCliAccountSelection, {
+          forCwd: (cwd) =>
+            Effect.succeed(cwd === WORKSPACE_ROOT ? { host: "github.com", login: "work" } : null),
+        }),
+      );
+      assert.strictEqual(yield* Deferred.await(listToken), "token-for-work");
     }),
   ),
 );

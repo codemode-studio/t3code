@@ -68,7 +68,6 @@ import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCliAccountSelection.ts";
 import {
   increment,
   terminalRestartsTotal,
@@ -1318,7 +1317,6 @@ function createTerminalSpawnEnv(
   baseEnv: NodeJS.ProcessEnv,
   runtimeEnv: Record<string, string> | null | undefined,
   platform: NodeJS.Platform,
-  gitHubAccountEnv: Readonly<Record<string, string>> = {},
 ): NodeJS.ProcessEnv {
   const spawnEnv: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(baseEnv)) {
@@ -1326,7 +1324,6 @@ function createTerminalSpawnEnv(
     if (shouldExcludeTerminalEnvKey(key)) continue;
     spawnEnv[key] = value;
   }
-  Object.assign(spawnEnv, gitHubAccountEnv);
   if (runtimeEnv) {
     for (const [key, value] of Object.entries(runtimeEnv)) {
       const existingKey =
@@ -1489,7 +1486,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
   const processRunner = yield* ProcessRunner.ProcessRunner;
-  const gitHubAccountEnvironment = yield* GitHubCliAccountEnvironment;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
     function* <Input extends TerminalOpenInput | TerminalAttachInput | TerminalRestartInput>(
       input: Input,
@@ -2248,12 +2244,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         Effect.andThen(
           Effect.gen(function* () {
             const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
-            const terminalEnv = createTerminalSpawnEnv(
-              baseEnv,
-              session.runtimeEnv,
-              platform,
-              yield* gitHubAccountEnvironment.forCwd(session.cwd),
-            );
+            const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv, platform);
             // Append (never prepend) managed ACP agent install directories so
             // `kimi login` and friends resolve by name without shadowing any
             // system or user tool of the same name.
