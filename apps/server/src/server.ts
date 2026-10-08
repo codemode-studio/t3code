@@ -50,8 +50,8 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
-import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitHubCliAccountSelection from "./sourceControl/GitHubCliAccountSelection.ts";
+import * as GitHubApi from "./sourceControl/GitHubApi.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as ForgejoCli from "./sourceControl/ForgejoCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
@@ -270,9 +270,6 @@ const layerGitHubCliAccountSelection = GitHubCliAccountSelection.layer.pipe(
   Layer.provide(layerServerSettings),
 );
 
-// Every server-side GitHub command resolves its checkout's selected `gh` login through this one instance.
-const layerGitHubCli = GitHubCli.layer.pipe(Layer.provide(layerGitHubCliAccountSelection));
-
 // Terminals and agent sessions start as the checkout's selected `gh` login too.
 const layerGitHubCliAccountEnvironment = GitHubCliAccountSelection.environmentLayer.pipe(
   Layer.provide(layerGitHubCliAccountSelection),
@@ -281,11 +278,12 @@ const layerGitHubCliAccountEnvironment = GitHubCliAccountSelection.environmentLa
 const layerVcsDriverRegistry = VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer));
 
 const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.pipe(
+  Layer.provide(layerGitHubCliAccountSelection),
   Layer.provide(
     Layer.mergeAll(
       AzureDevOpsCli.layer,
       BitbucketApi.layer,
-      layerGitHubCli,
+      GitHubApi.layerWithDependencies,
       GitLabCli.layer,
       ForgejoCli.layer,
     ),
@@ -333,7 +331,7 @@ const layerRepositoryIdentityResolver = Layer.effect(
 const layerPullRequestService = PullRequestService.layer.pipe(
   Layer.provide(
     PullRequestProviderRegistry.layer.pipe(
-      Layer.provide(layerGitHubCli),
+      Layer.provide(GitHubApi.layerWithDependencies),
       Layer.provide(layerGitHubCliAccountSelection),
     ),
   ),
@@ -597,7 +595,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerServerSettings),
   // The asset route uses the registry's GitHub credential for private PR media.
   Layer.provideMerge(layerSourceControlProviderRegistry),
-  Layer.provideMerge(layerGitHubCli),
+  Layer.provideMerge(GitHubApi.layerWithDependencies),
   Layer.provideMerge(layerGit),
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),

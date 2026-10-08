@@ -1,5 +1,5 @@
 import { withAgentDeviceEnvironment } from "../../mcp/McpProviderSession.ts";
-import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCliAccountSelection.ts";
 import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";

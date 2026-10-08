@@ -37,7 +37,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as GitHubCli from "../sourceControl/GitHubCli.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import {
   makeOrchestrationV2TestLayer,
@@ -223,8 +223,8 @@ const environmentLayer = (harness: Harness) =>
               removed: [...all.removed, input.path],
             })),
         }),
-        Layer.mock(GitHubCli.GitHubCli)({
-          execute: (input) =>
+        Layer.mock(VcsProcess.VcsProcess)({
+          run: (input) =>
             Ref.get(harness.gh).pipe(
               Effect.flatMap((respond) => respond(input.args)),
               Effect.map((stdout) => ({ stdout, stderr: "", exitCode: 0 }) as never),

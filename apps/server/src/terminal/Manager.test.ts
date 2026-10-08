@@ -41,7 +41,7 @@ import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
+import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCliAccountSelection.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 

@@ -27,7 +27,7 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import { ProviderAdapterV2RuntimePolicy } from "../../orchestration-v2/ProviderAdapter.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCli.ts";
+import { GitHubCliAccountEnvironment } from "../../sourceControl/GitHubCliAccountSelection.ts";
 import * as AntigravityInstallation from "../AntigravityInstallation.ts";
 import {
   ANTIGRAVITY_AUTH_STDOUT_PREFIX,

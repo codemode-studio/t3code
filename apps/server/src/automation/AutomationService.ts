@@ -70,7 +70,8 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as GitHubCli from "../sourceControl/GitHubCli.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCliAccountSelection.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import { RUN_SUMMARY_TRANSCRIPT_MAX_LENGTH } from "../textGeneration/TextGenerationPrompts.ts";
 
@@ -348,7 +349,24 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const settingsService = yield* ServerSettings.ServerSettingsService;
-  const gitHubCli = yield* GitHubCli.GitHubCli;
+  const process = yield* VcsProcess.VcsProcess;
+  const accountEnvironment = yield* GitHubCliAccountEnvironment;
+  const gitHubCli = {
+    execute: Effect.fn(function* (input: {
+      cwd: string;
+      args: readonly string[];
+      timeoutMs?: number;
+    }) {
+      const env = yield* accountEnvironment.forCwd(input.cwd);
+      return yield* process.run({
+        ...input,
+        env,
+        command: "gh",
+        operation: "AutomationService.gh",
+        timeoutMs: input.timeoutMs ?? 30_000,
+      });
+    }),
+  };
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const outbox = yield* EffectOutbox.EffectOutboxV2;

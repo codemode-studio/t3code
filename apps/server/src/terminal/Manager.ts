@@ -68,7 +68,7 @@ import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCli.ts";
+import { GitHubCliAccountEnvironment } from "../sourceControl/GitHubCliAccountSelection.ts";
 import {
   increment,
   terminalRestartsTotal,

@@ -1,4 +1,4 @@
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId, type GitHubCliAccount } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
@@ -12,7 +12,30 @@ import * as SqlSchema from "effect/sql/SqlSchema";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import { GitHubCliAccountEnvironment, GitHubCliAccountSelection, tokenEnv } from "./GitHubCli.ts";
+import * as Context from "effect/Context";
+export class GitHubCliAccountSelection extends Context.Reference<{
+  readonly forCwd: (cwd: string) => Effect.Effect<GitHubCliAccount | null>;
+}>("t3/sourceControl/GitHubCliAccountSelection", {
+  defaultValue: () => ({ forCwd: () => Effect.succeed(null) }),
+}) {}
+
+/**
+ * Environment that makes `gh` (and git's `gh auth git-credential` helper) act as
+ * the login selected for a checkout. Terminals and agent sessions merge it into
+ * the processes they start; empty when no login is selected or it cannot be read.
+ */
+export const GitHubCliAccountEnvironment = Context.Reference<{
+  readonly forCwd: (cwd: string) => Effect.Effect<Readonly<Record<string, string>>>;
+}>("t3/sourceControl/GitHubCliAccountEnvironment", {
+  defaultValue: () => ({ forCwd: () => Effect.succeed({}) }),
+});
+
+/** gh reads github.com and GHE.com tenancies from GH_TOKEN, every other host from GH_ENTERPRISE_TOKEN. */
+export function tokenEnv(host: string, token: string): Record<string, string> {
+  return host === "github.com" || host.endsWith(".ghe.com")
+    ? { GH_TOKEN: token, GITHUB_TOKEN: token }
+    : { GH_ENTERPRISE_TOKEN: token, GITHUB_ENTERPRISE_TOKEN: token };
+}
 
 /**
  * Resolves the `gh` login for a GitHub command from its cwd: the project
