@@ -76,7 +76,7 @@ import * as GitHubApi from "../sourceControl/GitHubApi.ts";
 import { GitHubCliAccountSelection } from "../sourceControl/GitHubCliAccountSelection.ts";
 import * as GitHubCredentials from "../sourceControl/GitHubCredentials.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import { RUN_SUMMARY_TRANSCRIPT_MAX_LENGTH } from "../textGeneration/TextGenerationPrompts.ts";
+import { RUN_SUMMARY_TRANSCRIPT_MAX_LENGTH } from "@t3tools/provider-core/server/textGenerationPrompts";
 
 /** gh reads github.com and GHE.com tenancies from GH_TOKEN, every other host from GH_ENTERPRISE_TOKEN. */
 function ghTokenEnvironment(host: string, token: string): Record<string, string> {

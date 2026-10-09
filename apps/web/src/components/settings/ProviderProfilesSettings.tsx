@@ -50,7 +50,7 @@ import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow } from "./settingsLayout
 /** Provider instance entries for an environment, in settings order. */
 export function useProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
-  settings: Pick<UnifiedSettings, "providerInstances" | "providers">,
+  settings: Pick<UnifiedSettings, "providerInstances">,
 ): ReadonlyArray<ProviderInstanceEntry> {
   return useMemo(
     () =>
