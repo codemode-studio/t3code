@@ -22,7 +22,6 @@ import * as Semaphore from "effect/Semaphore";
 import { ChildProcessSpawner } from "effect/process";
 
 import { ProviderHost } from "@t3tools/provider-core/server/ProviderHost";
-import * as ServerConfig from "../../config.ts";
 import {
   AcpRegistryAdapterV2Driver,
   type AcpRegistryAdapterV2DriverEnv,
@@ -490,7 +489,6 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const hostEnvironment = yield* HostProcessEnvironment;
-      const serverConfig = yield* ServerConfig.ServerConfig;
       const host = yield* ProviderHost;
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -529,7 +527,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       };
       const confirmedAuthentication =
         yield* AcpRegistryAuthenticationState.makeAcpRegistryAuthenticationState({
-          cacheDir: serverConfig.providerStatusCacheDir,
+          cacheDir: host.paths.providerStatusCacheDir,
           instanceId,
           settings: effectiveConfig,
           environment,
@@ -574,7 +572,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       const enrichProvider = checkAcpRegistryProviderStatus(
         {
           ...readinessInput,
-          cwd: serverConfig.cwd,
+          cwd: host.paths.cwd,
         },
         probeAcpRegistryConfiguration,
       ).pipe(
@@ -769,7 +767,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       const controller = yield* AcpRegistryAuth.makeAcpRegistryAuth({
         instanceId,
         settings: effectiveConfig,
-        cwd: serverConfig.cwd,
+        cwd: host.paths.cwd,
         environment: processEnvironment,
         onChanged: (authenticated) =>
           confirmedAuthentication

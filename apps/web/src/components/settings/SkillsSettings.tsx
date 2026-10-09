@@ -1,3 +1,6 @@
+import { grokClient } from "@t3tools/provider-grok/client";
+import { openCodeClient } from "@t3tools/provider-opencode/client";
+import { ProviderPackageIcon } from "../chat/ProviderPackageIcon";
 import { normalizeSkillVisibilityPath } from "@t3tools/client-runtime/providerSkills";
 import {
   CopyIcon,
@@ -15,15 +18,7 @@ import { useProjectFileQuery } from "../files/projectFilesQueryState";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { useSkillVisibility } from "../../hooks/useSkillVisibility";
 import { cn } from "../../lib/utils";
-import {
-  AntigravityIcon,
-  ClaudeAI,
-  CursorIcon,
-  GrokIcon,
-  type Icon,
-  OpenAI,
-  OpenCodeIcon,
-} from "../Icons";
+import { AntigravityIcon, ClaudeAI, CursorIcon, type Icon, OpenAI } from "../Icons";
 import { Switch } from "../ui/switch";
 import { AddSkillDialog } from "./AddSkillDialog";
 import { shellEnvironment } from "../../state/shell";
@@ -61,8 +56,16 @@ const SOURCE_PRESENTATION: Readonly<
   claude: { label: "Claude Code", tint: "#D97757", icon: ClaudeAI },
   codex: { label: "Codex", tint: "#10A37F", icon: OpenAI },
   cursor: { label: "Cursor", tint: "#8B93A7", icon: CursorIcon },
-  opencode: { label: "OpenCode", tint: "#E0A030", icon: OpenCodeIcon },
-  grok: { label: "Grok", tint: "#8B93A7", icon: GrokIcon },
+  opencode: {
+    label: "OpenCode",
+    tint: "#E0A030",
+    icon: (props) => <ProviderPackageIcon {...props} icon={openCodeClient.icon} />,
+  },
+  grok: {
+    label: "Grok",
+    tint: "#8B93A7",
+    icon: (props) => <ProviderPackageIcon {...props} icon={grokClient.icon} />,
+  },
   antigravity: { label: "Antigravity", tint: "#4285F4", icon: AntigravityIcon },
   other: { label: "Other", tint: "var(--color-muted-foreground)", icon: null },
 };
