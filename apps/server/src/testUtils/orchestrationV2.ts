@@ -22,7 +22,8 @@ import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as EffectOutbox from "../orchestration-v2/EffectOutbox.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
-import type { ProviderAdapterV2Shape } from "@t3tools/provider-core/server/ProviderAdapter";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type { ProviderAdapterV2 } from "@t3tools/provider-core/server/ProviderAdapter";
 import {
   layerEventSink as OrchestrationV2EventSinkLayerLive,
   layer as OrchestrationV2LayerLive,
@@ -56,7 +57,7 @@ const providerInstance = {
     getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
     planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
     openSession: () => Effect.die("tests on this runtime never start a provider session"),
-  } as ProviderAdapterV2Shape,
+  } as ProviderAdapterV2["Service"],
   textGeneration: {} as ProviderInstance["textGeneration"],
 } satisfies ProviderInstance;
 
@@ -80,6 +81,7 @@ export const makeOrchestrationV2TestLayer = (prefix: string) => {
     EffectOutbox.layer,
     ThreadCommandExecutor.layer,
   ).pipe(
+    Layer.provide(McpProviderSessions.layer),
     Layer.provide(McpSessionRegistryTestkit.layer),
     Layer.provide(
       CheckpointStore.layer.pipe(
