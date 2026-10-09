@@ -330,7 +330,7 @@ export function NotesPage({
               </div>
             </ScrollArea>
           </WorkspaceListPane>
-          <main className="min-w-0 flex-1 overflow-y-auto p-4">
+          <main className="scrollbar-gutter-both min-w-0 flex-1 overflow-y-auto p-4">
             {editor ? (
               <div className="mx-auto flex max-w-3xl flex-col gap-4">
                 <div className="flex flex-wrap items-start gap-3">
