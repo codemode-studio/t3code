@@ -52,7 +52,7 @@ Finish with `git add` on each resolved file and `git merge --continue`. A merge 
 1. `vp i`. If upstream bumped a dependency that has a vendored copy in `.repos/`, run `vpr sync:repos`.
 2. Diff the carry: `git diff --name-only upstream/main HEAD` must contain every file from the saved list. Each missing file is either a deliberate drop from the merge step or a bug to fix now.
 3. Typecheck and test the workspaces the carry touches, not the whole repo: `vp run --filter <workspace> typecheck` and `vp test run <files>` for the carry's test files. Fix failures caused by upstream API changes in fork code; that is the normal cost of a sync.
-4. Lint the files you edited during conflict resolution.
+4. Run CI's Lint job across the whole repo: `vp run knip:check` and `vp check`. This overrides the usual no-repo-wide-checks default. A clean merge still breaks fork files nobody touched: an upstream refactor leaves a fork export unused, or a new upstream lint rule flags a fork-only file. Fix those in fork code. Do not publish until both pass.
 
 ## Publish
 
