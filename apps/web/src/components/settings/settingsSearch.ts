@@ -146,6 +146,23 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["create worktree remove worktree delete worktree working copy branch"],
   },
   {
+    id: "storage-worktree-keep-when",
+    targetId: "storage-worktrees",
+    title: "Keep worktrees with local changes",
+    to: "/settings/storage",
+    scope: "project-defaults",
+    searchTerms: [
+      "any local files uncommitted changes edited tracked files ignored env build output cleanup",
+    ],
+  },
+  {
+    id: "storage-delete-now",
+    title: "Delete now",
+    to: "/settings/storage",
+    scope: "environment-defaults",
+    searchTerms: ["storage cleanup run now results report removed kept failed"],
+  },
+  {
     id: "storage-worktrees",
     title: "Worktree cleanup",
     to: "/settings/storage",

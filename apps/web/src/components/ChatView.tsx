@@ -241,7 +241,6 @@ import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
-import { useElementWidth } from "../hooks/useElementWidth";
 import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
@@ -301,6 +300,7 @@ import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
   CheckCircle2Icon,
+  MessageCircleIcon,
   PaperclipIcon,
   ChevronDownIcon,
   DownloadIcon,
@@ -433,6 +433,7 @@ import {
   useThreadStatus,
   useThreadHistory,
   useThreadShell,
+  useChildThreadInputs,
   useThreadRefs,
   useThreadVisibleTurnItems,
   waitForThreadShell,
@@ -611,6 +612,7 @@ import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   recallableComposerPrompt,
 } from "./chat/composerPromptHistory";
+import { observeResize } from "~/lib/observeResize";
 
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
@@ -1943,7 +1945,7 @@ export default function ChatView(props: ChatViewProps) {
     useState<Record<string, number>>({});
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
-  const [workspaceLayoutRef, workspaceLayoutWidth] = useElementWidth<HTMLDivElement>();
+  const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
@@ -2260,7 +2262,7 @@ export default function ChatView(props: ChatViewProps) {
   // Electron hosts its own browser tabs; other clients need the environment to host them.
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
-    containerWidth: workspaceLayoutWidth ?? undefined,
+    container: workspaceLayoutElement,
     widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
   });
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
@@ -2547,7 +2549,6 @@ export default function ChatView(props: ChatViewProps) {
       return {
         id: `project-clone:${projectId}`,
         variant: "info",
-        compact: true,
         priority: "activity",
         icon: <DownloadIcon />,
         title: `Cloning ${name}`,
@@ -2571,7 +2572,6 @@ export default function ChatView(props: ChatViewProps) {
     return {
       id: `project-clone:${projectId}`,
       variant: cancelled ? "warning" : "error",
-      compact: true,
       icon: <DownloadIcon />,
       title: cancelled ? `Cancelled cloning ${name}` : `Failed to clone ${name}`,
       description: cancelled ? "Retry to bring in the repository." : activeProjectClone.error,
@@ -6076,6 +6076,13 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().toggleThreadPanel(activeThreadRef, threadPanelPresentation);
   }, [activeThreadRef, threadPanelPresentation]);
+  // A thread started for a link the OS opened shows its browser maximized, like a browser window.
+  useEffect(() => {
+    if (!canMaximizeRightPanel) return;
+    if (useRightPanelStore.getState().consumeMaximizeRequest(routeThreadRef)) {
+      setMaximizedRightPanelThreadKey(routeThreadKey);
+    }
+  }, [canMaximizeRightPanel, routeThreadKey, routeThreadRef]);
   const toggleRightPanelMaximized = useCallback(() => {
     if (!canMaximizeRightPanel) return;
     setMaximizedRightPanelThreadKey((threadKey) =>
@@ -7068,13 +7075,7 @@ export default function ChatView(props: ChatViewProps) {
     };
 
     updateHeight();
-    if (typeof ResizeObserver === "undefined") return;
-
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(composerOverlayElement);
-    return () => {
-      resizeObserver.disconnect();
-    };
+    return observeResize(composerOverlayElement, updateHeight);
   }, [composerOverlayElement, publishComposerOverlayHeight, showScrollToBottom]);
   // Swapping the composer for the status bar (or back) changes what the
   // overlay holds, so rebuild the reservation from the new content.
@@ -7435,6 +7436,42 @@ export default function ChatView(props: ChatViewProps) {
     },
     [environmentId, navigate],
   );
+  const childThreadInputs = useChildThreadInputs(activeThreadRef);
+  const childInputBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    const first = childThreadInputs[0];
+    const parentAwaitingUser =
+      activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput;
+    if (!first || parentAwaitingUser) return null;
+    return {
+      id: `child-input:${first.id}`,
+      variant: "info",
+      priority: "activity",
+      icon: <MessageCircleIcon />,
+      title:
+        childThreadInputs.length === 1
+          ? "Subagent needs input"
+          : `${childThreadInputs.length} subagents need input`,
+      description: childThreadInputs.map((child, index) => (
+        <Fragment key={child.id}>
+          {index > 0 ? ", " : null}
+          <InlineButton tone="muted" onClick={() => onOpenRelatedThread(child.id)}>
+            {child.title}
+          </InlineButton>
+        </Fragment>
+      )),
+      actions: (
+        <Button size="xs" variant="ghost" onClick={() => onOpenRelatedThread(first.id)}>
+          Open question
+        </Button>
+      ),
+    };
+  }, [
+    childThreadInputs,
+    activePendingApproval,
+    activePendingUserInput,
+    activeThreadShell?.hasPendingUserInput,
+    onOpenRelatedThread,
+  ]);
 
   // Commands such as /compact and /goal clear run as their own turn. The draft
   // and its attachments stay local.
@@ -7795,9 +7832,11 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
-    const backgroundWorkItems = [goalBannerItem, backgroundWorkBannerItem].filter(
-      (item) => item !== null,
-    );
+    const backgroundWorkItems = [
+      childInputBannerItem,
+      goalBannerItem,
+      backgroundWorkBannerItem,
+    ].filter((item) => item !== null);
     // The user asked for this one, so it leads the notice tier instead of trailing it.
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
@@ -7821,6 +7860,7 @@ export default function ChatView(props: ChatViewProps) {
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
         variant: "info",
+        compact: true,
         icon: <GitBranchIcon />,
         title: (
           <span className="flex min-w-0 items-baseline gap-1.5">
@@ -7867,6 +7907,7 @@ export default function ChatView(props: ChatViewProps) {
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     backgroundWorkBannerItem,
+    childInputBannerItem,
     goalBannerItem,
     localCheckoutBranchMismatch,
     projectCloneBannerItem,
@@ -11275,7 +11316,7 @@ export default function ChatView(props: ChatViewProps) {
 
   return (
     <div
-      ref={workspaceLayoutRef}
+      ref={setWorkspaceLayoutElement}
       className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
     >
       <Dialog
