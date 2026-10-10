@@ -1,7 +1,7 @@
-import { ProjectId, type GitHubCliAccount } from "@t3tools/contracts";
+import { ProjectId } from "@t3tools/contracts";
 import { resolveProjectSettings, resolveProviderProfile } from "@t3tools/shared/projectSettings";
 import * as Cache from "effect/Cache";
-import * as Context from "effect/Context";
+import { GitHubCliAccountSelection } from "@t3tools/source-control-github/server/GitHubCredentials";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -13,19 +13,7 @@ import * as SqlSchema from "effect/sql/SqlSchema";
 
 import * as ServerSettings from "../serverSettings.ts";
 
-/**
- * The `gh` login picked by the profile of the project a checkout belongs to, or null to use the
- * environment's choice for the host (Settings → Source Control).
- *
- * A reference, so upstream code paths without project settings (the CLI, most tests) need not
- * provide it. Server layers that read GitHub for a checkout must provide `layer`, or they
- * silently ignore profile accounts.
- */
-export class GitHubCliAccountSelection extends Context.Reference<{
-  readonly forCwd: (cwd: string) => Effect.Effect<GitHubCliAccount | null>;
-}>("t3/sourceControl/GitHubCliAccountSelection", {
-  defaultValue: () => ({ forCwd: () => Effect.succeed(null) }),
-}) {}
+export { GitHubCliAccountSelection } from "@t3tools/source-control-github/server/GitHubCredentials";
 
 /**
  * Resolves a checkout's project from its cwd: the project rooted there, or the project whose

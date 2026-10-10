@@ -72,9 +72,9 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitHubApi from "../sourceControl/GitHubApi.ts";
+import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
 import { GitHubCliAccountSelection } from "../sourceControl/GitHubCliAccountSelection.ts";
-import * as GitHubCredentials from "../sourceControl/GitHubCredentials.ts";
+import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import { RUN_SUMMARY_TRANSCRIPT_MAX_LENGTH } from "@t3tools/provider-core/server/textGenerationPrompts";
 

@@ -34,7 +34,8 @@ function toNativeHeaderMenuItems(items: HomeListFilterMenu["items"]): NativeHead
 /**
  * Right-side UINavigationBar items for the sidebar column: the thread list
  * filter/sort menu plus the settings button, sharing one glass capsule —
- * the Messages-style grouped header buttons.
+ * the Messages-style grouped header buttons. The embedded sidebar keeps these
+ * beside its title; only the detail column uses the Duo's vertical bar.
  */
 export function createSidebarHeaderItems(input: {
   readonly filterIcon: string;
@@ -45,6 +46,7 @@ export function createSidebarHeaderItems(input: {
   return [
     withNativeGlassHeaderItem({
       type: "menu",
+      axisBehavior: "horizontalOnly",
       label: "",
       accessibilityLabel: "Filter threads",
       icon: sfSymbolIcon(input.filterIcon),
@@ -55,14 +57,16 @@ export function createSidebarHeaderItems(input: {
     }),
     withNativeGlassHeaderItem({
       type: "button",
-      label: "",
+      axisBehavior: "horizontalOnly",
+      label: "Notes",
       accessibilityLabel: "Open notes",
       icon: sfSymbolIcon("note.text"),
       onPress: input.onOpenNotes,
     }),
     withNativeGlassHeaderItem({
       type: "button",
-      label: "",
+      axisBehavior: "horizontalOnly",
+      label: "Settings",
       accessibilityLabel: "Open settings",
       icon: sfSymbolIcon("gearshape"),
       onPress: input.onOpenSettings,
