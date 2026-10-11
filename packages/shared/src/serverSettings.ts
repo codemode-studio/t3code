@@ -291,6 +291,7 @@ export function applyServerSettingsPatch(
     worktreeCleanup: worktreeCleanupPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
+    sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     providerProfiles: providerProfilesPatch,
     usageModelAliases: usageModelAliasesPatch,
@@ -397,9 +398,19 @@ export function applyServerSettingsPatch(
           ],
         }
       : {}),
-    // Host replacement: deepMerge would keep a cleared account pin.
-    ...(patch.github?.hosts !== undefined
-      ? { github: { ...next.github, hosts: patch.github.hosts } }
+    // Per host, a patched field replaces the saved one: deepMerge would keep a cleared account pin.
+    ...(sourceControlHostsPatch !== undefined
+      ? {
+          sourceControlHosts: {
+            ...current.sourceControlHosts,
+            ...Object.fromEntries(
+              Object.entries(sourceControlHostsPatch).map(([kind, fields]) => [
+                kind,
+                { ...current.sourceControlHosts[kind], ...fields },
+              ]),
+            ),
+          },
+        }
       : {}),
     ...(projectSettingsOverridesPatch !== undefined
       ? {
