@@ -213,7 +213,11 @@ import {
   CommandPaletteMetaDot,
   ThreadCommandSubtitle,
 } from "./ThreadCommandSubtitle";
-import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
+import {
+  ThreadRowLeadingStatus,
+  ThreadRowTrailingStatus,
+  ThreadSearchPullRequestNumber,
+} from "./ThreadStatusIndicators";
 import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
 import {
   applyProviderInstanceSettings,
@@ -1325,7 +1329,16 @@ function OpenCommandPaletteDialog(props: {
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-        renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
+        renderTrailingContent: (thread) => (
+          <>
+            <ThreadSearchPullRequestNumber
+              thread={thread}
+              query={threadSearchQuery}
+              settled={thread.settledOverride === "settled"}
+            />
+            <ThreadRowTrailingStatus thread={thread} />
+          </>
+        ),
         renderDescription: (thread, { projectTitle }) => {
           const modelInstanceId =
             thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
@@ -1385,6 +1398,7 @@ function OpenCommandPaletteDialog(props: {
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
       threadSearch.query,
+      threadSearchQuery,
       threads,
     ],
   );

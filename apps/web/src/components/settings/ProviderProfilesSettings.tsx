@@ -137,7 +137,7 @@ function ProviderProfileCustomColor({
             aria-checked={custom !== undefined}
             aria-label="Custom color"
             className={cn(
-              "flex size-5 cursor-pointer items-center justify-center rounded-full ring-offset-2 ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex size-5 cursor-pointer items-center justify-center rounded-full ring-offset-2 ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               custom
                 ? "ring-2 ring-foreground/60"
                 : "border border-dashed border-muted-foreground/60",
@@ -160,6 +160,7 @@ function ProviderProfileCustomColor({
 }
 
 export function ProviderProfileEditorDialog({
+  environmentId,
   initial,
   entries,
   settings,
@@ -171,6 +172,7 @@ export function ProviderProfileEditorDialog({
   onSave,
   onDelete,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly initial: EditingProfile;
   readonly entries: ReadonlyArray<ProviderInstanceEntry>;
   readonly settings: UnifiedSettings;
@@ -274,7 +276,7 @@ export function ProviderProfileEditorDialog({
                       aria-label={`Color ${color}`}
                       onClick={() => setDraft({ ...draft, color })}
                       className={cn(
-                        "size-5 cursor-pointer rounded-full ring-offset-2 ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "size-5 cursor-pointer rounded-full ring-offset-2 ring-offset-background outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                         draft.color === color && "ring-2 ring-foreground/60",
                       )}
                       style={{ background: color }}
@@ -342,6 +344,7 @@ export function ProviderProfileEditorDialog({
               {selection && chosenEntries.length > 0 ? (
                 <div>
                   <ProviderModelPicker
+                    environmentId={environmentId}
                     activeInstanceId={selection.instanceId}
                     model={selection.model}
                     lockedProvider={null}

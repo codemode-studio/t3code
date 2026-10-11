@@ -336,6 +336,7 @@ export function EnvironmentProfiles({
 
       {editing && !readOnly ? (
         <ProviderProfileEditorDialog
+          environmentId={environmentId}
           initial={editing}
           entries={entries}
           settings={settings}

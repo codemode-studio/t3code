@@ -494,7 +494,7 @@ function GalleryCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-h-36 flex-col justify-between gap-4 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+        "flex min-h-36 flex-col justify-between gap-4 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         dashed && "border-dashed bg-transparent",
       )}
     >
@@ -1394,6 +1394,7 @@ function AutomationInstructions({
         {selection && activeEntry ? (
           <>
             <ProviderModelPicker
+              environmentId={environmentId}
               activeInstanceId={selection.instanceId}
               model={selection.model}
               lockedProvider={null}
@@ -1478,7 +1479,7 @@ function RunRow({
           // Covers the row so a click anywhere toggles it; "Open thread" sits above it.
           <CollapsibleTrigger
             aria-labelledby={`${labelId}-cause ${labelId}-time`}
-            className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-inset"
           />
         )}
         <span
