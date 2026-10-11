@@ -248,7 +248,7 @@ export function ProfileSwitcher({ collapsed = false }: { collapsed?: boolean }) 
                   render={
                     <button
                       type="button"
-                      className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2"
+                      className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset"
                     />
                   }
                 />

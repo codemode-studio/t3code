@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { useResizableWidth } from "~/hooks/useResizableWidth";
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 
@@ -40,10 +41,7 @@ export function WorkspaceListPane({
     // Measure before first paint so a restored wide pane never flashes over the editor.
     const measure = () => setRowWidth(row.clientWidth);
     measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(row);
-    return () => observer.disconnect();
+    return observeResize(row, measure);
   }, []);
   const { width, handlers } = useResizableWidth({
     storageKey,
