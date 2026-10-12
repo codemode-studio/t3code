@@ -1005,7 +1005,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
-      {workspace ? (
+      {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           environments={props.environments}
           projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}

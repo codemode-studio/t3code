@@ -11,7 +11,9 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { useMemo, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, TextInput, View } from "react-native";
-import { Markdown } from "react-native-nitro-markdown";
+import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
+import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -78,6 +80,7 @@ function NoteImage({
 }
 
 function NotePreview({ environmentId, body }: { environmentId: EnvironmentId; body: string }) {
+  const { nativeTextStyle } = useMarkdownPreviewStyles();
   const parts = body.split(/(!\[[^\]]*\]\(t3-note-image:\/\/[a-z0-9_-]+\))/gi);
   return (
     <View>
@@ -86,9 +89,12 @@ function NotePreview({ environmentId, body }: { environmentId: EnvironmentId; bo
         return image ? (
           <NoteImage key={index} environmentId={environmentId} attachmentId={image[1]!} />
         ) : part.trim() ? (
-          <Markdown key={index} options={{ gfm: true }}>
-            {part}
-          </Markdown>
+          <SelectableMarkdownText
+            key={index}
+            markdown={part}
+            textStyle={nativeTextStyle}
+            onLinkPress={(href) => void tryOpenExternalUrl(href, "markdown-link")}
+          />
         ) : null;
       })}
     </View>
