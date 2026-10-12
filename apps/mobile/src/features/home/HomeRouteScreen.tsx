@@ -131,15 +131,15 @@ export function HomeRouteScreen() {
   const profileScope = useHomeProfileScope(projects);
   const profileProjectKeys = profileScope.scopedProjectKeys;
   const projectScopeKey = listOptions.selectedProjectKey;
-  const selectedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
+  const resolvedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
     sidebarProjectGroupingMode: listOptions.projectGroupingMode,
     sidebarProjectGroupingOverrides: {},
   });
   useEffect(() => {
-    if (selectedProjectKey !== projectScopeKey) {
-      setSelectedProjectKey(selectedProjectKey);
+    if (resolvedProjectKey !== projectScopeKey) {
+      setSelectedProjectKey(resolvedProjectKey);
     }
-  }, [projectScopeKey, selectedProjectKey, setSelectedProjectKey]);
+  }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
   const projectFilterOptions = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -153,14 +153,12 @@ export function HomeRouteScreen() {
       })),
     [listOptions.projectGroupingMode, profileProjectKeys, projects, selectedEnvironmentId],
   );
-  useEffect(() => {
-    if (
-      selectedProjectKey !== null &&
-      !projectFilterOptions.some((project) => project.key === selectedProjectKey)
-    ) {
-      setSelectedProjectKey(null);
-    }
-  }, [projectFilterOptions, selectedProjectKey, setSelectedProjectKey]);
+  // A saved project stays selected while its environment is offline or filtered out.
+  const selectedProjectKey = projectFilterOptions.some(
+    (project) => project.key === resolvedProjectKey,
+  )
+    ? resolvedProjectKey
+    : null;
 
   // In split layouts the persistent sidebar IS the thread list — Home becomes
   // an empty detail pane so selecting a thread never transitions layouts.

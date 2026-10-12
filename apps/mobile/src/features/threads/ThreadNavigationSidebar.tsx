@@ -218,15 +218,15 @@ function ThreadNavigationSidebarPane(
   const profileScope = useHomeProfileScope(projects);
   const profileProjectKeys = profileScope.scopedProjectKeys;
   const projectScopeKey = options.selectedProjectKey;
-  const selectedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
+  const resolvedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
     sidebarProjectGroupingMode: options.projectGroupingMode,
     sidebarProjectGroupingOverrides: {},
   });
   useEffect(() => {
-    if (selectedProjectKey !== projectScopeKey) {
-      setSelectedProjectKey(selectedProjectKey);
+    if (resolvedProjectKey !== projectScopeKey) {
+      setSelectedProjectKey(resolvedProjectKey);
     }
-  }, [projectScopeKey, selectedProjectKey, setSelectedProjectKey]);
+  }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -261,20 +261,11 @@ function ThreadNavigationSidebarPane(
     [projectScopes],
   );
   const selectedProjectScope = useMemo(
-    () =>
-      selectedProjectKey === null
-        ? null
-        : (projectScopes.find((scope) => scope.key === selectedProjectKey) ?? null),
-    [projectScopes, selectedProjectKey],
+    () => projectScopes.find((scope) => scope.key === resolvedProjectKey) ?? null,
+    [projectScopes, resolvedProjectKey],
   );
-  useEffect(() => {
-    if (
-      selectedProjectKey !== null &&
-      !projectFilterOptions.some((project) => project.key === selectedProjectKey)
-    ) {
-      setSelectedProjectKey(null);
-    }
-  }, [projectFilterOptions, selectedProjectKey, setSelectedProjectKey]);
+  // A saved project stays selected while its environment is offline or filtered out.
+  const selectedProjectKey = selectedProjectScope?.key ?? null;
   const listProjectRefs = useMemo(
     () =>
       resolveHomeListProjectRefs({
