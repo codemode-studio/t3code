@@ -1368,7 +1368,7 @@ function AutomationInstructions({
         );
   const entries = leadWithProviderProfile(
     sortProviderInstanceEntries(
-      applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+      applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, projectId),
     ),
     providerProfile,
   );

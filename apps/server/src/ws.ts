@@ -1202,6 +1202,7 @@ const layerWsRpc = (
         | ThreadLaunchService.ThreadLaunchService
         | FileSystem.FileSystem
         | ServerConfig.ServerConfig
+        | ServerSettings.ServerSettingsService
       >();
       const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -2050,6 +2051,13 @@ const layerWsRpc = (
                         commandId: input.commandId,
                         projectId: input.projectId,
                         message: "Failed to launch thread",
+                        cause,
+                      }),
+                    ThreadManagementProviderInstanceDisabledError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
                         cause,
                       }),
                   }),
@@ -3192,7 +3200,7 @@ export const WS_RPC_SERVER_OPTIONS = {
   disableFatalDefects: true,
 } as const;
 
-export const layer = Layer.unwrap(
+const wsLayer = Layer.unwrap(
   Effect.gen(function* () {
     const notes = yield* Notes.makeNotes;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
@@ -3315,3 +3323,94 @@ export const layer = Layer.unwrap(
     );
   }),
 );
+
+// Keep this boundary explicit: inferring the full RPC graph across modules exceeds
+// the native TypeScript compiler's instantiation depth. Assignment still checks every service.
+export const layer: Layer.Layer<
+  never,
+  never,
+  | HttpRouter.HttpRouter
+  | PreviewAutomationBroker.PreviewAutomationBroker
+  | PullRequestReviewGuideService.PullRequestReviewGuideService
+  | PullRequestService.PullRequestService
+  | ServerBrowser.ServerBrowser
+  | ServerSelfUpdate.ServerSelfUpdate
+  | SqlClient.SqlClient
+  | HttpRouter.Request<"Error", import("effect/Config").ConfigError>
+  | HttpRouter.Request<
+      "Requires",
+      | AcpRegistrySupport.AcpRegistryCatalog
+      | AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator
+      | AgentSessionImporter.AgentSessionImporter
+      | AnalyticsService.AnalyticsService
+      | import("./provider/AntigravityInstallation.ts").AntigravityInstallation
+      | AutomationService.AutomationService
+      | BackgroundPolicy.BackgroundPolicy
+      | CheckpointDiffQuery.CheckpointDiffQuery
+      | import("effect/process/ChildProcessSpawner").ChildProcessSpawner
+      | import("./provider/CodexInstallation.ts").CodexInstallation
+      | Crypto.Crypto
+      | DeviceService.DeviceService
+      | DirectEndpoints.DirectEndpoints
+      | EnvironmentAuth.EnvironmentAuth
+      | EnvironmentTheme.EnvironmentThemeService
+      | ExternalLauncher.ExternalLauncher
+      | FileSystem.FileSystem
+      | GitWorkflowService.GitWorkflowService
+      | HostResources.HostResources
+      | import("effect/http/HttpClient").HttpClient
+      | Keybindings.Keybindings
+      | ManagedProjectFolders.ManagedProjectFolders
+      | McpAppRequests.McpAppRequests
+      | ModelManifest.ModelManifest
+      | OrchestrationEventStore.OrchestrationEventStore
+      | Orchestrator.OrchestratorV2
+      | PairingGrantStore.PairingGrantStore
+      | Path.Path
+      | PortScanner.PortDiscovery
+      | PreviewManager.PreviewManager
+      | ProcessDiagnostics.ProcessDiagnostics
+      | ProcessResourceMonitor.ProcessResourceMonitor
+      | ProjectCloneTracker.ProjectCloneTracker
+      | ProjectEnrichmentService.ProjectEnrichmentService
+      | import("./project/ProjectFaviconResolver.ts").ProjectFaviconResolver
+      | ProjectService.ProjectService
+      | ProjectStore.ProjectStoreV2
+      | ProviderAuthService.ProviderAuthService
+      | ProviderInstanceRegistry.ProviderInstanceRegistry
+      | ProviderLatestVersions.ProviderLatestVersions
+      | ProviderRegistry.ProviderRegistry
+      | ProviderSessionManager.ProviderSessionManagerV2
+      | PullRequestSyncReactor.PullRequestSyncReactor
+      | RelayClient.RelayClient
+      | RemoteOpenTargets.RemoteOpenTargets
+      | RepositoryIdentityResolver.RepositoryIdentityResolver
+      | ResourceTelemetry.ResourceTelemetry
+      | ReviewService.ReviewService
+      | ScheduledTasks.ScheduledTaskService
+      | SecretRequests.SecretRequests
+      | ServerConfig.ServerConfig
+      | ServerEnvironment.ServerEnvironment
+      | ServerLifecycleEvents.ServerLifecycleEvents
+      | ServerRuntimeStartup.ServerRuntimeStartup
+      | import("./auth/ServerSecretStore.ts").ServerSecretStore
+      | ServerSettings.ServerSettingsService
+      | SessionStore.SessionStore
+      | SourceControlRepositoryService.SourceControlRepositoryService
+      | StorageCleanup.StorageCleanup
+      | TerminalManager.TerminalManager
+      | ThreadLaunchService.ThreadLaunchService
+      | ThreadManagementService.ThreadManagementService
+      | ThreadSearch.ThreadSearch
+      | TraceDiagnostics.TraceDiagnostics
+      | UsageLimitSources.UsageLimitSources
+      | UsageService.UsageService
+      | import("./vcs/VcsProcess.ts").VcsProcess
+      | VcsProvisioningService.VcsProvisioningService
+      | VcsStatusBroadcaster.VcsStatusBroadcaster
+      | WorkspaceEntries.WorkspaceEntries
+      | WorkspaceFileSystem.WorkspaceFileSystem
+      | WorkspacePaths.WorkspacePaths
+      | WorktreeSetupTracker.WorktreeSetupTracker
+    >
+> = wsLayer;
