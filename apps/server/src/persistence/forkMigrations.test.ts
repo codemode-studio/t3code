@@ -125,14 +125,9 @@ describe("fork migration ledger", () => {
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (57, 'Notes')`;
       const before = yield* upstreamLedger;
 
-      // This deliberately inconsistent ledger skips the orchestration tables, so
-      // stop before the index migration that requires those tables.
-      yield* runMigrations({ toMigrationInclusive: 59 });
-      assert.deepStrictEqual(yield* upstreamLedger, [
-        ...before,
-        [58, "WebhookRelayDeliveries"],
-        [59, "McpAppModelContext"],
-      ]);
+      // Reconcile fork rows without entering V2, which rejects these unknown collisions.
+      yield* runMigrations({ toMigrationInclusive: 54 });
+      assert.deepStrictEqual(yield* upstreamLedger, before);
       assert.isFalse(yield* tableExists("orchestration_v2_events"));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
