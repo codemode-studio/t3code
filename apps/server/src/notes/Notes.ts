@@ -172,7 +172,7 @@ export const createNote = (input: NoteCreateInput) =>
     yield* validateAssociation(input);
     const sql = yield* SqlClient.SqlClient;
     const crypto = yield* Crypto.Crypto;
-    const id = NoteIdSchema.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
+    const id = NoteIdSchema.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
     const now = DateTime.formatIso(yield* DateTime.now);
     const tagsJson = yield* encodeTagsJson(input.tags);
     const body = yield* claimImages(input.body, id);

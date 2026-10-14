@@ -417,7 +417,7 @@ const make = Effect.gen(function* () {
   const writeLock = yield* Semaphore.make(1);
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
-  const newId = crypto.randomUUIDv4.pipe(Effect.orDie);
+  const newId = crypto.randomUUIDv4().pipe(Effect.orDie);
 
   const persist = (file: AutomationsFile) =>
     encodeAutomationsFile(file).pipe(
