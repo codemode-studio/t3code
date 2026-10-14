@@ -123,6 +123,7 @@ const launchTestLayer = (harness: Harness) =>
         checkWorktreeBase: () =>
           Effect.die("Automation tests do not preflight workspace preparation"),
         retryPreparation: () => Effect.die("Automation tests do not retry workspace preparation"),
+        prepareRun: () => Effect.die("Automation tests do not prepare delegated runs"),
         launch: (input) =>
           Effect.gen(function* () {
             yield* Ref.update(harness.launches, (all) => [...all, input]);

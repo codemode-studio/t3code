@@ -551,6 +551,10 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
+// Keep command dispatch separate so the full command union stays within type inference limits.
+const ServerRemainingWsRpcGroup = ServerWsRpcGroup.omit(
+  ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+);
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
 // snapshot instead. Replaying each intervening event costs a shell refetch;
@@ -1207,7 +1211,7 @@ const layerWsRpc = (
   notes: Effect.Success<typeof Notes.makeNotes>,
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerWsRpcGroup.toLayer(
+  Layer.unwrap(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -3203,7 +3207,17 @@ const layerWsRpc = (
             ),
           ),
       });
-      return handlers;
+      const {
+        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: dispatchCommand,
+        ...remainingHandlers
+      } = handlers;
+      return Layer.merge(
+        ServerRemainingWsRpcGroup.toLayer(remainingHandlers),
+        ServerWsRpcGroup.toLayerHandler(
+          ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+          dispatchCommand,
+        ),
+      );
     }),
   );
 
