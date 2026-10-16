@@ -72,7 +72,7 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import { GitHubCliAccountSelection } from "../sourceControl/GitHubCliAccountSelection.ts";
 import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -362,7 +362,7 @@ const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const process = yield* VcsProcess.VcsProcess;
   const gitHubAccounts = yield* GitHubCliAccountSelection;
-  const gitHubApi = yield* GitHubApi.GitHubApi;
+  const gitHubRest = yield* GitHubRest.GitHubRest;
   /** Runs `gh` with the token of the login the project's profile picks, when it picks one. */
   const gitHubCli = {
     execute: Effect.fn(function* (input: {
@@ -374,7 +374,7 @@ const make = Effect.gen(function* () {
       const env =
         account === null
           ? {}
-          : yield* gitHubApi.credential(account.host).pipe(
+          : yield* gitHubRest.credential(account.host).pipe(
               Effect.provideService(GitHubCredentials.ProfileGitHubAccount, account),
               Effect.map(({ token }) => ghTokenEnvironment(account.host, Redacted.value(token))),
             );

@@ -39,7 +39,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import { GitHubCliAccountSelection } from "../sourceControl/GitHubCliAccountSelection.ts";
 import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -245,7 +245,7 @@ const environmentLayer = (harness: Harness) =>
             ),
         }),
         Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
-        Layer.mock(GitHubApi.GitHubApi)({
+        Layer.mock(GitHubRest.GitHubRest)({
           credential: () =>
             Effect.map(GitHubCredentials.ProfileGitHubAccount, (account) => ({
               token: Redacted.make(`token-for-${account?.login ?? "active"}`),

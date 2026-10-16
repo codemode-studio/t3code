@@ -17,7 +17,7 @@ import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { attachmentEnvironment } from "../../state/attachments";
 import { useAssetUrl } from "../../state/assets";
 import { useProjects } from "../../state/entities";
