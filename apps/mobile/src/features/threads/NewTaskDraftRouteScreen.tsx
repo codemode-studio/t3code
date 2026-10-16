@@ -22,7 +22,6 @@ type NewTaskDraftRouteParams = {
   readonly branch?: string | null;
   readonly worktreePath?: string | null;
   readonly title?: string | string[];
-  /** Set by Add Project when this draft opens while the project's clone runs. */
   readonly cloning?: string | string[];
   readonly pendingTaskId?: string | string[];
   readonly draftId?: string | string[];
@@ -41,9 +40,6 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
   const navigation = useNavigation();
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
 
-  // Keyed on the params object so a fresh navigation to this (already
-  // mounted) screen produces a new reference, letting the draft screen
-  // re-apply the requested project.
   const initialProjectRef = useMemo(
     () => ({
       environmentId: Array.isArray(params.environmentId)
@@ -146,7 +142,6 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
         : initialProjectRef,
     [initialProjectRef, result],
   );
-  // Send/queue remain unavailable on failure while the unlocked route closes.
   const preparingBranch = checkoutPending || (needsPreparation && result?._tag !== "Success");
 
   return (

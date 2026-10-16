@@ -8,14 +8,6 @@ interface Props {
   className?: string;
 }
 
-/**
- * Hit target for resizing a side panel from one of its edges.
- *
- * - Sits on top of the panel's border with a 4px overlap on each side so the
- *   user can grab a few pixels off the edge without aiming.
- * - Visual indicator is a 1px line that lights up on hover/active to mirror
- *   VS Code / Cursor.
- */
 export function PanelResizeHandle({ handlers, edge = "left", className }: Props) {
   return (
     <div

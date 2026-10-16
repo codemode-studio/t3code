@@ -73,11 +73,6 @@ export function buildHomeProjectScopes(input: {
   });
 }
 
-/**
- * The projects whose threads the list shows: the selected project scope's, else every
- * scope's while a profile filters the list, else null for no project filter. Scopes must
- * come from `buildHomeProjectScopes` with the same profile keys.
- */
 export function resolveHomeListProjectRefs(input: {
   readonly selectedScope: HomeProjectScope | null;
   readonly scopes: ReadonlyArray<HomeProjectScope>;
@@ -87,9 +82,6 @@ export function resolveHomeListProjectRefs(input: {
   if (input.profileProjectKeys === null) return null;
   return input.scopes.flatMap((scope) => scope.projectRefs);
 }
-
-// Prefers an exact scope key so a caller-supplied project ID that equals another
-// project's normalized workspace root cannot select the wrong group.
 export function findHomeProjectScope(
   scopes: ReadonlyArray<HomeProjectScope>,
   key: string | null,
