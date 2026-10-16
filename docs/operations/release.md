@@ -320,10 +320,18 @@ unreleased major and get its first beta build approved.
 
 ## Android APK mirror
 
-`.github/workflows/mobile-android-apk.yml` checks Google Play hourly and publishes the newest
-build on the `v2` closed testing track to the rolling `android-nightly` prerelease, for nightly
-users who can't join the Play testing group. Those v2-preview builds are the only Android builds that can
-connect to a nightly server. The APK is the universal APK Play generates and signs from the
+`.github/workflows/mobile-android-apk.yml` checks the Google Play Alpha closed-testing
+track hourly. A new beta gets an `android-beta-<build-number>` prerelease and updates
+the `android-beta` download page. Both contain only the beta APK. Unchanged checks
+publish nothing, and interrupted draft uploads resume on the next check.
+
+Normal Nightly releases include the newest processed internal-testing APK available
+when the release publishes. Internal builds do not create separate Android releases.
+If Play credentials or a processed APK are unavailable, the Nightly can still publish
+without an APK. Android submissions continue to go to internal testing; promote a
+build to Alpha to publish it as a beta.
+
+The APK is the universal APK Play generates and signs from the
 uploaded bundle, so no signing key lives in GitHub. The job skips itself until
 `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` holds a Play service account key with the "Release to
 production, exclude devices, and use Play App Signing" permission, which downloading generated

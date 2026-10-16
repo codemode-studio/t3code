@@ -34,7 +34,7 @@ import {
 } from "~/lib/composerContextRecords";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
-import { toKindScopedComposerContextId } from "~/lib/composerContextReferences";
+import { toKindScopedComposerContextId } from "@t3tools/shared/composerContextReferences";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { ThreadContextChip } from "./ThreadContextChip";
 import {
