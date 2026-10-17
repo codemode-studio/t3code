@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { PROFILE_SCOPE_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronsUpDownIcon, LayersIcon, PlusIcon } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 
 import { EnvironmentPresenceBadge } from "../components/ProjectEnvironmentBadge";
 import { Badge } from "../components/ui/badge";
@@ -175,15 +175,11 @@ function ProfileScopeMenuPopup({
   const navigate = useNavigate();
   const environments = useProfileEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const machineById = useMemo(
-    () =>
-      new Map(environments.map((environment) => [environment.environmentId, environment.machine])),
-    [environments],
+  const machineById = new Map(
+    environments.map((environment) => [environment.environmentId, environment.machine]),
   );
-  const labelById = useMemo(
-    () =>
-      new Map(environments.map((environment) => [environment.environmentId, environment.label])),
-    [environments],
+  const labelById = new Map(
+    environments.map((environment) => [environment.environmentId, environment.label]),
   );
   return (
     <MenuPopup align="start" side={side} sideOffset={side === "right" ? 8 : 4} className="w-64">

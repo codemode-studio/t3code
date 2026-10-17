@@ -10,7 +10,7 @@ import {
   SquarePenIcon,
   ZapIcon,
 } from "lucide-react";
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -151,17 +151,15 @@ export function CollapsedThreadSidebar() {
   const threads = useThreadShells();
   const scopedProjectKeys = useProfileScopedProjectKeys();
   const { scope, profiles, projectProfiles } = useProfileScopeState();
-  const colorByProfileId = useMemo(
-    () => new Map(profiles.map((profile) => [profile.id, profile.color] as const)),
-    [profiles],
-  );
+  const colorByProfileId = new Map(profiles.map((profile) => [profile.id, profile.color] as const));
   // Snooze wakes are second-precise, so like the expanded sidebar the rail re-reads the clock
   // exactly when the earliest snooze ends rather than on a minute tick.
   const [now, setNow] = useState(() => new Date());
-  const { pinned, active, nextWakeAtMs } = useMemo(
-    () => partitionRailThreads({ threads, scopedProjectKeys, now }),
-    [now, scopedProjectKeys, threads],
-  );
+  const { pinned, active, nextWakeAtMs } = partitionRailThreads({
+    threads,
+    scopedProjectKeys,
+    now,
+  });
   useEffect(() => {
     if (nextWakeAtMs === null) return;
     // setTimeout delays are signed 32-bit; clamp so a far-future wake re-arms instead of firing.

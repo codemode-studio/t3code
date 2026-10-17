@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { PipetteIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
@@ -52,12 +52,8 @@ export function useProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
   settings: Pick<UnifiedSettings, "providerInstances" | "projectSettingsOverrides">,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-      ),
-    [providers, settings],
+  return sortProviderInstanceEntries(
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
   );
 }
 

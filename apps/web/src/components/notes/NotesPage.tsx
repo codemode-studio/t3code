@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { ArrowUpRightIcon, FileTextIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   isProviderSendTurnSupportedImageMimeType,
   type Note,
@@ -69,16 +69,10 @@ const parseTags = (tags: string) =>
   ].slice(0, 20);
 
 function NotePreview({ body, environmentId }: { body: string; environmentId: EnvironmentId }) {
-  const ids = useMemo(
-    () => [
-      ...new Set([...body.matchAll(/t3-note-image:\/\/([a-z0-9_-]+)/gi)].map((match) => match[1]!)),
-    ],
-    [body],
-  );
-  const resources = useMemo(
-    () => ids.map((attachmentId) => ({ _tag: "attachment" as const, attachmentId })),
-    [ids],
-  );
+  const ids = [
+    ...new Set([...body.matchAll(/t3-note-image:\/\/([a-z0-9_-]+)/gi)].map((match) => match[1]!)),
+  ];
+  const resources = ids.map((attachmentId) => ({ _tag: "attachment" as const, attachmentId }));
   const urls = useAssetUrls(environmentId, resources);
   const rendered = ids.reduce(
     (text, id, index) => text.replaceAll(`t3-note-image://${id}`, urls[index] ?? ""),
@@ -111,7 +105,7 @@ export function NotesPage({
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(false);
-  const selection = useMemo(() => {
+  const selection = (() => {
     const separator = selectedKey?.lastIndexOf(":") ?? -1;
     if (!selectedKey || separator < 1) return null;
     return Option.getOrNull(
@@ -120,7 +114,7 @@ export function NotesPage({
         id: selectedKey.slice(separator + 1),
       }),
     );
-  }, [selectedKey]);
+  })();
   const detailResult = useAtomValue(
     selection
       ? notesEnvironment.get({

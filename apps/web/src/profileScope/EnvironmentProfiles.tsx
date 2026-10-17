@@ -12,7 +12,7 @@ import type {
   ProviderProfileId,
 } from "@t3tools/contracts";
 import { PencilIcon, PlusIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { EnvironmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -92,21 +92,19 @@ export function EnvironmentProfiles({
     settings.providerProfileId !== null && settings.providerProfiles[settings.providerProfileId]
       ? settings.providerProfileId
       : null;
-  const projects = useMemo<ReadonlyArray<ProjectProfileEntry>>(
-    () =>
-      allProjects
-        .filter((project) => project.environmentId === environmentId)
-        .map((project) => ({
-          project,
-          profileId: resolveProjectProfileId(settings, project.id),
-          inherited: !Object.hasOwn(
-            settings.projectSettingsOverrides[project.id] ?? {},
-            "providerProfileId",
-          ),
-        }))
-        .toSorted((left, right) => left.project.title.localeCompare(right.project.title)),
-    [allProjects, environmentId, settings],
-  );
+  const projects = allProjects
+    .filter((project) => project.environmentId === environmentId)
+    .map((project) => ({
+      project,
+      profileId: resolveProjectProfileId(settings, project.id),
+      inherited: !Object.hasOwn(
+        settings.projectSettingsOverrides[project.id] ?? {},
+        "providerProfileId",
+      ),
+    }))
+    .toSorted((left, right) =>
+      left.project.title.localeCompare(right.project.title),
+    ) satisfies ReadonlyArray<ProjectProfileEntry>;
   const unassigned = projects.filter((entry) => entry.profileId === null);
   const assign = (projectId: ProjectId, target: ProviderProfileId | null) =>
     updateSettings(buildProjectProfilePatch(settings, projectId, target));

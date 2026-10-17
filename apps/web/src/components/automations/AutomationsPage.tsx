@@ -44,7 +44,7 @@ import {
   XIcon,
   ZapIcon,
 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 
 import { isElectron } from "../../env";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -66,7 +66,12 @@ import {
   useAutomations,
 } from "../../state/automations";
 import { useProjects } from "../../state/entities";
-import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  useEnvironmentProviders,
+  useEnvironment,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -214,15 +219,12 @@ export function AutomationsPage({
 }) {
   const { automations, isPending } = useAutomations();
   const { environments } = useEnvironments();
-  const environmentLabels = useMemo(
-    () =>
-      new Map(environments.map((environment) => [environment.environmentId, environment.label])),
-    [environments],
+  const environmentLabels = new Map(
+    environments.map((environment) => [environment.environmentId, environment.label]),
   );
   const projects = useProjects();
-  const projectsByKey = useMemo(
-    () => new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project])),
-    [projects],
+  const projectsByKey = new Map(
+    projects.map((project) => [`${project.environmentId}:${project.id}`, project]),
   );
   const [filter, setFilter] = useState("");
   const [newDraft, setNewDraft] = useState<AutomationDraft | null>(null);
@@ -1198,10 +1200,7 @@ function AddTriggerMenu({ onAdd }: { onAdd: (trigger: AutomationTrigger) => void
 /** Connected environments, which are the only ones that can take an automation right now. */
 function useConnectedEnvironments() {
   const { environments } = useEnvironments();
-  return useMemo(
-    () => environments.filter((environment) => environment.connection.phase === "connected"),
-    [environments],
-  );
+  return environments.filter((environment) => environment.connection.phase === "connected");
 }
 
 /** The same project on another environment: same repository, else same path, else same name. */
@@ -1278,13 +1277,9 @@ function ProjectPicker({
   onChange: (projectId: ProjectId) => void;
 }) {
   const projects = useProjects();
-  const choices = useMemo(
-    () =>
-      projects
-        .filter((project) => project.environmentId === environmentId)
-        .toSorted((a, b) => a.title.localeCompare(b.title)),
-    [environmentId, projects],
-  );
+  const choices = projects
+    .filter((project) => project.environmentId === environmentId)
+    .toSorted((a, b) => a.title.localeCompare(b.title));
   const current = choices.find((project) => project.id === projectId);
 
   return (
@@ -1340,9 +1335,9 @@ function AutomationInstructions({
   modelSelection: ModelSelection | null;
   onModelSelectionChange: (selection: ModelSelection) => void;
 }) {
-  const environment = useEnvironment(environmentId);
+  const providersByEnvironment = useEnvironmentProviders();
   const settings = useEnvironmentSettings(environmentId);
-  const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+  const providers = providersByEnvironment.get(environmentId) ?? EMPTY_SERVER_PROVIDERS;
   // Runs resolve the project's default model the same way on the server.
   const projectSettings = resolveProjectSettings(settings, projectId).settings;
   const providerProfile = resolveProviderProfile(projectSettings);
