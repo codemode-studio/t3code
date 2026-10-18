@@ -19,8 +19,8 @@ export function getWorkspaceListPaneMaxWidth(rowWidth?: number): number {
 }
 
 /**
- * The resizable list column on the left of a workspace page (Notes,
- * Automations). Its width persists per page under `storageKey` and is clamped
+ * The resizable list column on the left of a workspace page (Automations).
+ * Its width persists per page under `storageKey` and is clamped
  * to the row it shares with the editor, so narrowing the window or opening the
  * app sidebar never squeezes the editor below a usable width.
  */

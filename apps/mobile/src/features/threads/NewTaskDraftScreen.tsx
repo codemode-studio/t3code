@@ -33,10 +33,8 @@ import {
   AuthOrchestrationOperateScope,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  ComposerContextId,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 
 import {
@@ -44,11 +42,7 @@ import {
   type ComposerEditorHandle,
   type ComposerTextPaste,
 } from "../../components/ComposerEditor";
-import {
-  composerContextImportsAtom,
-  insertComposerDraftContext,
-} from "../../state/use-composer-drafts";
-import { attachPendingNoteToDraft } from "../notes/pendingNoteForChat";
+import { composerContextImportsAtom } from "../../state/use-composer-drafts";
 import {
   composerContextSendBlockReason,
   type ComposerDocumentAttachment,
@@ -201,45 +195,9 @@ export function NewTaskDraftScreen(props: {
   readonly pendingTaskId?: string;
   readonly draftId?: string;
   readonly incomingShareId?: string;
-  /** A note queued from Notes to attach to this draft as context. */
-  readonly noteRequestId?: string;
 }) {
   const projects = useProjects();
   const flow = useNewTaskFlow();
-  // Alert once per request; a refused note stays queued for a later attempt.
-  const refusedNoteRequestRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!flow.draftKey) return;
-    const outcome = attachPendingNoteToDraft({
-      draftKey: flow.draftKey,
-      selectedProject: flow.selectedProject,
-      routeProject: props.initialProjectRef,
-      requestId: props.noteRequestId,
-      insert: (draftKey, note) => {
-        const contextId = ComposerContextId.make(`note_${note.id}`);
-        return insertComposerDraftContext(draftKey, {
-          text: `${formatComposerContextReference({ kind: "note", contextId, label: note.title })} `,
-          context: {
-            version: 1,
-            records: [
-              {
-                version: 1,
-                kind: "note",
-                contextId,
-                noteId: note.id,
-                label: note.title,
-                title: note.title,
-                content: "",
-              },
-            ],
-          },
-        });
-      },
-    });
-    if (outcome !== "rejected" || refusedNoteRequestRef.current === props.noteRequestId) return;
-    refusedNoteRequestRef.current = props.noteRequestId ?? null;
-    Dialog.alert("Note not added", "Remove some context from this draft, then add the note again.");
-  }, [flow.draftKey, flow.selectedProject, props.initialProjectRef, props.noteRequestId]);
   const navigation = useNavigation();
   const {
     consumeShare,
@@ -1632,9 +1590,7 @@ export function NewTaskDraftScreen(props: {
     >
       {!voiceInput.isBusy &&
       composerMenu.trigger &&
-      (composerMenu.items.length > 0 ||
-        composerMenu.trigger.kind === "pull-request" ||
-        composerMenu.trigger.kind === "note") ? (
+      (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
         <View className="mb-2">
           <ComposerCommandPopover
             items={composerMenu.items}

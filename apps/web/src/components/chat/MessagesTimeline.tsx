@@ -25,7 +25,6 @@ import {
   type AssistantCitation,
   type EnvironmentId,
   type MessageId,
-  type ProjectId,
   type OrchestrationV2TurnItem,
   type RunAttemptId,
   type ScopedThreadRef,
@@ -129,7 +128,6 @@ import {
   ChevronUpIcon,
   CircleAlertIcon,
   DownloadIcon,
-  FileTextIcon,
   EyeIcon,
   GitForkIcon,
   GlobeIcon,
@@ -159,9 +157,6 @@ import type {
   KnownComposerContextRecord,
 } from "@t3tools/contracts";
 import { Button, InlineButton } from "../ui/button";
-import { toastManager } from "../ui/toast";
-import { notesEnvironment } from "../../state/notes";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { MorphIcon } from "~/components/MorphIcon";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
@@ -181,8 +176,7 @@ import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
-import { readThreadShell, useProject, useThreadShell } from "../../state/entities";
-import { resolveNoteSource } from "../../lib/noteSource";
+import { useProject, useThreadShell } from "../../state/entities";
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   readTimelinePosition,
@@ -322,7 +316,6 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   runs: ReadonlyArray<HandoffTimelineRun>;
   activeThreadEnvironmentId: EnvironmentId;
-  onSaveNote: ((messageId: MessageId, text: string) => void) | undefined;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onSendAppMessage: ((text: string) => Promise<void>) | undefined;
@@ -493,8 +486,6 @@ interface MessagesTimelineProps {
   onFileOpen?: (attachment: ChatFileAttachment) => void;
   onFileDownload?: (attachment: ChatFileAttachment) => void;
   activeThreadEnvironmentId: EnvironmentId;
-  noteProjectId?: ProjectId | null;
-  notesEnabled?: boolean;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
@@ -590,8 +581,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onFileOpen = NOOP_OPEN_ATTACHMENT,
   onFileDownload = NOOP_OPEN_ATTACHMENT,
   activeThreadEnvironmentId,
-  noteProjectId = null,
-  notesEnabled = true,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
@@ -651,59 +640,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     setExpandedAttemptIds(paintedExpandedAttemptIds);
   }
   const citationThreadRef = parseScopedThreadKey(routeThreadKey);
-  const createNote = useAtomCommand(notesEnvironment.create);
-  const canSaveNotes = notesEnabled && listIdentityKey === routeThreadKey;
-  // Read at click time, so a save never credits a message to the wrong timeline and the row
-  // context does not change on every streamed row.
-  const savableRowsRef = useRef<ReadonlyArray<MessagesTimelineRow>>([]);
-  const saveNote = (messageId: MessageId, text: string) => {
-    if (!canSaveNotes || !citationThreadRef) return;
-    const messageRow = savableRowsRef.current.find(
-      (row) => row.kind === "message" && row.message.id === messageId,
-    );
-    const source = resolveNoteSource({
-      messageId,
-      messageThreadId:
-        messageRow?.kind === "message" ? messageRow.projectedItem?.sourceThreadId : undefined,
-      displayedThreadId: citationThreadRef.threadId,
-      displayedProjectId: noteProjectId,
-      threadProjectId: (threadId) => {
-        const shell = readThreadShell(scopeThreadRef(citationThreadRef.environmentId, threadId));
-        return shell && shell.deletedAt === null ? shell.projectId : undefined;
-      },
-    });
-    if (!source) {
-      toastManager.add({
-        type: "error",
-        title: messageRow
-          ? "Wait for the message to finish saving"
-          : "This message is no longer shown",
-      });
-      return;
-    }
-    const body = text.trim();
-    if (!body || body.length > 128_000) {
-      toastManager.add({ type: "error", title: "Message is too long to save as a note" });
-      return;
-    }
-    const title =
-      body
-        .split("\n", 1)[0]
-        ?.replace(/^#+\s*/, "")
-        .slice(0, 200) || "Untitled note";
-    void createNote({
-      environmentId: citationThreadRef.environmentId,
-      input: {
-        title,
-        body,
-        tags: [],
-        ...source,
-      },
-    }).then((result) => {
-      if (result._tag === "Success") toastManager.add({ type: "success", title: "Saved as note" });
-    });
-  };
-
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
   const expandCitedRun = (runId: RunId) => {
     setExpandedRunIds((current) => (current.has(runId) ? current : new Set([...current, runId])));
@@ -913,9 +849,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
-  useLayoutEffect(() => {
-    savableRowsRef.current = rows;
-  }, [rows]);
   // Run status/timestamps churn on every stream event; the shared row context
   // must not change with them or every timeline row re-renders per event.
   const runs = useStableHandoffRuns(runsProp);
@@ -1284,7 +1217,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     skills,
     runs,
     activeThreadEnvironmentId,
-    onSaveNote: canSaveNotes ? saveNote : undefined,
     onRevertToTurnCount,
     onRunShellCommand,
     findActive,
@@ -1310,7 +1242,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     workGroupViewState,
   };
-
   const compactionAwaitingRow =
     isCompacting && !rows.some((row) => row.kind === "context-compaction" && row.active);
   const backgroundWorktreeSetup =
@@ -1499,7 +1430,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
               viewport={timelineViewportElement}
               threadRef={citationThreadRef}
               onCite={onCiteAssistantText}
-              onSave={canSaveNotes ? saveNote : undefined}
             />
           ) : null}
           <LegendList<MessagesTimelineRow>
@@ -2459,9 +2389,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 variant="ghost"
               />
             )}
-            {!row.message.streaming && row.projectedItem && ctx.onSaveNote && (
-              <SaveNoteButton onClick={() => ctx.onSaveNote?.(row.message.id, row.message.text)} />
-            )}
             {promptLink !== null && (
               <MessageCopyButton
                 text={promptLink}
@@ -2804,9 +2731,6 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
-      {!message.streaming && projectedItem && ctx.onSaveNote && (
-        <SaveNoteButton onClick={() => ctx.onSaveNote?.(message.id, message.text)} />
-      )}
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}
@@ -2821,28 +2745,6 @@ function AssistantMessageMeta({
         </Tooltip>
       )}
     </div>
-  );
-}
-
-function SaveNoteButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label="Save message as note"
-            onClick={onClick}
-          />
-        }
-      >
-        <FileTextIcon />
-      </TooltipTrigger>
-      <TooltipPopup>
-        <p>Save as note</p>
-      </TooltipPopup>
-    </Tooltip>
   );
 }
 
@@ -4361,26 +4263,6 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
 >({
   requiredKinds: COMPOSER_CONTEXT_KINDS,
   handlers: [
-    {
-      kind: "note",
-      canRender: (record) => record.kind === "note",
-      render: (record, context) =>
-        record.kind === "note" ? (
-          <UserMessageContextPopover
-            copyMarkdown={context.copyMarkdown}
-            accessibleLabel={`Note, ${record.title}`}
-            kind="note"
-            icon={<FileTextIcon />}
-            label={record.title}
-          >
-            <div className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-sm">
-              {record.content}
-            </div>
-          </UserMessageContextPopover>
-        ) : (
-          <UnavailableUserMessageContextChip {...context} />
-        ),
-    },
     {
       kind: "mention",
       canRender: (record) => record.kind === "mention",

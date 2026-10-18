@@ -281,7 +281,6 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import {
   SidebarAutomationsLink,
-  SidebarNotesLink,
   SidebarChromeFooter,
   SidebarChromeHeader,
 } from "./sidebar/SidebarChrome";
@@ -4574,7 +4573,6 @@ export default function Sidebar() {
           <SidebarGroup className="z-[1]">
             {/* Fork (profiles) */}
             <ProfileSwitcher />
-            <SidebarNotesLink />
             <SidebarAutomationsLink />
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}

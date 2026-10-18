@@ -125,19 +125,11 @@ describe("RPC authorization scopes", () => {
     );
   });
 
-  it("lets read-only clients see notes and automations but not change or run them", () => {
+  it("lets read-only clients see automations but not change or run them", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.subscribeAutomations)).toBe(
+      AuthOrchestrationReadScope,
+    );
     for (const method of [
-      WS_METHODS.notesList,
-      WS_METHODS.notesGet,
-      WS_METHODS.notesSubscribeChanges,
-      WS_METHODS.subscribeAutomations,
-    ]) {
-      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
-    }
-    for (const method of [
-      WS_METHODS.notesCreate,
-      WS_METHODS.notesUpdate,
-      WS_METHODS.notesDelete,
       WS_METHODS.automationsCreate,
       WS_METHODS.automationsUpdate,
       WS_METHODS.automationsDelete,

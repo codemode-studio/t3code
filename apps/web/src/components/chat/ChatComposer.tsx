@@ -203,8 +203,6 @@ import {
   replaceComposerContextReferences,
   toKindScopedComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
-import { useNotes } from "../../state/notes";
-import { clearPendingNoteForChat, pendingNoteForChat } from "../../lib/noteChatBus";
 import {
   getRestingComposerImagePreviewCounts,
   resolveRestingComposerControlsLayout,
@@ -2118,7 +2116,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       openPrLink(event, url);
     },
   };
-  const { notes } = useNotes();
   const composerContextRecords = composerContextRecordsFromDraft({
     terminalContexts: composerTerminalContexts,
     reviewComments: composerReviewComments,
@@ -2127,9 +2124,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     images: composerImages,
     files: composerFiles,
     uploadsByImageId,
-    notes: notes.filter((note) => note.environmentId === environmentId),
   });
-
   const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
   const fileStagingLimit = fileAttachmentStagingLimit({
     attachmentUploadsCapabilityKnown,
@@ -2626,23 +2621,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const composerMenuItems = ((): ComposerCommandItem[] => {
     if (!composerTrigger) return [];
-    if (composerTrigger.kind === "note") {
-      const query = composerTrigger.query.trim().toLowerCase();
-      return notes
-        .filter(
-          (note) =>
-            note.environmentId === environmentId &&
-            (!query || `${note.title} ${note.tags.join(" ")}`.toLowerCase().includes(query)),
-        )
-        .slice(0, 20)
-        .map((note) => ({
-          id: `note:${note.id}`,
-          type: "note" as const,
-          note,
-          label: note.title,
-          description: note.tags.join(", ") || "Saved note",
-        }));
-    }
     if (composerTrigger.kind === "path") {
       return [
         ...matchComposerThreadItems({
@@ -2846,8 +2824,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         pullRequestTriggerNumber !== debouncedPullRequestNumber ||
         exactPullRequestLookup.isPending));
   const composerMenuEmptyState = (() => {
-    if (composerTriggerKind === "note") return "No matching notes.";
-
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
     }
@@ -3797,21 +3773,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
     const { snapshot, trigger } = resolveActiveComposerTrigger();
     if (!trigger) return;
-    if (item.type === "note") {
-      const reference = formatInlineContextReference({
-        kind: "note",
-        contextId: toKindScopedComposerContextId("note", item.note.id),
-        label: item.note.title,
-      });
-      const applied = applyPromptReplacement(
-        trigger.rangeStart,
-        trigger.rangeEnd,
-        `${reference} `,
-        { expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd) },
-      );
-      if (applied) setComposerHighlightedItemId(null);
-      return;
-    }
     if (item.type === "path") {
       const replacement = `${serializeComposerFileLink(item.path)} `;
       const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -5778,34 +5739,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
   const insertComposerTextStable = useStableCallback(insertComposerText);
-  useEffect(() => {
-    if (
-      isComposerApprovalState ||
-      isConnecting ||
-      pendingUserInputs.length > 0 ||
-      projectSelectionRequired
-    )
-      return;
-    const note = pendingNoteForChat(environmentId);
-    if (!note) return;
-    const inserted = insertComposerTextStable(
-      `${formatInlineContextReference({
-        kind: "note",
-        contextId: toKindScopedComposerContextId("note", note.id),
-        label: note.title,
-      })} `,
-      "cursor",
-      { ensureLeadingBoundary: true },
-    );
-    if (inserted) clearPendingNoteForChat(environmentId, note.id);
-  }, [
-    environmentId,
-    insertComposerTextStable,
-    isComposerApprovalState,
-    isConnecting,
-    pendingUserInputs.length,
-    projectSelectionRequired,
-  ]);
 
   const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {
     const inserted = insertComposerText(text, "end", options);

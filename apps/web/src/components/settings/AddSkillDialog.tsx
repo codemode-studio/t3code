@@ -61,29 +61,26 @@ export function AddSkillDialog({
     if (!destination || !validName || !instructions.trim()) return;
     setSaving(true);
     setError(null);
-    try {
-      const result = await createSkill({
+    const result = await createSkill({
+      environmentId: destination.environmentId,
+      input: {
+        ...(destination.cwd ? { cwd: destination.cwd } : {}),
+        name,
+        description,
+        instructions,
+      },
+    });
+    setSaving(false);
+    if (result._tag === "Success") {
+      onCreated({
+        ...result.value,
         environmentId: destination.environmentId,
-        input: {
-          ...(destination.cwd ? { cwd: destination.cwd } : {}),
-          name,
-          description,
-          instructions,
-        },
+        environmentLabel: destination.environmentLabel,
       });
-      if (result._tag === "Success") {
-        onCreated({
-          ...result.value,
-          environmentId: destination.environmentId,
-          environmentLabel: destination.environmentLabel,
-        });
-      } else {
-        setError(
-          "Could not create the skill. Check that the name is available and the folder is writable.",
-        );
-      }
-    } finally {
-      setSaving(false);
+    } else {
+      setError(
+        "Could not create the skill. Check that the name is available and the folder is writable.",
+      );
     }
   }
 

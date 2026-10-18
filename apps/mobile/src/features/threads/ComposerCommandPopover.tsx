@@ -3,7 +3,6 @@ import {
   type ProviderSkillSourceKind,
 } from "@t3tools/client-runtime/providerSkills";
 import type {
-  NoteSummary,
   PullRequestContextMetadata,
   ScopedThreadRef,
   ServerProviderSkill,
@@ -19,13 +18,6 @@ import { GlassSurface } from "../../components/ui/GlassSurface";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
 export type ComposerCommandItem =
-  | {
-      readonly id: string;
-      readonly type: "note";
-      readonly note: NoteSummary;
-      readonly label: string;
-      readonly description: string;
-    }
   | {
       readonly id: string;
       readonly type: "pull-request";
@@ -107,8 +99,6 @@ const SKILL_SOURCE_SYMBOL_BY_KIND: Record<ProviderSkillSourceKind, AppSymbolName
 
 function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
   switch (item.type) {
-    case "note":
-      return "doc.text";
     case "pull-request":
       return pullRequestStatus(item.pullRequest).icon;
     case "slash-command":
@@ -125,8 +115,6 @@ function itemIcon(item: ComposerCommandItem): AppSymbolName | null {
 
 function groupLabel(triggerKind: ComposerTriggerKind | null): string | null {
   switch (triggerKind) {
-    case "note":
-      return "Notes";
     case "pull-request":
       return "Pull requests";
     case "slash-command":
@@ -145,8 +133,6 @@ function emptyText(triggerKind: ComposerTriggerKind | null, isLoading: boolean):
     return triggerKind === "path" ? "Searching files…" : "Loading…";
   }
   switch (triggerKind) {
-    case "note":
-      return "No matching notes.";
     case "pull-request":
       return "No matching pull requests.";
     case "path":

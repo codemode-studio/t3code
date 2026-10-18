@@ -203,7 +203,6 @@ import {
 import { sortThreads } from "../lib/threadSort";
 import {
   SidebarAutomationsLink,
-  SidebarNotesLink,
   SidebarChromeFooter,
   SidebarChromeHeader,
 } from "./sidebar/SidebarChrome";
@@ -2863,7 +2862,6 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     <SidebarContent
       fixedHeader={
         <SidebarGroup className="z-[1]">
-          <SidebarNotesLink />
           <SidebarAutomationsLink />
           <SidebarMenu>
             <SidebarMenuItem>

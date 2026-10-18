@@ -3,7 +3,6 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import Notes from "./ForkMigrations/001_Notes.ts";
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 
 const upstreamLedger = Effect.gen(function* () {
@@ -29,39 +28,49 @@ const tableExists = (name: string) =>
     return rows.length === 1;
   });
 
-const insertNote = Effect.gen(function* () {
+// The table and a row as the removed Notes feature left them.
+const createLegacyNotes = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
+    CREATE TABLE notes (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      tags_json TEXT NOT NULL,
+      project_id TEXT,
+      source_thread_id TEXT,
+      source_message_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
     INSERT INTO notes (id, title, body, tags_json, project_id, source_thread_id, source_message_id, created_at, updated_at)
-    VALUES ('kept-note', 'Kept', 'Body', '[]', NULL, NULL, NULL, '2026-09-24', '2026-09-24')
+    VALUES ('old-note', 'Old', 'Body', '[]', NULL, NULL, NULL, '2026-09-24', '2026-09-24')
   `;
 });
 
-const expectUpgradedToUpstream = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  assert.deepStrictEqual(yield* upstreamLedger, migrationManifest);
-  assert.deepStrictEqual(yield* forkLedger, [[1, "Notes"]]);
-  assert.isTrue(yield* tableExists("orchestration_v2_events"));
-  assert.deepStrictEqual(
-    (yield* sql<{ readonly id: string }>`SELECT id FROM notes`).map((row) => row.id),
-    ["kept-note"],
-  );
-  assert.deepStrictEqual(yield* runMigrations(), []);
-});
+const expectUpgradedToUpstream = (expectedForkLedger: ReadonlyArray<readonly [number, string]>) =>
+  Effect.gen(function* () {
+    assert.deepStrictEqual(yield* upstreamLedger, migrationManifest);
+    assert.deepStrictEqual(yield* forkLedger, expectedForkLedger);
+    assert.isTrue(yield* tableExists("orchestration_v2_events"));
+    assert.isFalse(yield* tableExists("notes"));
+    assert.deepStrictEqual(yield* runMigrations(), []);
+  });
 
 describe("fork migration ledger", () => {
   it.effect("runs upstream 55 and 56 on a database that recorded the fork's 55 and 56", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 54 });
-      yield* Notes;
+      yield* createLegacyNotes;
       yield* sql`ALTER TABLE projection_threads ADD COLUMN parent_thread_id TEXT`;
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (55, 'Notes')`;
       yield* sql`
         INSERT INTO effect_sql_migrations (migration_id, name)
         VALUES (56, 'ProjectionThreadsParentThreadId')
       `;
-      yield* insertNote;
 
       assert.deepStrictEqual(yield* runMigrations(), [
         [55, "OrchestrationV2"],
@@ -74,7 +83,7 @@ describe("fork migration ledger", () => {
         [62, "ThreadFailureLookupIndex"],
         [63, "DropUnusedV1Projections"],
       ]);
-      yield* expectUpgradedToUpstream;
+      yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
@@ -82,9 +91,8 @@ describe("fork migration ledger", () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 53 });
-      yield* Notes;
+      yield* createLegacyNotes;
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (54, 'Notes')`;
-      yield* insertNote;
 
       assert.deepStrictEqual(yield* runMigrations(), [
         [54, "ProjectionThreadsAutoSettleDisabledAt"],
@@ -98,25 +106,36 @@ describe("fork migration ledger", () => {
         [62, "ThreadFailureLookupIndex"],
         [63, "DropUnusedV1Projections"],
       ]);
-      yield* expectUpgradedToUpstream;
+      yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("creates notes through the fork ledger on a fresh database", () =>
+  it.effect("drops notes on a database whose fork ledger already ran Notes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 63 });
+      yield* createLegacyNotes;
+      yield* sql`
+        CREATE TABLE t3_fork_migrations (
+          migration_id INTEGER PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+      yield* sql`INSERT INTO t3_fork_migrations (migration_id, name) VALUES (1, 'Notes')`;
+
+      assert.deepStrictEqual(yield* runMigrations(), []);
+      yield* expectUpgradedToUpstream([
+        [1, "Notes"],
+        [2, "DropNotes"],
+      ]);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("never creates notes on a fresh database", () =>
     Effect.gen(function* () {
       yield* runMigrations();
-      yield* insertNote;
-      yield* expectUpgradedToUpstream;
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
-  );
-
-  it.effect("leaves an upstream database's history alone and adds notes", () =>
-    Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 63 });
-      assert.isFalse(yield* tableExists("notes"));
-      assert.deepStrictEqual(yield* runMigrations(), []);
-      yield* insertNote;
-      yield* expectUpgradedToUpstream;
+      yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

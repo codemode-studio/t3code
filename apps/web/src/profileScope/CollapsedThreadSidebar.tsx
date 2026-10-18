@@ -3,7 +3,6 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ChartNoAxesColumnIcon,
-  FileTextIcon,
   MessageSquareIcon,
   SearchIcon,
   SettingsIcon,
@@ -198,13 +197,6 @@ export function CollapsedThreadSidebar() {
           </RailButton>
           <RailButton label="Search" onClick={() => openCommandPalette()}>
             <SearchIcon />
-          </RailButton>
-          <RailButton
-            label="Notes"
-            isActive={pathname === "/notes"}
-            onClick={() => void navigate({ to: "/notes" })}
-          >
-            <FileTextIcon />
           </RailButton>
           <RailButton
             label="Automations"

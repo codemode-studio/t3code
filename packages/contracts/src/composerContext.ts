@@ -8,7 +8,6 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import { NoteId } from "./notes.ts";
 
 /**
  * Bytes never live here: image and file records bind to a `ChatAttachment` by id.
@@ -24,7 +23,6 @@ export const COMPOSER_CONTEXT_KINDS = [
   "mention",
   "skill",
   "thread",
-  "note",
 ] as const;
 export type KnownComposerContextKind = (typeof COMPOSER_CONTEXT_KINDS)[number];
 
@@ -206,15 +204,6 @@ export const SkillContextRecord = Schema.Struct({
 });
 export type SkillContextRecord = typeof SkillContextRecord.Type;
 
-export const NoteContextRecord = Schema.Struct({
-  ...recordBase,
-  kind: Schema.Literal("note"),
-  noteId: NoteId,
-  title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
-  content: BoundedString(128_000),
-});
-export type NoteContextRecord = typeof NoteContextRecord.Type;
-
 export const ThreadContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("thread"),
@@ -257,7 +246,6 @@ export const KnownComposerContextRecord = Schema.Union([
   MentionContextRecord,
   SkillContextRecord,
   ThreadContextRecord,
-  NoteContextRecord,
 ]);
 export type KnownComposerContextRecord = typeof KnownComposerContextRecord.Type;
 

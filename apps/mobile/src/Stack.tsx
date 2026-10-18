@@ -74,7 +74,6 @@ import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
-import { NotesRouteScreen } from "./features/notes/NotesRouteScreen";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectNewRoute } from "./features/projects/AddProjectNewRoute";
@@ -698,11 +697,6 @@ const RootStackConfig = createWorkspaceStackNavigator({
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
       },
-    }),
-    Notes: createNativeStackScreen({
-      screen: NotesRouteScreen,
-      linking: "notes",
-      options: { ...GLASS_HEADER_OPTIONS, title: "Notes" },
     }),
     PullRequest: createNativeStackScreen({
       screen: PullRequestRouteScreen,

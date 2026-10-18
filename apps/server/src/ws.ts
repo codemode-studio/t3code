@@ -1,7 +1,6 @@
 import { listSkillFiles, createSkillFile } from "./workspace/SkillFiles.ts";
 import { removeInactiveWorktree } from "./git/removeInactiveWorktree.ts";
 import * as AutomationService from "./automation/AutomationService.ts";
-import * as Notes from "./notes/Notes.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -1167,7 +1166,6 @@ const layerWsRpc = (
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
-  notes: Effect.Success<typeof Notes.makeNotes>,
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
   Layer.unwrap(
@@ -1813,24 +1811,18 @@ const layerWsRpc = (
               : {}),
           }).pipe(
             Effect.andThen(
-              Notes.snapshotNotesInCommand(command)
-                .pipe(
-                  Effect.flatMap((snapshotted) =>
-                    startup.enqueueCommand(
-                      (snapshotted.type === "prepared-run.retry"
-                        ? threadLaunch.retryPreparation(snapshotted)
-                        : ThreadMessageIntake.dispatchCommand(
-                            ThreadManagementService.withCreationProvenance(snapshotted, {
-                              createdBy: "user",
-                              creationSource:
-                                "creationSource" in snapshotted
-                                  ? snapshotted.creationSource
-                                  : "web",
-                            }),
-                          )
-                      ).pipe(Effect.provide(intakeContext)),
-                    ),
-                  ),
+              startup
+                .enqueueCommand(
+                  (command.type === "prepared-run.retry"
+                    ? threadLaunch.retryPreparation(command)
+                    : ThreadMessageIntake.dispatchCommand(
+                        ThreadManagementService.withCreationProvenance(command, {
+                          createdBy: "user",
+                          creationSource:
+                            "creationSource" in command ? command.creationSource : "web",
+                        }),
+                      )
+                  ).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
                   Effect.tap(() => recordClientCommandAnalytics(command)),
@@ -1937,47 +1929,40 @@ const layerWsRpc = (
             "orchestration_v2.project_id": input.projectId,
           }).pipe(
             Effect.andThen(
-              (input.initialMessage === undefined
-                ? Effect.succeed(undefined)
-                : Notes.snapshotNotesInMessage(input.initialMessage)
-              )
-                .pipe(
-                  Effect.flatMap((initialContext) =>
-                    startup.enqueueCommand(
-                      ThreadMessageIntake.launchThread({
-                        commandId: input.commandId,
-                        ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
-                        ...(input.reuseExistingThread === undefined
-                          ? {}
-                          : { reuseExistingThread: input.reuseExistingThread }),
-                        projectId: input.projectId,
-                        title: input.title,
-                        ...(input.generateTitle === undefined
-                          ? {}
-                          : { generateTitle: input.generateTitle }),
-                        modelSelection: input.modelSelection,
-                        runtimeMode: input.runtimeMode,
-                        interactionMode: input.interactionMode,
-                        workspaceStrategy: input.workspaceStrategy,
-                        ...(input.initialMessage === undefined
-                          ? {}
-                          : {
-                              initialMessage: {
-                                ...(input.initialMessage.messageId === undefined
-                                  ? {}
-                                  : { messageId: input.initialMessage.messageId }),
-                                text: input.initialMessage.text,
-                                attachments: input.initialMessage.attachments,
-                                ...(initialContext === undefined
-                                  ? {}
-                                  : { context: initialContext }),
-                              },
-                            }),
-                        createdBy: "user",
-                        creationSource: input.creationSource ?? "web",
-                      }).pipe(Effect.provide(intakeContext)),
-                    ),
-                  ),
+              startup
+                .enqueueCommand(
+                  ThreadMessageIntake.launchThread({
+                    commandId: input.commandId,
+                    ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
+                    ...(input.reuseExistingThread === undefined
+                      ? {}
+                      : { reuseExistingThread: input.reuseExistingThread }),
+                    projectId: input.projectId,
+                    title: input.title,
+                    ...(input.generateTitle === undefined
+                      ? {}
+                      : { generateTitle: input.generateTitle }),
+                    modelSelection: input.modelSelection,
+                    runtimeMode: input.runtimeMode,
+                    interactionMode: input.interactionMode,
+                    workspaceStrategy: input.workspaceStrategy,
+                    ...(input.initialMessage === undefined
+                      ? {}
+                      : {
+                          initialMessage: {
+                            ...(input.initialMessage.messageId === undefined
+                              ? {}
+                              : { messageId: input.initialMessage.messageId }),
+                            text: input.initialMessage.text,
+                            attachments: input.initialMessage.attachments,
+                            ...(input.initialMessage.context === undefined
+                              ? {}
+                              : { context: input.initialMessage.context }),
+                          },
+                        }),
+                    createdBy: "user",
+                    creationSource: input.creationSource ?? "web",
+                  }).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
                   Effect.tap(() =>
@@ -1997,13 +1982,6 @@ const layerWsRpc = (
                     projection: projectThreadProjectionForWire(result.projection),
                   })),
                   Effect.catchTags({
-                    NoteError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: cause.message,
-                        cause,
-                      }),
                     AttachmentClaimError: (cause) =>
                       new OrchestrationV2ThreadLaunchError({
                         commandId: input.commandId,
@@ -2808,12 +2786,6 @@ const layerWsRpc = (
                     : "Could not create skill",
               }),
           }),
-        [WS_METHODS.notesList]: (input) => Notes.listNotes(input),
-        [WS_METHODS.notesGet]: (input) => Notes.getNote(input.id),
-        [WS_METHODS.notesCreate]: (input) => notes.create(input),
-        [WS_METHODS.notesUpdate]: (input) => notes.update(input),
-        [WS_METHODS.notesDelete]: (input) => notes.remove(input.id),
-        [WS_METHODS.notesSubscribeChanges]: () => notes.changes,
         [WS_METHODS.vcsListWorktrees]: (input) => gitWorkflow.listWorktrees(input),
         [WS_METHODS.subscribeAutomations]: (_input) => automations.changes,
         [WS_METHODS.automationsCreate]: (input) => automations.create(input.config),
@@ -3173,7 +3145,6 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 const wsLayer = Layer.unwrap(
   Effect.gen(function* () {
-    const notes = yield* Notes.makeNotes;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -3232,7 +3203,6 @@ const wsLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
-              notes,
               serverBrowser,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),

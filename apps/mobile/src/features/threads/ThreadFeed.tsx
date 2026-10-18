@@ -63,9 +63,6 @@ import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3too
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
-import { notesEnvironment } from "../../state/notes";
-import { readThreadShell } from "../../state/entities";
-import { saveTranscriptNote, type TranscriptNoteTarget } from "../notes/transcriptNote";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
@@ -88,7 +85,6 @@ import {
 import {
   ActivityIndicator,
   Image,
-  Modal,
   Platform,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -97,7 +93,6 @@ import {
   ScrollView,
   StyleSheet,
   Text as NativeText,
-  TextInput,
   type ColorValue,
   useWindowDimensions,
   View,
@@ -185,7 +180,6 @@ import {
   isSecretRequestActivityGroup,
   type ThreadFeedEntry,
   type ThreadFeedLatestRun,
-  type ThreadFeedMessage,
 } from "../../lib/threadActivity";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import {
@@ -983,7 +977,6 @@ function renderFeedEntry(
     | "workspaceRoot"
   > & {
     readonly copiedRowId: string | null;
-    readonly onSaveAsNote: (message: SavableNoteMessage, text: string) => void;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
     readonly workGroupScrollPositions: Map<string, ThreadWorkGroupScrollPosition>;
@@ -1338,17 +1331,6 @@ function renderFeedEntry(
                 <SymbolView name="pencil" size={14} tintColor={iconSubtleColor} />
               </Pressable>
             ) : null}
-            {message.projectedItem && !message.streaming && message.text.trim().length > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Save as note"
-                hitSlop={8}
-                className="size-7 items-center justify-center"
-                onPress={() => props.onSaveAsNote(message, message.text)}
-              >
-                <SymbolView name="doc.text" size={14} tintColor={iconSubtleColor} />
-              </Pressable>
-            ) : null}
             {presentation.text.trim().length > 0 ? (
               <UserMessageCopyButton
                 text={presentation.text}
@@ -1437,17 +1419,6 @@ function renderFeedEntry(
                 projectedItem={message.projectedItem}
                 sourceTitle={props.threadTitle}
               />
-            ) : null}
-            {message.projectedItem ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Save as note"
-                hitSlop={8}
-                className="size-7 items-center justify-center"
-                onPress={() => props.onSaveAsNote(message, renderedText)}
-              >
-                <SymbolView name="doc.text" size={14} tintColor={iconSubtleColor} />
-              </Pressable>
             ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
@@ -1689,86 +1660,11 @@ function ThreadFeedPlaceholder(props: {
   );
 }
 
-/** What Save as note needs from a feed message: persisted ones carry their owning thread. */
-type SavableNoteMessage = Pick<ThreadFeedMessage, "id" | "projectedItem">;
-
-/** A live thread's project, read once without subscribing; undefined when unknown or deleted. */
-function liveThreadProjectId(environmentId: EnvironmentId, threadId: ThreadId) {
-  const shell = readThreadShell({ environmentId, threadId });
-  return shell && shell.deletedAt === null ? shell.projectId : undefined;
-}
-
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const deviceType = useDeviceType();
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const openPullRequest = useOpenPullRequest();
   const navigation = useNavigation();
-  // Failures are shown in an alert; an association refusal is retried without one.
-  const createNote = useAtomCommand(notesEnvironment.create, { reportFailure: false });
-  const [noteSelection, setNoteSelection] = useState<{
-    readonly target: TranscriptNoteTarget;
-    readonly text: string;
-    readonly start: number;
-    readonly end: number;
-  } | null>(null);
-  // A selection belongs to the thread it was opened on; drop it once the feed shows another.
-  if (
-    noteSelection !== null &&
-    (noteSelection.target.environmentId !== props.environmentId ||
-      noteSelection.target.displayedThreadId !== props.threadId)
-  ) {
-    setNoteSelection(null);
-  }
-  const saveNoteText = useCallback(
-    (target: TranscriptNoteTarget, text: string) => {
-      if (!text.trim()) return;
-      void saveTranscriptNote({
-        target,
-        text,
-        // Projects are read when saving, so no thread list subscription is needed.
-        threadProjectId: (threadId) => liveThreadProjectId(target.environmentId, threadId),
-        create: (input) => createNote({ environmentId: target.environmentId, input }),
-      }).then((outcome) => {
-        switch (outcome._tag) {
-          case "saved":
-            Dialog.alert("Saved as note", outcome.title);
-            return;
-          case "not-persisted":
-            Dialog.alert("Not saved yet", "Wait for the message to finish saving, then try again.");
-            return;
-          case "too-long":
-            Dialog.alert("Too long for a note", "Select a shorter part of the message to save.");
-            return;
-          case "failed":
-            Dialog.alert("Couldn't save note", outcome.detail);
-            return;
-          case "interrupted":
-            return;
-        }
-      });
-    },
-    [createNote],
-  );
-  const onSaveAsNote = useCallback(
-    (message: SavableNoteMessage, text: string) => {
-      const target: TranscriptNoteTarget = {
-        environmentId: props.environmentId,
-        displayedThreadId: props.threadId,
-        displayedProjectId: liveThreadProjectId(props.environmentId, props.threadId) ?? null,
-        messageId: message.id,
-        messageThreadId: message.projectedItem?.sourceThreadId,
-      };
-      Dialog.alert("Save as note", "Choose what to keep from this message.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Whole message", onPress: () => saveNoteText(target, text) },
-        {
-          text: "Select text",
-          onPress: () => setNoteSelection({ target, text, start: 0, end: 0 }),
-        },
-      ]);
-    },
-    [props.environmentId, props.threadId, saveNoteText],
-  );
   const { themeAppearance } = useAppearancePreferences();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disclosureSettleFrameRef = useRef<number | null>(null);
@@ -2105,7 +2001,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       dispatchingMessageId: props.dispatchingMessageId,
       unsettledTurnId,
       copiedRowId,
-      onSaveAsNote,
       expandedWorkGroups,
       expandedWorkRows,
       workRowSizing,
@@ -2122,7 +2017,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.dispatchingMessageId,
       unsettledTurnId,
       copiedRowId,
-      onSaveAsNote,
       expandedWorkGroups,
       expandedWorkRows,
       workRowSizing,
@@ -2552,7 +2446,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               onUseArtifactTemplate: props.onUseArtifactTemplate,
               threadId: props.threadId,
               copiedRowId,
-              onSaveAsNote,
               expandedWorkRows,
               workRowSizing,
               workGroupScrollPositions,
@@ -2601,7 +2494,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.dispatchingMessageId,
       props.onEditPendingMessage,
       copiedRowId,
-      onSaveAsNote,
       disclosureToggleSettling,
       expandedWorkRows,
       workRowSizing,
@@ -2811,58 +2703,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         ) : null}
         <VideoPreviewModal source={expandedVideo} onRequestClose={() => setExpandedVideo(null)} />
         <FilePreviewModal source={expandedFile} onRequestClose={() => setExpandedFile(null)} />
-        <Modal
-          transparent
-          animationType="slide"
-          visible={noteSelection !== null}
-          onRequestClose={() => setNoteSelection(null)}
-        >
-          <View className="flex-1 justify-end bg-black/40">
-            <View className="gap-3 rounded-t-2xl bg-background p-4 pb-10">
-              <Text className="text-lg font-t3-bold text-foreground">Select text to save</Text>
-              <TextInput
-                multiline
-                accessibilityLabel="Select transcript text"
-                value={noteSelection?.text ?? ""}
-                onSelectionChange={(event) =>
-                  setNoteSelection((current) =>
-                    current
-                      ? {
-                          ...current,
-                          start: event.nativeEvent.selection.start,
-                          end: event.nativeEvent.selection.end,
-                        }
-                      : null,
-                  )
-                }
-                className="max-h-64 rounded-xl bg-subtle p-3 text-foreground"
-              />
-              <View className="flex-row justify-end gap-4">
-                <Pressable accessibilityRole="button" onPress={() => setNoteSelection(null)}>
-                  <Text className="text-foreground">Cancel</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    disabled: !noteSelection || noteSelection.start === noteSelection.end,
-                  }}
-                  onPress={() => {
-                    if (!noteSelection || noteSelection.start === noteSelection.end) {
-                      return;
-                    }
-                    saveNoteText(
-                      noteSelection.target,
-                      noteSelection.text.slice(noteSelection.start, noteSelection.end),
-                    );
-                    setNoteSelection(null);
-                  }}
-                >
-                  <Text className="text-foreground">Save selection</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </View>
     </PresentationSource>
   );

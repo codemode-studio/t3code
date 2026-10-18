@@ -29,8 +29,6 @@ import {
   releaseDraftAttachments,
   startAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
-import { useNotes } from "../../state/notes";
-import { noteContextRecordsForPrompt } from "../../lib/composerContextRecords";
 import { buildMessageContext } from "../../lib/composerContextRecords";
 import { readFileAsDataUrl } from "../../lib/imageCompression";
 import type { TerminalContextDraft } from "../../lib/terminalContext";
@@ -76,7 +74,6 @@ async function submitQueuedRunEdit(input: {
   readonly draftTarget: ComposerThreadTarget;
   readonly editing: EditingQueuedRun;
   readonly content: QueuedRunEditContent;
-  readonly notes: Parameters<typeof noteContextRecordsForPrompt>[1];
   readonly editQueuedRun: ReturnType<typeof useEditQueuedRunCommand>;
 }): Promise<string | null> {
   const { environmentId, draftTarget, editing, content } = input;
@@ -124,7 +121,6 @@ async function submitQueuedRunEdit(input: {
         reviewComments: content.reviewComments,
         previewAnnotations: content.previewAnnotations,
         threadContexts: content.threadContexts,
-        notes: noteContextRecordsForPrompt(editText, input.notes),
         attachments: newAttachments.map((attachment, index) => ({
           attachment,
           attachmentId: uploads[editing.existingAttachments.length + index]?.id ?? attachment.id,
@@ -188,7 +184,6 @@ export function useQueuedRunEdit(input: {
     composerRef,
   } = input;
   const editQueuedRunCommand = useEditQueuedRunCommand();
-  const { notes } = useNotes();
   const [editing, setEditing] = useState<EditingQueuedRun | null>(null);
   const saveInFlightRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -324,7 +319,6 @@ export function useQueuedRunEdit(input: {
       editing,
       content,
       editQueuedRun: editQueuedRunCommand,
-      notes: notes.filter((note) => note.environmentId === environmentId),
     });
     saveInFlightRef.current = false;
     setIsSaving(false);

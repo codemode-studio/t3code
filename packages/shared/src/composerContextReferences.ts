@@ -262,8 +262,6 @@ function formatComposerContextProviderPayload(record: KnownComposerContextRecord
       return `path: ${record.path}`;
     case "skill":
       return `name: ${record.name}`;
-    case "note":
-      return `title: ${record.title}\ncontent:\n${record.content}`;
     case "thread":
       return [
         `title: ${record.title}`,

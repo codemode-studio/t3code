@@ -33,7 +33,6 @@ export function ThreadListToolbar(props: {
   readonly filterCustomized: boolean;
   readonly onFilterAction: NonNullable<ComponentProps<typeof Menu>["onPressAction"]>;
   readonly onOpenSettings: () => void;
-  readonly onOpenNotes: () => void;
   readonly onOpenEnvironments: () => void;
   readonly sidebar?: boolean;
   readonly onLayout?: (event: LayoutChangeEvent) => void;
@@ -139,11 +138,6 @@ export function ThreadListToolbar(props: {
                 accessibilityLabel="Search threads"
                 icon="magnifyingglass"
                 onPress={openSearch}
-              />
-              <AndroidHeaderIconButton
-                accessibilityLabel="Open notes"
-                icon="doc.text"
-                onPress={props.onOpenNotes}
               />
               <AndroidHeaderIconButton
                 accessibilityLabel="Open settings"

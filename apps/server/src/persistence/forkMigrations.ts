@@ -5,30 +5,30 @@
  * Earlier fork builds recorded their migrations in `effect_sql_migrations` under ids upstream
  * later used. The upstream migrator only runs ids above the highest recorded one, so a database
  * holding `55_Notes` would silently skip `55_OrchestrationV2`. `reconcileForkMigrationLedger`
- * moves exactly those known fork rows into the fork ledger before the upstream migrator runs.
+ * removes exactly those known fork rows before the upstream migrator runs.
  *
  * @module forkMigrations
  */
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import Notes from "./ForkMigrations/001_Notes.ts";
+import DropNotes from "./ForkMigrations/002_DropNotes.ts";
 
-const forkMigrationEntries = [[1, "Notes", Notes]] as const;
+// Id 1 created the removed Notes table; databases that ran it keep that ledger row.
+const forkMigrationEntries = [[2, "DropNotes", DropNotes]] as const;
 
 /**
- * Rows earlier fork builds wrote into the upstream ledger, with the fork migration that now owns
- * them. `ProjectionThreadsParentThreadId` has none: its column stays on the legacy V1 table as
- * preserved data that nothing reads, so its row is only removed.
+ * Rows earlier fork builds wrote into the upstream ledger. The Notes table they created is dropped
+ * by `DropNotes`; the `ProjectionThreadsParentThreadId` column stays on the legacy V1 table as
+ * preserved data that nothing reads.
  */
 const LEGACY_FORK_ROWS: ReadonlyArray<{
   readonly migrationId: number;
   readonly name: string;
-  readonly forkId: number | null;
 }> = [
-  { migrationId: 54, name: "Notes", forkId: 1 },
-  { migrationId: 55, name: "Notes", forkId: 1 },
-  { migrationId: 56, name: "ProjectionThreadsParentThreadId", forkId: null },
+  { migrationId: 54, name: "Notes" },
+  { migrationId: 55, name: "Notes" },
+  { migrationId: 56, name: "ProjectionThreadsParentThreadId" },
 ];
 
 const ensureForkLedger = Effect.gen(function* () {
@@ -42,7 +42,7 @@ const ensureForkLedger = Effect.gen(function* () {
   `;
 });
 
-/** Moves known fork rows out of the upstream ledger; returns the upstream rows it removed. */
+/** Removes known fork rows from the upstream ledger; returns the rows it removed. */
 export const reconcileForkMigrationLedger = Effect.fn("reconcileForkMigrationLedger")(function* () {
   const sql = yield* SqlClient.SqlClient;
   return yield* sql.withTransaction(
@@ -57,20 +57,11 @@ export const reconcileForkMigrationLedger = Effect.fn("reconcileForkMigrationLed
       const legacy = LEGACY_FORK_ROWS.filter((row) =>
         history.some((entry) => entry.migration_id === row.migrationId && entry.name === row.name),
       );
-      if (legacy.length === 0) return [];
-      yield* ensureForkLedger;
       for (const row of legacy) {
         yield* sql`
           DELETE FROM effect_sql_migrations
           WHERE migration_id = ${row.migrationId} AND name = ${row.name}
         `;
-        const owner = forkMigrationEntries.find(([id]) => id === row.forkId);
-        if (owner !== undefined) {
-          yield* sql`
-            INSERT OR IGNORE INTO t3_fork_migrations (migration_id, name)
-            VALUES (${owner[0]}, ${owner[1]})
-          `;
-        }
       }
       return legacy.map((row) => [row.migrationId, row.name] as const);
     }),

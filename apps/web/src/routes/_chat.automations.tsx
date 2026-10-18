@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { AutomationsPage } from "../components/automations/AutomationsPage";
 
-interface AutomationsSearch {
+export interface AutomationsSearch {
   readonly automation?: string;
 }
 

@@ -63,7 +63,6 @@ import {
   ChevronRightIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
-  FileTextIcon,
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
@@ -2035,17 +2034,6 @@ function OpenCommandPaletteDialog(props: {
     icon: <ZapIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({ to: "/automations" });
-    },
-  });
-
-  actionItems.push({
-    kind: "action",
-    value: "action:notes",
-    searchTerms: ["notes", "note", "markdown", "saved text"],
-    title: "Open notes",
-    icon: <FileTextIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      await navigate({ to: "/notes" });
     },
   });
 

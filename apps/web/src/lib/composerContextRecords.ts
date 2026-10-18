@@ -10,8 +10,6 @@ import type {
   ImageContextRecord,
   KnownComposerContextRecord,
   MessageId,
-  NoteSummary,
-  NoteContextRecord,
   OrchestrationMessageContext,
   PreviewAnnotationContextRecord,
   PreviewAnnotationPayload,
@@ -314,7 +312,6 @@ export function buildMessageContext(input: {
   previewAnnotations: ReadonlyArray<PreviewAnnotationPayload>;
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
-  notes?: ReadonlyArray<NoteContextRecord>;
 }): OrchestrationMessageContext | undefined {
   const screenshotAttachmentIds = new Set(
     (input.attachments ?? []).flatMap(({ attachment }) =>
@@ -331,36 +328,8 @@ export function buildMessageContext(input: {
       }),
     ),
     ...(input.attachments ?? []).map(attachmentContextRecord),
-    ...(input.notes ?? []),
   ];
   return records.length === 0 ? undefined : { version: 1, records };
-}
-
-export function noteContextRecordsForPrompt(
-  text: string,
-  notes: ReadonlyArray<NoteSummary>,
-): NoteContextRecord[] {
-  const referenced = new Set(
-    collectComposerContextReferences(text)
-      .filter((reference) => reference.kind === "note")
-      .map((reference) => reference.contextId),
-  );
-  return notes.flatMap((note) => {
-    const contextId = toKindScopedComposerContextId("note", note.id);
-    return referenced.has(contextId)
-      ? [
-          {
-            version: 1 as const,
-            kind: "note" as const,
-            contextId,
-            noteId: note.id,
-            title: note.title,
-            label: note.title,
-            content: "",
-          },
-        ]
-      : [];
-  });
 }
 
 export function asKnownContextRecord(

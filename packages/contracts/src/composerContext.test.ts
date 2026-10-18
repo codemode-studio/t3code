@@ -22,14 +22,6 @@ const decodeCommand = Schema.decodeUnknownSync(OrchestrationV2Command);
 const base = { version: 1, contextId: "ctx_1" } as const;
 
 const knownRecords: Record<(typeof COMPOSER_CONTEXT_KINDS)[number], Record<string, unknown>> = {
-  note: {
-    ...base,
-    kind: "note",
-    label: "Architecture",
-    noteId: "note_1",
-    title: "Architecture",
-    content: "The saved decision",
-  },
   image: {
     ...base,
     kind: "image",

@@ -738,9 +738,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       >
         {!voiceInput.isBusy &&
         composerMenu.trigger &&
-        (composerMenu.items.length > 0 ||
-          composerMenu.trigger.kind === "pull-request" ||
-          composerMenu.trigger.kind === "note") ? (
+        (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
           <ComposerPopoverAnchor>
             <ComposerCommandPopover
               items={composerMenu.items}

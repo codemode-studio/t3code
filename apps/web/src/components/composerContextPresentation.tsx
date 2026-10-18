@@ -1,13 +1,9 @@
 import ChatMarkdown from "./ChatMarkdown";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
-import type {
-  NoteSummary,
-  PreviewAnnotationPayload,
-  ThreadContextRecord,
-} from "@t3tools/contracts";
+import type { PreviewAnnotationPayload, ThreadContextRecord } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
-import { FileTextIcon, MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
+import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
 import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -34,7 +30,6 @@ import {
 } from "~/lib/composerContextRecords";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
-import { toKindScopedComposerContextId } from "@t3tools/shared/composerContextReferences";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { ThreadContextChip } from "./ThreadContextChip";
 import {
@@ -54,7 +49,6 @@ import {
 } from "./contextChipParts";
 
 export type ComposerDraftContextRecord =
-  | { kind: "note"; record: NoteSummary }
   | { kind: "terminal"; record: TerminalContextDraft }
   | { kind: "review-comment"; record: ReviewCommentContext }
   | {
@@ -106,7 +100,6 @@ export function composerContextRecordsFromDraft(input: {
   images?: ReadonlyArray<ComposerImageAttachment>;
   files?: ReadonlyArray<ComposerFileAttachment>;
   uploadsByImageId?: Readonly<Record<string, AttachmentUploadState>>;
-  notes?: ReadonlyArray<NoteSummary>;
 }): ComposerDraftContextRecords {
   const records = new Map<string, ComposerDraftContextRecord>();
   for (const record of input.images ?? []) {
@@ -139,9 +132,6 @@ export function composerContextRecordsFromDraft(input: {
   }
   for (const record of input.threadContexts ?? []) {
     records.set(record.contextId, { kind: "thread", record });
-  }
-  for (const record of input.notes ?? []) {
-    records.set(toKindScopedComposerContextId("note", record.id), { kind: "note", record });
   }
   return records;
 }
@@ -353,23 +343,6 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
 >({
   requiredKinds: ["image", "file", "terminal", "review-comment", "preview-annotation", "thread"],
   handlers: [
-    {
-      kind: "note",
-      canRender: (entry) => entry.kind === "note",
-      render: (entry, context) =>
-        entry.kind === "note" ? (
-          <ContextChip
-            icon={<FileTextIcon />}
-            label={entry.record.title}
-            kindLabel="Note"
-            details={entry.record.title}
-            detailsMode="tooltip"
-            kind="note"
-          />
-        ) : (
-          <UnresolvedContextChip label={context.label} />
-        ),
-    },
     {
       kind: "terminal",
       canRender: (entry) => entry.kind === "terminal",

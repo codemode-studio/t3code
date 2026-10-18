@@ -34,15 +34,6 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
-  Note,
-  NoteCreateInput,
-  NoteError,
-  NoteIdInput,
-  NoteListInput,
-  NoteListResult,
-  NoteUpdateInput,
-} from "./notes.ts";
-import {
   CodexAuthCallbackInput,
   CodexAuthCallbackState,
   ProviderAuthCancelInput,
@@ -423,12 +414,6 @@ export const WS_METHODS = {
   assetsPersistChatAttachments: "assets.persistChatAttachments",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
-  notesList: "notes.list",
-  notesSubscribeChanges: "notes.subscribeChanges",
-  notesGet: "notes.get",
-  notesCreate: "notes.create",
-  notesUpdate: "notes.update",
-  notesDelete: "notes.delete",
 
   mcpAppsCallTool: "mcpApps.callTool",
   mcpAppsToolInfo: "mcpApps.toolInfo",
@@ -1346,38 +1331,6 @@ const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
   error: EnvironmentAuthorizationError,
 });
 
-const NoteRpcError = Schema.Union([NoteError, EnvironmentAuthorizationError]);
-const WsNotesSubscribeChangesRpc = Rpc.make(WS_METHODS.notesSubscribeChanges, {
-  payload: Schema.Struct({}),
-  success: Schema.Number,
-  error: EnvironmentAuthorizationError,
-  stream: true,
-});
-const WsNotesListRpc = Rpc.make(WS_METHODS.notesList, {
-  payload: NoteListInput,
-  success: NoteListResult,
-  error: NoteRpcError,
-});
-const WsNotesGetRpc = Rpc.make(WS_METHODS.notesGet, {
-  payload: NoteIdInput,
-  success: Note,
-  error: NoteRpcError,
-});
-const WsNotesCreateRpc = Rpc.make(WS_METHODS.notesCreate, {
-  payload: NoteCreateInput,
-  success: Note,
-  error: NoteRpcError,
-});
-const WsNotesUpdateRpc = Rpc.make(WS_METHODS.notesUpdate, {
-  payload: NoteUpdateInput,
-  success: Note,
-  error: NoteRpcError,
-});
-const WsNotesDeleteRpc = Rpc.make(WS_METHODS.notesDelete, {
-  payload: NoteIdInput,
-  error: NoteRpcError,
-});
-
 const WsMcpAppsCallToolRpc = Rpc.make(WS_METHODS.mcpAppsCallTool, {
   payload: McpAppCallToolInput,
   success: McpAppCallToolResult,
@@ -2104,12 +2057,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsAssetsPersistChatAttachmentsRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
-  WsNotesListRpc,
-  WsNotesSubscribeChangesRpc,
-  WsNotesGetRpc,
-  WsNotesCreateRpc,
-  WsNotesUpdateRpc,
-  WsNotesDeleteRpc,
   WsMcpAppsCallToolRpc,
   WsMcpAppsToolInfoRpc,
   WsMcpAppsReadResourceRpc,

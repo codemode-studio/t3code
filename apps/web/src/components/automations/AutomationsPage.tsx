@@ -565,37 +565,35 @@ function AutomationEditor({
   const save = async () => {
     if ("error" in result) return;
     setSaving(true);
-    try {
-      if (existing && moving) {
-        // Each server keeps its own automations, so moving is a create there and a delete here.
-        const created = await create({
-          environmentId: result.environmentId,
-          input: { config: result.config },
-        });
-        if (created._tag !== "Success") return;
+    if (existing && moving) {
+      // Each server keeps its own automations, so moving is a create there and a delete here.
+      const created = await create({
+        environmentId: result.environmentId,
+        input: { config: result.config },
+      });
+      if (created._tag === "Success") {
         await remove({ environmentId: existing.environmentId, input: { id: existing.id } });
         toastManager.add({ type: "success", title: "Automation moved" });
         onCreated(automationKey({ environmentId: result.environmentId, id: created.value.id }));
-      } else if (existing) {
-        const outcome = await update({
-          environmentId: result.environmentId,
-          input: { id: existing.id, config: result.config },
-        });
-        if (outcome._tag === "Success") {
-          toastManager.add({ type: "success", title: "Automation saved" });
-        }
-      } else {
-        const outcome = await create({
-          environmentId: result.environmentId,
-          input: { config: result.config },
-        });
-        if (outcome._tag === "Success") {
-          onCreated(automationKey({ environmentId: result.environmentId, id: outcome.value.id }));
-        }
       }
-    } finally {
-      setSaving(false);
+    } else if (existing) {
+      const outcome = await update({
+        environmentId: result.environmentId,
+        input: { id: existing.id, config: result.config },
+      });
+      if (outcome._tag === "Success") {
+        toastManager.add({ type: "success", title: "Automation saved" });
+      }
+    } else {
+      const outcome = await create({
+        environmentId: result.environmentId,
+        input: { config: result.config },
+      });
+      if (outcome._tag === "Success") {
+        onCreated(automationKey({ environmentId: result.environmentId, id: outcome.value.id }));
+      }
     }
+    setSaving(false);
   };
 
   const openThread = (threadId: AutomationRunThreadId) => {
@@ -609,20 +607,17 @@ function AutomationEditor({
   const handleRunNow = async () => {
     if (!existing) return;
     setRunning(true);
-    try {
-      const outcome = await runNow({
-        environmentId: existing.environmentId,
-        input: { id: existing.id },
-      });
-      if (outcome._tag !== "Success") return;
-      const run = outcome.value;
-      if (run.error) {
-        toastManager.add({ type: "error", title: "Run failed to start", description: run.error });
-      } else if (run.threadId) {
-        openThread(run.threadId);
-      }
-    } finally {
-      setRunning(false);
+    const outcome = await runNow({
+      environmentId: existing.environmentId,
+      input: { id: existing.id },
+    });
+    setRunning(false);
+    if (outcome._tag !== "Success") return;
+    const run = outcome.value;
+    if (run.error) {
+      toastManager.add({ type: "error", title: "Run failed to start", description: run.error });
+    } else if (run.threadId) {
+      openThread(run.threadId);
     }
   };
 

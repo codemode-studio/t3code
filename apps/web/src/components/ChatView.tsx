@@ -337,13 +337,11 @@ import {
 import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
 import {
   buildMessageContext,
-  noteContextRecordsForPrompt,
   previewAnnotationContextLabel,
   previewAnnotationContextReference,
   reviewCommentContextLabel,
   terminalContextReference,
 } from "../lib/composerContextRecords";
-import { useNotes } from "../state/notes";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -1915,7 +1913,6 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeEnvironmentBootstrapComplete, activeProject, activeThreadRef]);
 
   const allProjects = useProjects();
-  const { notes: allNotes } = useNotes();
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   useEffect(() => {
     if (!activeThreadRef || !activeProjectRef) return;
@@ -6191,10 +6188,6 @@ export default function ChatView(props: ChatViewProps) {
           reviewComments: composerReviewComments,
           previewAnnotations: composerPreviewAnnotations,
           threadContexts: composerThreadContexts,
-          notes: noteContextRecordsForPrompt(
-            followUp.text,
-            allNotes.filter((note) => note.environmentId === environmentId),
-          ),
         }),
         interactionMode: followUp.interactionMode,
       });
@@ -6315,10 +6308,6 @@ export default function ChatView(props: ChatViewProps) {
           attachment,
           attachmentId: attachmentIds[index] ?? attachment.id,
         })),
-        notes: noteContextRecordsForPrompt(
-          messageTextForSend,
-          allNotes.filter((note) => note.environmentId === environmentId),
-        ),
       });
     const outgoingMessageContext = buildOutgoingMessageContext(
       composerAttachmentsSnapshot.map((attachment) => attachment.id),
@@ -7976,8 +7965,6 @@ export default function ChatView(props: ChatViewProps) {
                 activeThreadEnvironmentId={
                   displayedThreadRef?.environmentId ?? activeThread.environmentId
                 }
-                noteProjectId={activeThread.projectId}
-                notesEnabled={!paintOnlyDisplayedTimeline}
                 routeThreadKey={displayedTimelineKey}
                 displayThreadKey={displayedTimelineKey}
                 paintOnly={paintOnlyDisplayedTimeline}

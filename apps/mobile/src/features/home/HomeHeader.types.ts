@@ -24,6 +24,5 @@ export interface HomeHeaderProps {
   readonly onProfileScopeChange: (scope: ProfileScope) => void;
   readonly onOpenEnvironments: () => void;
   readonly onOpenSettings: () => void;
-  readonly onOpenNotes: () => void;
   readonly onStartNewTask: () => void;
 }
