@@ -72,6 +72,7 @@ describe("fork migration ledger", () => {
         [60, "ThreadSnapshotWindowIndexes"],
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -95,6 +96,7 @@ describe("fork migration ledger", () => {
         [60, "ThreadSnapshotWindowIndexes"],
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
       ]);
       yield* expectUpgradedToUpstream;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -110,7 +112,7 @@ describe("fork migration ledger", () => {
 
   it.effect("leaves an upstream database's history alone and adds notes", () =>
     Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: 62 });
+      yield* runMigrations({ toMigrationInclusive: 63 });
       assert.isFalse(yield* tableExists("notes"));
       assert.deepStrictEqual(yield* runMigrations(), []);
       yield* insertNote;
