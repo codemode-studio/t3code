@@ -21,7 +21,7 @@ import {
   ProfileGitHubAccountRow,
   ProviderProfileEditorDialog,
   ProviderProfileInstances,
-  useProviderInstanceEntries,
+  getProviderInstanceEntries,
   type EditingProfile,
 } from "../components/settings/ProviderProfilesSettings";
 import {
@@ -77,7 +77,7 @@ export function EnvironmentProfiles({
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
-  const entries = useProviderInstanceEntries(providers, settings);
+  const entries = getProviderInstanceEntries(providers, settings);
   const allProjects = useProjects();
   const scopeState = useProfileScopeState();
   const knownEnvironments = useProfileEnvironments();

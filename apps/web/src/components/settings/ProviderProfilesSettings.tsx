@@ -48,7 +48,7 @@ import { ProviderCustomColorPanel } from "./ProviderAccentColorPicker";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow } from "./settingsLayout";
 
 /** Provider instance entries for an environment, in settings order. */
-export function useProviderInstanceEntries(
+export function getProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
   settings: Pick<UnifiedSettings, "providerInstances" | "projectSettingsOverrides">,
 ): ReadonlyArray<ProviderInstanceEntry> {
