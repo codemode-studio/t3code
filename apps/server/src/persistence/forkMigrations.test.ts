@@ -82,6 +82,7 @@ describe("fork migration ledger", () => {
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
         [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
       ]);
       yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -105,6 +106,7 @@ describe("fork migration ledger", () => {
         [61, "PullRequestReviewGuides"],
         [62, "ThreadFailureLookupIndex"],
         [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
       ]);
       yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -124,7 +126,7 @@ describe("fork migration ledger", () => {
       `;
       yield* sql`INSERT INTO t3_fork_migrations (migration_id, name) VALUES (1, 'Notes')`;
 
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations(), [[64, "CanonicalizeThreadPullRequestLinks"]]);
       yield* expectUpgradedToUpstream([
         [1, "Notes"],
         [2, "DropNotes"],
