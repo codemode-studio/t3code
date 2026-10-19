@@ -102,7 +102,6 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
-  const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
@@ -358,20 +357,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
 
   return (
     <SettingsSection
-      id={
-        category === "general" || category === "project"
-          ? "project-defaults"
-          : category === "integrations"
-            ? "browser-access"
-            : "source-control-defaults"
-      }
-      title={
-        category === "general" || category === "project"
-          ? "New threads"
-          : category === "integrations"
-            ? "Browser"
-            : "Repositories"
-      }
+      id={category === "source-control" ? "source-control-defaults" : "project-defaults"}
+      title={category === "source-control" ? "Repositories" : "New threads"}
     >
       {category === "project" ? (
         <>
@@ -492,7 +479,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             }
           />
         </>
-      ) : category === "source-control" ? (
+      ) : (
         <>
           <SettingsRow
             serverScoped
@@ -624,42 +611,6 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 onCheckedChange={(enabled) =>
                   updateSettings({ createPullRequestsAsDraft: enabled })
                 }
-              />
-            }
-          />
-        </>
-      ) : (
-        <>
-          <SettingsRow
-            serverScoped
-            settingKeys={["enableAgentBrowserAccess"]}
-            mixed={mixedBrowser}
-            id={searchableSetting("agent-browser-access").id}
-            title="Agent browser access"
-            description={
-              isProjectScope
-                ? "Allow agents in this project to use the shared browser. Applies when the agent session next starts."
-                : "Allow agents to use the shared browser. Projects can override it."
-            }
-            resetAction={
-              settings.enableAgentBrowserAccess !==
-              DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess ? (
-                <SettingResetButton
-                  label="default browser access"
-                  onClick={() =>
-                    updateSettings({
-                      enableAgentBrowserAccess: DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                aria-label="Agent browser access"
-                mixed={mixedBrowser}
-                checked={mixedBrowser ? false : settings.enableAgentBrowserAccess}
-                onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
               />
             }
           />
