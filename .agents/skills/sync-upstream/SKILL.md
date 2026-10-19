@@ -32,6 +32,7 @@ rebase: `main` is shared, and a rebase would rewrite every squash commit.
    Save the file list to a file outside the worktree. It is the completion check later.
 
 5. Skim what is incoming: `git log --oneline origin/main..upstream/main`. Note any upstream commit that lands the same feature a fork commit adds; it will need a decision in the merge.
+6. Check the latest CI run for the exact `origin/main` SHA, including failed-job logs, before merging. Record existing failures so they cannot be mistaken for new regressions or silently carried forward. If the latest run is still running, its result is unknown, not green. Use the repository's configured GitHub identity, for example `gh run list --repo codemode-studio/t3code --branch main --workflow CI` and `gh run view <run-id> --repo codemode-studio/t3code --log-failed`.
 
 ## Merge
 
@@ -49,11 +50,19 @@ Finish with `git add` on each resolved file and `git merge --continue`. A merge 
 
 ## Verify
 
-1. `vp i`. If upstream bumped a dependency that has a vendored copy in `.repos/`, run `vpr sync:repos`.
+1. Match CI's toolchain before installing or checking: read `package.json`, `.github/workflows/ci.yml`, and its setup actions from the merged tree. Confirm the Node version actually used by `vp`, not just the shell's `node`. Use an already-installed compatible runtime through `vp env exec --node <version> ...` when needed; do not change machine defaults. Run `vp i`. If upstream bumped a dependency that has a vendored copy in `.repos/`, run `vpr sync:repos`.
 2. Diff the carry: `git diff --name-only upstream/main HEAD` must contain every file from the saved list. Each missing file is either a deliberate drop from the merge step or a bug to fix now.
-3. Typecheck and test the workspaces the carry touches, not the whole repo: `vp run --filter <workspace> typecheck` and `vp test run <files>` for the carry's test files. Fix failures caused by upstream API changes in fork code; that is the normal cost of a sync.
-4. Run CI's Lint job across the whole repo: `vp run knip:check` and `vp check`. This overrides the usual no-repo-wide-checks default. A clean merge still breaks fork files nobody touched: an upstream refactor leaves a fork export unused, or a new upstream lint rule flags a fork-only file. Fix those in fork code. Do not publish until both pass.
+3. Use focused checks to fix failures quickly, then run the checks that CI runs on a **push to main**. This skill overrides the usual no-repo-wide-checks default for that verification. Read the current workflow rather than relying on a fixed command list: cover Lint, Build and Typecheck, Test, Test Web, every server shard, Rust, and Release Smoke, plus native checks when affected. Include standalone script tests, generated-output checks, and build-output validation from those jobs. Reuse suitable local prerequisites; do not install system packages or copy CI's machine-setup commands onto the developer's computer.
+4. Run complete workspace test scripts through `vp run --filter <workspace> test`, using CI's filters and concurrency. For server shards, run all shard indices or the complete unsharded server suite. Do not select tests only from the carry or incoming diff. Upstream tests can exercise fork behavior without either their filenames or the behavior's source files changing. React Compiler coverage tests, for example, inspect fork components across a workspace. Running root Vitest over a mixed list also loses workspace setup and browser projects; use each workspace's script. Run Node/Python script tests with their declared runners.
+5. Match behavior-relevant CI environment settings as well as commands. GitHub supplies `GITHUB_REPOSITORY=codemode-studio/t3code` automatically; set it for local CI verification, along with `CI=true` and the job's explicit non-secret settings. Read config fallbacks for release/update sources and build-time defines. Do not unset the fork repository or force upstream defaults just to make assertions pass. For example, these unit tests passed locally without that variable but failed on main because they expected upstream release URLs:
+
+   ```bash
+   # Run from apps/web, with the CI-compatible Node runtime selected.
+   CI=true GITHUB_REPOSITORY=codemode-studio/t3code vp test run --project unit src/components/desktopUpdate.toast.test.tsx src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
+   ```
+
+6. Fix sync regressions and rerun the failed check, then complete the remaining CI checks. Existing main failures also block publication until fixed or explicitly accepted by the developer. Classify infrastructure failures using logs; do not assume a failing browser assertion is a flake. Browser tests require the repository's explicit permission. If permission is declined, or a required runtime/platform is unavailable, report the exact missing coverage and stop before publishing unless the developer explicitly accepts publishing with that gap. Skipping tests is not permission to push an incompletely verified merge.
 
 ## Publish
 
-Push with `git push origin HEAD:main`; it must fast-forward, so re-fetch and stop if `origin/main` moved. When the merge ran off `main`, the other checkout's local `main` is now behind; say so and leave pulling it to the developer. Then report: incoming commit count, each conflict and how it was resolved, every dropped fork change, and the verification commands with their results.
+Push only after the verification gate above passes or the developer explicitly accepts the named gaps. Use `git push origin HEAD:main`; it must fast-forward, so re-fetch and stop if `origin/main` moved. When the merge ran off `main`, the other checkout's local `main` is now behind; say so and leave pulling it to the developer. Inspect CI for the pushed SHA before reporting its status; if pending, say pending rather than claiming CI passed. Then report: incoming commit count, each conflict and how it was resolved, every dropped fork change, and the verification commands with their results, including any explicitly accepted gaps.
