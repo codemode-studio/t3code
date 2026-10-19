@@ -62,8 +62,7 @@ function downloadedState(overrides: Partial<DesktopUpdateState> = {}): DesktopUp
 describe("showDesktopUpdateDownloadedToast", () => {
   beforeEach(() => {
     testState.addToast.mockReset();
-    // Builds take the repository from GITHUB_REPOSITORY, which a fork's CI sets to the fork.
-    vi.stubEnv("T3CODE_DESKTOP_UPDATE_REPOSITORY", "");
+    vi.stubEnv("T3CODE_DESKTOP_UPDATE_REPOSITORY", "pingdotgg/t3code");
   });
 
   afterEach(() => {
