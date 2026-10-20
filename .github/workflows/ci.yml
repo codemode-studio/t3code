@@ -458,6 +458,12 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - name: Expose self-hosted mise tools
+        if: runner.environment == 'self-hosted'
+        run: |
+          echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
