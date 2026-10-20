@@ -12,13 +12,36 @@ commits survive untouched. Fork PRs land squash-merged as single commits;
 each upstream sync is one two-parent merge commit on top of them. Merge, never
 rebase: `main` is shared, and a rebase would rewrite every squash commit.
 
+## Hard blocks
+
+- Never push directly to `main`, including `git push origin HEAD:main`, a push
+  from local `main`, force pushes, or an API update of the branch ref. Publish
+  the sync branch through a pull request. Passing checks or permission to sync
+  does not waive this block. Never bypass branch protection.
+- Only one unfinished upstream sync may own this repository at a time, across
+  all worktrees. Before fetching, resetting, merging, or starting checks, list
+  the project's threads with `t3_thread_list` and inspect likely sync threads
+  with `t3_thread_read`. Exclude the current thread. Check the task and latest
+  messages, not just its title or whether an agent is currently running.
+  Another unfinished sync blocks this run even if it is idle, stuck, paused,
+  waiting for input or approval, or has a pending sync PR. A completed sync
+  does not block a new one.
+- If another unfinished sync exists, skip this invocation without changing
+  branches, files, or remotes. Report and link the owning thread and its known
+  blocker. Do not launch another sync, take it over, cancel it, or declare it
+  stale based on elapsed time. Resume that thread when the developer requests
+  it. If thread inspection is unavailable or ownership is uncertain, stop
+  rather than assume no sync is active.
+
 ## Prepare
 
 1. Add the remote if missing: `git remote add upstream git@github.com:pingdotgg/t3code.git`.
 2. `git fetch --multiple origin upstream` (plain `git fetch origin upstream` reads `upstream` as a ref on `origin` and fails).
 3. Pick where the merge happens. It always starts from `origin/main` with a clean tree; a dirty tree stops the sync.
-   - **On `main`** (`git branch --show-current` prints `main`): require `main` equal to `origin/main`.
+   - **On `main`** (`git branch --show-current` prints `main`): require `main` equal to `origin/main`, then create a dedicated sync branch before merging. Never merge the sync on local `main`.
    - **Anywhere else**, usually a linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`) where `main` is checked out in another checkout: leave that checkout alone. Git will not check out `main` twice, and the other checkout may be in use. Merge on the current branch instead, after `git reset --hard origin/main` when it has no commits of its own (`git log origin/main..HEAD` is empty); otherwise stop and ask.
+
+   Check for an existing open sync PR before preparing a branch. An unfinished sync owned by another thread blocks this run; continue the current thread's existing PR instead of creating a duplicate.
 
    The steps below say `origin/main`, never local `main`, because local `main` can lag behind in either mode.
 
@@ -65,4 +88,25 @@ Finish with `git add` on each resolved file and `git merge --continue`. A merge 
 
 ## Publish
 
-Push only after the verification gate above passes or the developer explicitly accepts the named gaps. Use `git push origin HEAD:main`; it must fast-forward, so re-fetch and stop if `origin/main` moved. When the merge ran off `main`, the other checkout's local `main` is now behind; say so and leave pulling it to the developer. Inspect CI for the pushed SHA before reporting its status; if pending, say pending rather than claiming CI passed. Then report: incoming commit count, each conflict and how it was resolved, every dropped fork change, and the verification commands with their results, including any explicitly accepted gaps.
+Publish only after the verification gate above passes or the developer explicitly
+accepts the named gaps. Recheck thread ownership, fetch `origin`, and stop if
+`origin/main` moved since the merge started. Do not reset or overwrite another
+sync's work.
+
+Push only the dedicated sync branch, with an explicit destination such as
+`git push -u origin HEAD:refs/heads/<sync-branch>`. Open or update its PR against
+`codemode-studio/t3code`'s `main`, following the `file-pr` skill. Register the PR
+with the thread when `link_pull_request` is available. Inspect CI for the exact
+PR head SHA and report pending checks as pending.
+
+Do not merge the PR unless the developer explicitly asks. When authorized,
+require checks and reviews to pass on the latest head, then use GitHub's merge
+commit method. Never squash or rebase an upstream sync PR: that would discard
+upstream ancestry and cause later syncs to replay the same changes. If the repo
+disallows merge commits, stop and report the conflict instead of pushing to
+`main` or choosing another merge method.
+
+Report the PR and merge status, incoming commit count, each conflict and its
+resolution, every dropped fork change, and verification results with any
+explicitly accepted gaps. Leave the main checkout alone; after the PR merges,
+say that its local `main` may need a fast-forward.
