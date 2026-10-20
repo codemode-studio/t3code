@@ -139,7 +139,7 @@ jobs:
         run: |
           (
             set +e
-            vp run -r --concurrency-limit 2 --filter '!@t3tools/mobile' typecheck
+            vp run --concurrency-limit 2 --filter '!@t3tools/mobile' --filter '!@t3tools/monorepo' typecheck
             echo "$?" > "$RUNNER_TEMP/typecheck-status"
           ) > "$RUNNER_TEMP/typecheck.log" 2>&1 < /dev/null &
 
