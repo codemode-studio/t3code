@@ -12,10 +12,11 @@ import { type KeyboardEvent, useId, useRef, useState } from "react";
 import {
   type ComposerTrigger,
   detectComposerTrigger,
+  isPathSuggestionCurrent,
   replaceTextRange,
 } from "../../composer-logic";
 import { useTheme } from "../../hooks/useTheme";
-import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { useComposerPathSearch } from "../../state/queries";
 import { basenameOfPath } from "../../pierre-icons";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import {
@@ -74,6 +75,7 @@ export function AutomationPromptField({
         type: "path",
         path: entry.path,
         pathKind: entry.kind,
+        searchTarget: pathSearch.searchedTarget,
         label: basenameOfPath(entry.path),
         description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
       }));
@@ -109,6 +111,11 @@ export function AutomationPromptField({
 
   const select = (item: ComposerCommandItem) => {
     if (!trigger) return;
+    if (
+      item.type === "path" &&
+      !isPathSuggestionCurrent(item.searchTarget, trigger, environmentId, cwd)
+    )
+      return;
     const replacement =
       item.type === "path"
         ? `${fileReference(item.path)} `
