@@ -446,7 +446,8 @@ jobs:
     name: Mobile Native Static Analysis
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
-    runs-on: macos-26
+    # External PRs stay on hosted runners rather than executing on the personal Mac.
+    runs-on: ${{ fromJSON(github.repository == 'codemode-studio/t3code' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted", "macOS", "ARM64", "t3-mac"]' || '["macos-26"]') }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -466,7 +467,15 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
+      - name: Check self-hosted native analysis tools
+        if: runner.environment == 'self-hosted'
+        run: |
+          for tool in swiftlint ktlint detekt; do
+            command -v "$tool" || exit 1
+          done
+
       - name: Install mobile native static analysis tools
+        if: runner.environment != 'self-hosted'
         run: brew bundle install --file apps/mobile/Brewfile
 
       - name: Lint mobile native sources
