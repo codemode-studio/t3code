@@ -217,6 +217,8 @@ minimumReleaseAgeExclude:
   - "@expo/schema-utils@58.0.2"
 
 overrides:
+  # Keep fresh lockfiles on the version covered by our Android layout patch.
+  expo-modules-core: 58.0.22
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
