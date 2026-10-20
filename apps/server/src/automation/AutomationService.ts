@@ -559,8 +559,8 @@ const make = Effect.gen(function* () {
    * thread's event sequence read before its records, so the orchestrator rejects it if anything,
    * such as a new user message, reached the thread after that read.
    */
-  const settleRunThread = (threadId: ThreadId) =>
-    Effect.gen(function* () {
+  const settleRunThread = Effect.fn("AutomationService.settleRunThread")(
+    function* (threadId: ThreadId) {
       const pending = pendingRunsOf(yield* SubscriptionRef.get(state), threadId);
       if (pending.length === 0) return;
       const expectedSequence = yield* threads.getThreadEventSequence(threadId);
@@ -711,15 +711,18 @@ const make = Effect.gen(function* () {
       if (!deleted) return;
       yield* recordPendingRuns(threadId, [], "deleted");
       yield* summarize;
-    }).pipe(
-      cleanupLock.withPermits(1),
-      Effect.catchCause((failure) =>
-        Effect.logWarning("automation run settlement failed", {
-          threadId,
-          cause: Cause.pretty(failure),
-        }),
+    },
+    (effect, threadId) =>
+      effect.pipe(
+        cleanupLock.withPermits(1),
+        Effect.catchCause((failure) =>
+          Effect.logWarning("automation run settlement failed", {
+            threadId,
+            cause: Cause.pretty(failure),
+          }),
+        ),
       ),
-    );
+  );
 
   // Off the event stream, so a slow lookup or dispatch never holds up the orchestrator's
   // subscribers. A thread already queued is not queued again; it is dequeued before it is read,
@@ -821,13 +824,13 @@ const make = Effect.gen(function* () {
    * Starts one run and records it. Never fails: a failed run is a run with an error.
    * `pullRequest` is set when a pull request triggered the run; its thread is linked to it.
    */
-  const executeRun = (
-    automation: StoredAutomation,
-    cause: string,
-    context: string | null,
-    pullRequest: GitHubItem | null,
-  ) =>
-    Effect.gen(function* () {
+  const executeRun = Effect.fn("AutomationService.executeRun")(
+    function* (
+      automation: StoredAutomation,
+      cause: string,
+      context: string | null,
+      pullRequest: GitHubItem | null,
+    ) {
       const project = yield* findProject(automation.projectId);
       if (!project || project.deletedAt !== null) {
         return yield* failWith("The automation's project no longer exists.");
@@ -935,68 +938,71 @@ const make = Effect.gen(function* () {
           .pipe(Effect.ignoreCause({ log: true }));
       }
       return { threadId, messageId, messageAt, orchestrationRunId };
-    }).pipe(
-      Effect.map((started) => ({ ...started, error: null })),
-      Effect.catchCause((failure) =>
-        Effect.logWarning("automation run failed", {
-          automationId: automation.id,
-          cause: Cause.pretty(failure),
-        }).pipe(
-          Effect.as({
-            threadId: null,
-            messageId: null,
-            messageAt: null,
-            orchestrationRunId: undefined,
-            error:
-              Cause.squash(failure) instanceof Error
-                ? (Cause.squash(failure) as Error).message
-                : "The run failed to start.",
+    },
+    (effect, automation, cause) =>
+      effect.pipe(
+        Effect.map((started) => ({ ...started, error: null })),
+        Effect.catchCause((failure) =>
+          Effect.logWarning("automation run failed", {
+            automationId: automation.id,
+            cause: Cause.pretty(failure),
+          }).pipe(
+            Effect.as({
+              threadId: null,
+              messageId: null,
+              messageAt: null,
+              orchestrationRunId: undefined,
+              error:
+                Cause.squash(failure) instanceof Error
+                  ? (Cause.squash(failure) as Error).message
+                  : "The run failed to start.",
+            }),
+          ),
+        ),
+        Effect.flatMap(({ threadId, messageId, messageAt, orchestrationRunId, error }) =>
+          Effect.gen(function* () {
+            const run: AutomationRun = {
+              id: yield* newId,
+              startedAt: yield* nowIso,
+              cause,
+              threadId,
+              error,
+            };
+            yield* patchAutomation(automation.id, (stored) => {
+              const runs = [run, ...stored.runs].slice(0, AUTOMATION_MAX_RUNS);
+              const pendingRuns =
+                threadId !== null && messageId !== null && messageAt !== null
+                  ? [
+                      ...stored.pendingRuns,
+                      {
+                        runId: run.id,
+                        threadId,
+                        messageId,
+                        ...(orchestrationRunId === undefined ? {} : { orchestrationRunId }),
+                        messageAt,
+                        // The run's config made the thread and the stored one may have been
+                        // edited while it started; both must still delete it.
+                        deleteThread: deletesRunThreads(automation) && deletesRunThreads(stored),
+                      },
+                    ]
+                  : stored.pendingRuns;
+              return {
+                ...stored,
+                runs,
+                // A run that fell out of the history has nowhere to keep its summary.
+                pendingRuns: pendingRuns.filter(
+                  (entry) => entry.deleteThread || runs.some((kept) => kept.id === entry.runId),
+                ),
+              };
+            }).pipe(Effect.ignoreCause({ log: true }));
+            // The run may have ended before it was recorded. Queued, so the automation is free for
+            // its next trigger without waiting on the check.
+            if (threadId !== null) yield* recheck(threadId);
+            return run;
           }),
         ),
       ),
-      Effect.flatMap(({ threadId, messageId, messageAt, orchestrationRunId, error }) =>
-        Effect.gen(function* () {
-          const run: AutomationRun = {
-            id: yield* newId,
-            startedAt: yield* nowIso,
-            cause,
-            threadId,
-            error,
-          };
-          yield* patchAutomation(automation.id, (stored) => {
-            const runs = [run, ...stored.runs].slice(0, AUTOMATION_MAX_RUNS);
-            const pendingRuns =
-              threadId !== null && messageId !== null && messageAt !== null
-                ? [
-                    ...stored.pendingRuns,
-                    {
-                      runId: run.id,
-                      threadId,
-                      messageId,
-                      ...(orchestrationRunId === undefined ? {} : { orchestrationRunId }),
-                      messageAt,
-                      // The run's config made the thread and the stored one may have been
-                      // edited while it started; both must still delete it.
-                      deleteThread: deletesRunThreads(automation) && deletesRunThreads(stored),
-                    },
-                  ]
-                : stored.pendingRuns;
-            return {
-              ...stored,
-              runs,
-              // A run that fell out of the history has nowhere to keep its summary.
-              pendingRuns: pendingRuns.filter(
-                (entry) => entry.deleteThread || runs.some((kept) => kept.id === entry.runId),
-              ),
-            };
-          }).pipe(Effect.ignoreCause({ log: true }));
-          // The run may have ended before it was recorded. Queued, so the automation is free for
-          // its next trigger without waiting on the check.
-          if (threadId !== null) yield* recheck(threadId);
-          return run;
-        }),
-      ),
-    );
+  );
 
   /**
    * Automations with a run starting or a GitHub poll going. That work runs off the tick loop, so
@@ -1066,8 +1072,8 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.flatMap((output) => decodeGitHubItems(output.stdout)));
 
-  const pollGitHub = (automation: StoredAutomation) =>
-    Effect.gen(function* () {
+  const pollGitHub = Effect.fn("AutomationService.pollGitHub")(
+    function* (automation: StoredAutomation) {
       const events = automation.triggers.flatMap((trigger) =>
         trigger.type === "github" ? [trigger.event] : [],
       );
@@ -1135,14 +1141,17 @@ const make = Effect.gen(function* () {
           kind === "Pull request" ? item : null,
         );
       }
-    }).pipe(
-      Effect.catchCause((failure) =>
-        Effect.logWarning("automation GitHub poll failed", {
-          automationId: automation.id,
-          cause: Cause.pretty(failure),
-        }),
+    },
+    (effect, automation) =>
+      effect.pipe(
+        Effect.catchCause((failure) =>
+          Effect.logWarning("automation GitHub poll failed", {
+            automationId: automation.id,
+            cause: Cause.pretty(failure),
+          }),
+        ),
       ),
-    );
+  );
 
   /** Per automation, so a poll skipped while its automation was busy stays due for the next tick. */
   const lastGitHubPollAt = new Map<string, number>();
@@ -1229,40 +1238,38 @@ const make = Effect.gen(function* () {
     start,
     // Cursor bookkeeping leaves the public snapshot as it was; clients only hear about real changes.
     changes: SubscriptionRef.changes(state).pipe(Stream.map(toSnapshot), Stream.changes),
-    create: (config) =>
-      Effect.gen(function* () {
-        const now = yield* nowIso;
-        const stored = buildStored(
-          config,
+    create: Effect.fn("AutomationService.create")(function* (config) {
+      const now = yield* nowIso;
+      const stored = buildStored(
+        config,
+        {
+          id: yield* newId,
+          createdAt: now,
+          runs: [],
+          githubCursor: null,
+          pendingRuns: [],
+        },
+        now,
+      );
+      yield* modify((file) =>
+        Effect.succeed([undefined, { automations: [...file.automations, stored] }] as const),
+      );
+      return toPublic(stored);
+    }),
+    update: Effect.fn("AutomationService.update")(function* (id, config) {
+      const now = yield* nowIso;
+      return yield* modify((file) => {
+        const existing = file.automations.find((entry) => entry.id === id);
+        if (!existing) return failWith("Automation not found.");
+        const stored = buildStored(config, existing, now);
+        return Effect.succeed([
+          toPublic(stored),
           {
-            id: yield* newId,
-            createdAt: now,
-            runs: [],
-            githubCursor: null,
-            pendingRuns: [],
+            automations: file.automations.map((entry) => (entry.id === id ? stored : entry)),
           },
-          now,
-        );
-        yield* modify((file) =>
-          Effect.succeed([undefined, { automations: [...file.automations, stored] }] as const),
-        );
-        return toPublic(stored);
-      }),
-    update: (id, config) =>
-      Effect.gen(function* () {
-        const now = yield* nowIso;
-        return yield* modify((file) => {
-          const existing = file.automations.find((entry) => entry.id === id);
-          if (!existing) return failWith("Automation not found.");
-          const stored = buildStored(config, existing, now);
-          return Effect.succeed([
-            toPublic(stored),
-            {
-              automations: file.automations.map((entry) => (entry.id === id ? stored : entry)),
-            },
-          ] as const);
-        });
-      }),
+        ] as const);
+      });
+    }),
     remove: (id) =>
       modify((file) =>
         Effect.succeed([

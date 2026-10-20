@@ -15,8 +15,7 @@ concurrency:
 
 jobs:
   # Skips jobs a pull request cannot affect: a web change does not run the
-  # server shards, a server change does not run the mobile tests, and the macOS
-  # lint (~6.7x a Linux minute) runs only for native mobile sources.
+  # server shards. Mobile-only jobs are disabled in this fork.
   # .github/scripts/ci-changes.cjs maps changed files to workspace packages and
   # their dependents. Pushes to main still run every Linux job. Detection fails
   # open: if the diff cannot be resolved, everything runs.
@@ -33,7 +32,6 @@ jobs:
       test_server: ${{ steps.detect.outputs.test_server }}
       rust: ${{ steps.detect.outputs.rust }}
       release_smoke: ${{ steps.detect.outputs.release_smoke }}
-      mobile_native: ${{ steps.detect.outputs.mobile_native }}
     steps:
       # Only the package manifests the script reads to build the dependency graph.
       # Depth 2 brings the base commit the change is diffed against.
@@ -141,7 +139,7 @@ jobs:
         run: |
           (
             set +e
-            vpr typecheck
+            vp run --concurrency-limit 2 --filter '!@t3tools/mobile' --filter '!@t3tools/monorepo' typecheck
             echo "$?" > "$RUNNER_TEMP/typecheck-status"
           ) > "$RUNNER_TEMP/typecheck.log" 2>&1 < /dev/null &
 
@@ -251,7 +249,7 @@ jobs:
             filters=()
             for package in $TEST_PACKAGES; do filters+=(--filter "$package"); done
           fi
-          vp run --parallel --concurrency-limit 2 "${filters[@]}" test
+          vp run --parallel --concurrency-limit 2 "${filters[@]}" --filter '!@t3tools/mobile' test
 
   # The web suite is the largest outside the server. In the shared Test job it
   # started last and ran alone for about 40s after everything else finished.
@@ -442,36 +440,6 @@ jobs:
             cargo test --locked --manifest-path "native/$crate/Cargo.toml"
           done
 
-  mobile_native_static_analysis:
-    name: Mobile Native Static Analysis
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
-    runs-on: macos-26
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/scripts...
-
-      - name: Install mobile native static analysis tools
-        run: brew bundle install --file apps/mobile/Brewfile
-
-      - name: Lint mobile native sources
-        run: vp run lint:mobile
-
   release_smoke:
     name: Release Smoke
     needs: changes
@@ -502,18 +470,7 @@ jobs:
   check:
     name: Check
     if: ${{ always() }}
-    needs:
-      [
-        changes,
-        lint,
-        build,
-        test,
-        test_web,
-        test_server,
-        rust,
-        mobile_native_static_analysis,
-        release_smoke,
-      ]
+    needs: [changes, lint, build, test, test_web, test_server, rust, release_smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -523,10 +480,9 @@ jobs:
         run: |
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           # A job may skip only when `changes` said every gate it represents was
-          # not needed. Gates are keyed by job name, except merged Build and the
-          # macOS lint.
+          # not needed. Gates are keyed by job name, except merged Build.
           echo "$RESULTS" | jq -e '.changes.outputs as $gates
-            | {build: ["build", "typecheck"], mobile_native_static_analysis: ["mobile_native"]} as $renamed
+            | {build: ["build", "typecheck"]} as $renamed
             | all(to_entries[];
                 .value.result == "success"
                 or (.value.result == "skipped"
