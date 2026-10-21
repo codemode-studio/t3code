@@ -19,19 +19,37 @@ rebase: `main` is shared, and a rebase would rewrite every squash commit.
   the sync branch through a pull request. Passing checks or permission to sync
   does not waive this block. Never bypass branch protection.
 - Only one unfinished upstream sync may own this repository at a time, across
-  all worktrees. Before fetching, resetting, merging, or starting checks, list
-  the project's threads with `t3_thread_list` and inspect likely sync threads
-  with `t3_thread_read`. Exclude the current thread. Check the task and latest
-  messages, not just its title or whether an agent is currently running.
-  Another unfinished sync blocks this run even if it is idle, stuck, paused,
-  waiting for input or approval, or has a pending sync PR. A completed sync
-  does not block a new one.
+  all worktrees. Before resetting, merging, or starting checks, list the
+  project's threads with `t3_thread_list` and inspect likely sync threads with
+  `t3_thread_read`. Exclude the current thread. Fetch first (Prepare steps 1
+  and 2); fetching changes no branches, and the checks below need fresh refs.
+- Decide whether each sync thread is unfinished from its current state, not
+  from its last message. A thread's last message describes the moment it
+  stopped, and is often stale: a merge it "left local" may since have landed
+  through its PR or been superseded by a later sync. A sync thread is
+  unfinished when any of these hold:
+  - its status is `running`, `starting`, `queued`, `preparing`, or `waiting`,
+    or it has pending requests;
+  - one of its linked pull requests, or an open PR from its branch, is open;
+  - its branch carries upstream commits that `origin/main` lacks:
+    `git merge-base --is-ancestor $(git merge-base <branch> upstream/main) origin/main`
+    fails, where `<branch>` is the thread's branch, local or on `origin`. The
+    inner merge-base is the newest upstream commit the branch contains, so
+    this holds however many commits sit on top of the merge.
+
+  A sync is finished when none of these hold, for example when its PR merged
+  or `origin/main` already contains everything it merged from upstream. It
+  does not block a new sync, whatever its last message says. If a thread's
+  branch no longer exists and none of the other conditions hold, it is
+  finished too.
+
 - If another unfinished sync exists, skip this invocation without changing
-  branches, files, or remotes. Report and link the owning thread and its known
-  blocker. Do not launch another sync, take it over, cancel it, or declare it
-  stale based on elapsed time. Resume that thread when the developer requests
-  it. If thread inspection is unavailable or ownership is uncertain, stop
-  rather than assume no sync is active.
+  branches, files, or remotes. Report and link the owning thread, the condition
+  above that it meets, and its known blocker. Do not launch another sync, take
+  it over, cancel it, or declare it stale based on elapsed time. Resume that
+  thread when the developer requests it. If thread inspection is unavailable,
+  or a condition above cannot be evaluated, stop rather than assume no sync is
+  active.
 
 ## Prepare
 
