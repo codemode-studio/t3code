@@ -2,6 +2,11 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { resolveForkRelease } = require("./check-fork-release.cjs");
 
+const now = Date.parse("2026-09-30T12:00:00Z");
+test.beforeEach((context) => {
+  context.mock.timers.enable({ apis: ["Date"], now });
+});
+
 const hour = 60 * 60 * 1000;
 const core = { info() {} };
 
@@ -31,7 +36,7 @@ function fixture({
             {
               tag_name: "v0.0.43-nightly.20260929.19",
               draft: false,
-              published_at: new Date(Date.now() - nightlyHoursAgo * hour).toISOString(),
+              published_at: new Date(now - nightlyHoursAgo * hour).toISOString(),
             },
           ];
         },

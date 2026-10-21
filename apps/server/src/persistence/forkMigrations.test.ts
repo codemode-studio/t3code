@@ -85,6 +85,7 @@ describe("fork migration ledger", () => {
         [64, "CanonicalizeThreadPullRequestLinks"],
         [65, "CodexUsageNativeTurnIndex"],
         [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
       ]);
       yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -111,6 +112,7 @@ describe("fork migration ledger", () => {
         [64, "CanonicalizeThreadPullRequestLinks"],
         [65, "CodexUsageNativeTurnIndex"],
         [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
       ]);
       yield* expectUpgradedToUpstream([[2, "DropNotes"]]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -134,6 +136,7 @@ describe("fork migration ledger", () => {
         [64, "CanonicalizeThreadPullRequestLinks"],
         [65, "CodexUsageNativeTurnIndex"],
         [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
       ]);
       yield* expectUpgradedToUpstream([
         [1, "Notes"],
