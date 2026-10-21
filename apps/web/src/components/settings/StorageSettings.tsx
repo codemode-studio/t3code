@@ -494,19 +494,14 @@ export function StorageSettingsPanel() {
     <SettingsPageContainer>
       {/* Remount per project so a stale error or delete dialog never carries over. */}
       <WorktreeManager key={"group" in scope ? scope.group.projectKey : null} />
-      {!isProjectScope &&
-        connectedEnvironments
-          .filter(
+      {!isProjectScope && (
+        <DatabaseStorageNotice
+          environments={connectedEnvironments.filter(
             (environment) =>
               environment.serverConfig?.environment.capabilities.databaseStorage === true,
-          )
-          .map((environment) => (
-            <DatabaseStorageNotice
-              key={environment.environmentId}
-              environmentId={environment.environmentId}
-              label={environment.label}
-            />
-          ))}
+          )}
+        />
+      )}
       <SettingsSection id="storage-worktrees" title="Worktrees">
         {!isProjectScope && <WorktreesDirectoryRow />}
         {isProjectScope && (
